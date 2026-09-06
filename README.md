@@ -241,27 +241,50 @@ Run the agent with `runner: "docker"`. It continuously compares desired state to
 
 ## Kubernetes
 
+### Customer demo (recommended)
+
+```bash
+./scripts/demo-k8s.sh
+```
+
+Or Helm with the demo profile (control plane + agent + `nodra-sim`):
+
+```bash
+helm upgrade --install nodra ./charts/nodra \
+  --namespace nodra-demo --create-namespace \
+  -f charts/nodra/values-demo.yaml \
+  --set image.repository=ghcr.io/zyvorai/nodra --set image.tag=0.2.0
+```
+
+Sign in: `admin` / `nodra-demo-admin`. Simulation keeps three sites online with devices, twins, routes, and telemetry.
+
 ### Raw manifests
 
 ```bash
 kubectl apply -f deployments/kubernetes/namespace.yaml
 kubectl apply -f deployments/kubernetes/serviceaccount.yaml
-kubectl apply -f deployments/kubernetes/pvc.yaml
-# create the Secret using deployments/kubernetes/secret.example.yaml as a template
+kubectl apply -f deployments/kubernetes/secret.demo.yaml
 kubectl apply -f deployments/kubernetes/deployment.yaml
 kubectl apply -f deployments/kubernetes/service.yaml
-kubectl apply -f deployments/kubernetes/pdb.yaml
-kubectl apply -f deployments/kubernetes/networkpolicy.yaml
+kubectl apply -f deployments/kubernetes/simulation.yaml
+# optional: pvc/pdb/networkpolicy for harder production posture
 ```
 
-### Helm
+Demo kustomize overlay (emptyDir, secret + sim):
+
+```bash
+kubectl kustomize --load-restrictor LoadRestrictionsNone deployments/kustomize/demo | kubectl apply -f -
+```
+
+### Helm (production-shaped)
 
 ```bash
 helm upgrade --install nodra ./charts/nodra \
-  --namespace nodra-system --create-namespace
+  --namespace nodra-system --create-namespace \
+  --set secrets.adminToken=... --set secrets.enrollmentToken=...
 ```
 
-If tokens are omitted, Helm creates long random values and preserves them across upgrades.
+If tokens are omitted, Helm creates long random values and preserves them across upgrades. Enable live fleet simulation with `--set simulation.enabled=true`.
 
 The v0.2 control plane is intentionally **one replica** because its embedded WAL is single-writer. The PDB allows the single pod to be drained instead of blocking node maintenance.
 
