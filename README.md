@@ -256,7 +256,7 @@ helm upgrade --install nodra ./charts/nodra \
   --set image.repository=ghcr.io/zyvorai/nodra --set image.tag=0.2.0
 ```
 
-Sign in: `admin` / `nodra-demo-admin`. Simulation keeps three sites online with devices, twins, routes, and telemetry.
+Sign in: `admin` / `nodra-demo-admin`. Simulation runs the full **A–Z** fleet (26 lettered sites) with live heartbeats, telemetry, twins, and a detailed **Logs** terminal in the console.
 
 ### Raw manifests
 
