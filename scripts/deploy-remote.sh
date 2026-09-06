@@ -236,6 +236,8 @@ cat > "$BUILD_DIR/nodra.env" <<ENVEOF
 NODRA_LISTEN=0.0.0.0:${NODRA_PORT}
 NODRA_DATA_DIR=${REMOTE_DATA}
 NODRA_ADMIN_TOKEN=${ADMIN_TOKEN}
+NODRA_ADMIN_USER=admin
+NODRA_ADMIN_PASSWORD=${ADMIN_TOKEN}
 NODRA_ENROLLMENT_TOKEN=${ENROLL_TOKEN}
 ENVEOF
 _scp "$BUILD_DIR/nodra.env" "${USER}@${HOST}:/tmp/nodra.env.new"
@@ -288,7 +290,7 @@ deploy_ui_checklist "service" "$(_ssh_batch "$SUDO systemctl is-active nodra-ser
 deploy_ui_checklist "health"  "$(_ssh_batch "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${NODRA_PORT}/healthz" | tr -d '\r')"
 
 nodra_print_success "$HOST" 0
-info "Admin token (Connect): ${ADMIN_TOKEN}"
+info "Admin login: admin / ${ADMIN_TOKEN}"
 
 if $SKIP_SMOKE; then
     info "Skipped smoke-remote.sh (--skip-smoke)"

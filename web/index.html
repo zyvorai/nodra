@@ -10,6 +10,31 @@
   <link rel="stylesheet" href="/assets/app.css" />
 </head>
 <body>
+  <!-- Apple-style sign-in chapter (shown until authenticated) -->
+  <section id="loginGate" class="login-chapter" aria-label="Sign in">
+    <div class="login-nav">
+      <a class="brand" href="https://zyvor.dev" target="_blank" rel="noopener" aria-label="Zyvor home">
+        <svg class="brand-mark" width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 2h14L6.6 16H16" fill="none" stroke="#ff5a15" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/></svg>
+        <span><span class="brand-zyvor">zyvor</span> Nodra</span>
+      </a>
+    </div>
+    <div class="login-hero">
+      <div class="eyebrow blue">Control plane</div>
+      <h1 class="login-title">Sign in to Nodra.</h1>
+      <p class="login-sub">Enter your account to open the edge fleet console.</p>
+      <form id="loginForm" class="login-card" autocomplete="on">
+        <label for="loginUser">Username</label>
+        <input id="loginUser" name="username" type="text" autocomplete="username" required placeholder="admin" />
+        <label for="loginPass">Password</label>
+        <input id="loginPass" name="password" type="password" autocomplete="current-password" required placeholder="••••••••" />
+        <p class="login-err" id="loginErr" hidden></p>
+        <button class="primary login-submit" type="submit" id="loginBtn">Sign in</button>
+      </form>
+      <p class="login-foot">Built by Zyvor · Apache-2.0</p>
+    </div>
+  </section>
+
+  <div id="appShell" class="app-shell" hidden>
   <div class="ambient a1"></div><div class="ambient a2"></div>
   <header class="nav shell">
     <a class="brand" href="https://zyvor.dev" target="_blank" rel="noopener" aria-label="Zyvor home">
@@ -19,7 +44,7 @@
     <nav id="navTabs">
       <button data-tab="overview" class="active">Overview</button><button data-tab="sites">Sites</button><button data-tab="devices">Devices</button><button data-tab="streams">Streams</button><button data-tab="apps">Apps</button><button data-tab="dlq">Dead letters</button>
     </nav>
-    <button id="tokenBtn" class="ghost">Connect</button>
+    <button id="signOutBtn" class="ghost" type="button">Sign out</button>
   </header>
 
   <main class="shell workspace">
@@ -55,8 +80,8 @@
   </main>
 
   <footer class="shell footer"><span>Nodra v0.2 · Apache-2.0 · Built by Zyvor</span><span>Run apps. Move data. Control the edge.</span></footer>
+  </div>
 
-  <dialog id="tokenDialog"><form method="dialog"><div class="dialog-mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 18 18"><path d="M2 2h14L6.6 16H16" fill="none" stroke="#fff" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/></svg></div><h3>Connect to Nodra</h3><p>Enter the admin token configured on this control plane. It stays in this browser session and is never written by Nodra.</p><input id="tokenInput" type="password" autocomplete="current-password" placeholder="Admin token"/><div class="dialog-actions"><button value="cancel" class="ghost">Cancel</button><button id="saveToken" value="default" class="primary">Connect</button></div></form></dialog>
   <div id="toast" class="toast"></div>
   <script src="/assets/app.js"></script>
 </body>

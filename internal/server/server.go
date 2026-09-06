@@ -36,6 +36,8 @@ type Config struct {
 	Listen            string
 	DataDir           string
 	AdminToken        string
+	AdminUser         string
+	AdminPassword     string
 	EnrollmentToken   string
 	PublicRead        bool
 	MaxBodyBytes      int64
@@ -70,6 +72,12 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.DataDir == "" {
 		cfg.DataDir = "./data"
+	}
+	if cfg.AdminUser == "" {
+		cfg.AdminUser = "admin"
+	}
+	if cfg.AdminPassword == "" {
+		cfg.AdminPassword = cfg.AdminToken
 	}
 	if cfg.MaxBodyBytes == 0 {
 		cfg.MaxBodyBytes = 1 << 20
@@ -168,6 +176,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/version", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"name": "nodra", "version": version.Version, "commit": version.Commit, "build_date": version.BuildDate})
 	})
+	mux.HandleFunc("POST /api/v1/auth/login", s.login)
+	mux.HandleFunc("GET /api/v1/auth/me", s.authMe)
 	mux.HandleFunc("POST /api/v1/enroll", s.enroll)
 	mux.HandleFunc("POST /api/v1/heartbeat", s.heartbeat)
 	mux.HandleFunc("POST /api/v1/events", s.events)
@@ -231,6 +241,46 @@ func (s *Server) admin(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if !s.decode(w, r, &in) {
+		return
+	}
+	if s.cfg.AdminToken == "" || s.cfg.AdminPassword == "" {
+		errorJSON(w, 503, "login is not configured")
+		return
+	}
+	userOK := auth.EqualToken(strings.TrimSpace(in.Username), s.cfg.AdminUser)
+	passOK := auth.EqualToken(in.Password, s.cfg.AdminPassword)
+	if !userOK || !passOK {
+		errorJSON(w, 401, "invalid username or password")
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"token": s.cfg.AdminToken,
+		"user":  map[string]string{"username": s.cfg.AdminUser, "role": "admin"},
+	})
+}
+
+func (s *Server) authMe(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.AdminToken == "" {
+		writeJSON(w, 200, map[string]any{"authenticated": false})
+		return
+	}
+	if !auth.EqualToken(bearer(r), s.cfg.AdminToken) {
+		writeJSON(w, 200, map[string]any{"authenticated": false})
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"authenticated": true,
+		"user":          map[string]string{"username": s.cfg.AdminUser, "role": "admin"},
+	})
+}
+
 func bearer(r *http.Request) string {
 	h := r.Header.Get("Authorization")
 	if !strings.HasPrefix(h, "Bearer ") {

@@ -67,10 +67,18 @@ pass "readyz"
 
 code="$(curl -sS -o "${TMP}/nodra-dash.html" -w '%{http_code}' "${BASE}/")"
 [ "$code" = "200" ] || fail "dashboard HTTP ${code}"
-grep -Fq 'Cloud optional.' "${TMP}/nodra-dash.html" || fail "dashboard missing hero copy"
+grep -Fq 'Sign in to Nodra' "${TMP}/nodra-dash.html" || fail "login chapter missing"
 grep -q 'brand-zyvor' "${TMP}/nodra-dash.html" || fail "missing Zyvor brand mark"
 grep -qi 'Built by Zyvor' "${TMP}/nodra-dash.html" || fail "footer missing Built by Zyvor"
-pass "dashboard + Zyvor brand"
+pass "login chapter + Zyvor brand"
+
+code="$(curl -sS -o "${TMP}/nodra-login.json" -w '%{http_code}' \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"admin\",\"password\":\"${TOKEN}\"}" \
+  "${BASE}/api/v1/auth/login")"
+[ "$code" = "200" ] || fail "login HTTP ${code}"
+grep -q '"token"' "${TMP}/nodra-login.json" || fail "login missing token"
+pass "api/v1/auth/login"
 
 code="$(curl -sS -o "${TMP}/nodra-version.json" -w '%{http_code}' "${BASE}/api/v1/version")"
 [ "$code" = "200" ] || fail "version HTTP ${code}"
@@ -78,7 +86,7 @@ pass "api/v1/version"
 
 code="$(curl -sS -o "${TMP}/nodra-overview.json" -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${BASE}/api/v1/overview")"
-[ "$code" = "200" ] || fail "overview HTTP ${code} (token=${TOKEN})"
+[ "$code" = "200" ] || fail "overview HTTP ${code} (after login token)"
 pass "api/v1/overview (admin)"
 
 code="$(curl -sS -o "${TMP}/nodra-metrics.txt" -w '%{http_code}' "${BASE}/metrics")"

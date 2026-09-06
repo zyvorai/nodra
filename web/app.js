@@ -1,6 +1,76 @@
-const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)]; let token=sessionStorage.getItem('nodra_token')||'';
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+let token=sessionStorage.getItem('nodra_token')||'';
 const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)};
-async function api(path,opt={}){const h={...(opt.headers||{})};if(token)h.Authorization=`Bearer ${token}`;if(opt.body)h['Content-Type']='application/json';const r=await fetch(path,{...opt,headers:h});if(!r.ok){throw new Error((await r.text())||`${r.status}`)}return r.status===204?null:r.json()}
+
+async function api(path,opt={}){
+  const h={...(opt.headers||{})};
+  if(token)h.Authorization=`Bearer ${token}`;
+  if(opt.body)h['Content-Type']='application/json';
+  const r=await fetch(path,{...opt,headers:h});
+  if(r.status===401){signOut(false);throw new Error('Session expired')};
+  if(!r.ok){let msg=`${r.status}`;try{const j=await r.json();msg=j.error||j.message||msg}catch{try{msg=await r.text()||msg}catch{}}throw new Error(msg)}
+  return r.status===204?null:r.json()
+}
+
+function showLogin(){
+  $('#loginGate').hidden=false;
+  $('#appShell').hidden=true;
+  document.body.classList.add('login-mode');
+}
+function showConsole(){
+  $('#loginGate').hidden=true;
+  $('#appShell').hidden=false;
+  document.body.classList.remove('login-mode');
+}
+function signOut(toastMsg=true){
+  token='';
+  sessionStorage.removeItem('nodra_token');
+  showLogin();
+  if(toastMsg)toast('Signed out');
+}
+
+async function ensureSession(){
+  if(!token){showLogin();return false}
+  try{
+    const me=await api('/api/v1/auth/me');
+    if(!me.authenticated){signOut(false);return false}
+    showConsole();
+    return true
+  }catch{
+    signOut(false);
+    return false
+  }
+}
+
+$('#loginForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const err=$('#loginErr');
+  err.hidden=true;err.textContent='';
+  const btn=$('#loginBtn');
+  btn.disabled=true;btn.textContent='Signing in…';
+  try{
+    const res=await fetch('/api/v1/auth/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username:$('#loginUser').value.trim(),password:$('#loginPass').value})
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data.error||'Sign in failed');
+    token=data.token||'';
+    if(!token)throw new Error('No session token returned');
+    sessionStorage.setItem('nodra_token',token);
+    $('#loginPass').value='';
+    showConsole();
+    await refresh();
+    toast('Welcome back');
+  }catch(ex){
+    err.textContent=ex.message||'Sign in failed';
+    err.hidden=false;
+  }finally{
+    btn.disabled=false;btn.textContent='Sign in';
+  }
+});
+
 const ago=s=>{if(!s)return'never';const n=(Date.now()-new Date(s).getTime())/1000;if(n<60)return`${Math.max(0,Math.floor(n))}s ago`;if(n<3600)return`${Math.floor(n/60)}m ago`;if(n<86400)return`${Math.floor(n/3600)}h ago`;return`${Math.floor(n/86400)}d ago`};
 const bytes=n=>{if(!Number.isFinite(Number(n)))return'—';n=Number(n);for(const u of ['B','KB','MB','GB','TB']){if(n<1024||u==='TB')return`${n<10&&u!=='B'?n.toFixed(1):Math.round(n)} ${u}`;n/=1024}};
 function E(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=String(text);return e}
@@ -13,7 +83,29 @@ function renderRoutes(items){const h=$('#routesTable');h.replaceChildren();if(!i
 function renderDeployments(items){const h=$('#deploymentsTable');h.replaceChildren();if(!items?.length)return empty(h,'No edge applications deployed.');items.forEach(v=>h.append(row([[v.name,v.image],null,`${v.version} · desired ${v.desired_state||'running'}`,v.site_id],v.status||v.actual_state)))}
 function renderAlerts(items){const h=$('#alertsTable');h.replaceChildren();items=(items||[]).filter(x=>!x.resolved).slice().reverse().slice(0,20);if(!items.length)return empty(h,'No open alerts.');items.forEach(v=>h.append(row([[v.type,v.message],null,v.site_id||'control plane',ago(v.created_at)],v.severity)))}
 function renderDLQ(items){const h=$('#dlqTable');h.replaceChildren();if(!items?.length)return empty(h,'No failed deliveries. That is exactly what you want.');items.forEach(v=>{const d=v.delivery||{};h.append(row([[d.topic,`${d.event_id} · ${v.reason||d.last_error||'failed'}`],null,`${d.attempts||0}/${d.max_attempts||0} attempts`,ago(v.failed_at)],'failed',{label:'Replay',click:async()=>{try{await api(`/api/v1/deadletters/${encodeURIComponent(d.id)}/replay`,{method:'POST',body:'{}'});toast('Delivery replayed');refresh()}catch{toast('Replay failed')}}}))})}
-async function refresh(){try{const [o,s,d,t,r,p,a,q]=await Promise.all([api('/api/v1/overview'),api('/api/v1/sites'),api('/api/v1/devices'),api('/api/v1/twins'),api('/api/v1/routes'),api('/api/v1/deployments'),api('/api/v1/alerts'),api('/api/v1/deadletters')]);$('#sitesCount').textContent=o.sites;$('#onlineCount').textContent=o.online_sites;$('#queueCount').textContent=o.pending_deliveries;$('#dlqCount').textContent=o.dead_letters;$('#queueBytes').textContent=`${bytes(o.delivery_queue_bytes)} durable WAL`;$('#siteHint').textContent=`${o.devices} devices · ${o.twins} twins`;renderSites(s);renderDevices(d);renderTwins(t);renderRoutes(r);renderDeployments(p);renderAlerts(a);renderDLQ(q);$('#fleetState').textContent='Connected';$('#fleetState').classList.add('ok')}catch(e){$('#fleetState').textContent='Connect to view';$('#fleetState').classList.remove('ok');if(token)toast('Could not load control plane')}}
+
+async function refresh(){
+  if(!token)return;
+  try{
+    const [o,s,d,t,r,p,a,q]=await Promise.all([api('/api/v1/overview'),api('/api/v1/sites'),api('/api/v1/devices'),api('/api/v1/twins'),api('/api/v1/routes'),api('/api/v1/deployments'),api('/api/v1/alerts'),api('/api/v1/deadletters')]);
+    $('#sitesCount').textContent=o.sites;$('#onlineCount').textContent=o.online_sites;$('#queueCount').textContent=o.pending_deliveries;$('#dlqCount').textContent=o.dead_letters;$('#queueBytes').textContent=`${bytes(o.delivery_queue_bytes)} durable WAL`;$('#siteHint').textContent=`${o.devices} devices · ${o.twins} twins`;
+    renderSites(s);renderDevices(d);renderTwins(t);renderRoutes(r);renderDeployments(p);renderAlerts(a);renderDLQ(q);
+    $('#fleetState').textContent='Connected';$('#fleetState').classList.add('ok')
+  }catch(e){
+    $('#fleetState').textContent='Disconnected';$('#fleetState').classList.remove('ok');
+    if(token)toast(e.message||'Could not load control plane')
+  }
+}
+
 function page(name){$$('[data-page]').forEach(p=>p.hidden=p.dataset.page!==name);$$('#navTabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));history.replaceState(null,'',`#${name}`)}
-$$('#navTabs button').forEach(b=>b.onclick=()=>page(b.dataset.tab));$('#tokenBtn').onclick=()=>{$('#tokenInput').value=token;$('#tokenDialog').showModal()};$('#saveToken').onclick=()=>{token=$('#tokenInput').value.trim();sessionStorage.setItem('nodra_token',token);setTimeout(refresh,20)};$('#refreshBtn').onclick=refresh;$('#seedRouteBtn').onclick=async()=>{try{await api('/api/v1/routes',{method:'POST',body:JSON.stringify({name:'Telemetry webhook',topic:'factory/+/telemetry',target_url:'http://example.invalid/events',method:'POST',enabled:false,retry_max:5,timeout_seconds:5})});toast('Demo route created');refresh()}catch{toast('Connect with an admin token first')}};
-const initial=location.hash.slice(1);if(['overview','sites','devices','streams','apps','dlq'].includes(initial))page(initial);refresh();setInterval(refresh,15000);
+$$('#navTabs button').forEach(b=>b.onclick=()=>page(b.dataset.tab));
+$('#signOutBtn').onclick=()=>signOut(true);
+$('#refreshBtn').onclick=refresh;
+$('#seedRouteBtn').onclick=async()=>{try{await api('/api/v1/routes',{method:'POST',body:JSON.stringify({name:'Telemetry webhook',topic:'factory/+/telemetry',target_url:'http://example.invalid/events',method:'POST',enabled:false,retry_max:5,timeout_seconds:5})});toast('Demo route created');refresh()}catch(e){toast(e.message||'Could not create route')}};
+
+(async()=>{
+  const ok=await ensureSession();
+  const initial=location.hash.slice(1);
+  if(['overview','sites','devices','streams','apps','dlq'].includes(initial))page(initial);
+  if(ok){await refresh();setInterval(refresh,15000)}
+})();

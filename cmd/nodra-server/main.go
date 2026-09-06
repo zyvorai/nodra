@@ -16,6 +16,8 @@ func main() {
 	listen := flag.String("listen", env("NODRA_LISTEN", ":8080"), "listen address")
 	data := flag.String("data", env("NODRA_DATA_DIR", "./data"), "data directory")
 	admin := flag.String("admin-token", os.Getenv("NODRA_ADMIN_TOKEN"), "admin bearer token")
+	adminUser := flag.String("admin-user", env("NODRA_ADMIN_USER", "admin"), "console login username")
+	adminPass := flag.String("admin-password", os.Getenv("NODRA_ADMIN_PASSWORD"), "console login password (defaults to admin-token)")
 	enroll := flag.String("enrollment-token", os.Getenv("NODRA_ENROLLMENT_TOKEN"), "site enrollment token")
 	public := flag.Bool("public-read", false, "allow unauthenticated management GET requests")
 	workers := flag.Int("workers", envInt("NODRA_DELIVERY_WORKERS", 8), "delivery worker concurrency")
@@ -27,7 +29,12 @@ func main() {
 	if *admin == "" || *enroll == "" {
 		slog.Warn("authentication token missing; management or enrollment APIs will be unavailable")
 	}
-	srv, err := server.New(server.Config{Listen: *listen, DataDir: *data, AdminToken: *admin, EnrollmentToken: *enroll, PublicRead: *public, WorkerConcurrency: *workers, PKIEnabled: *pkiEnabled, TLSCertFile: *tlsCert, TLSKeyFile: *tlsKey, ClientCAFile: *clientCA})
+	srv, err := server.New(server.Config{
+		Listen: *listen, DataDir: *data,
+		AdminToken: *admin, AdminUser: *adminUser, AdminPassword: *adminPass,
+		EnrollmentToken: *enroll, PublicRead: *public, WorkerConcurrency: *workers,
+		PKIEnabled: *pkiEnabled, TLSCertFile: *tlsCert, TLSKeyFile: *tlsKey, ClientCAFile: *clientCA,
+	})
 	if err != nil {
 		slog.Error("init failed", "error", err)
 		os.Exit(1)
