@@ -521,7 +521,7 @@ func (s *Server) sites(w http.ResponseWriter, r *http.Request) {
 	for i := range v {
 		v[i].TokenHash = ""
 	}
-	writeJSON(w, 200, v)
+	writeJSON(w, 200, asJSONList(v))
 }
 func (s *Server) siteRevoke(w http.ResponseWriter, r *http.Request) {
 	idv := r.PathValue("id")
@@ -532,7 +532,7 @@ func (s *Server) siteRevoke(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]bool{"revoked": true})
 }
 func (s *Server) routesList(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, s.store.Routes())
+	writeJSON(w, 200, asJSONList(s.store.Routes()))
 }
 func (s *Server) routeCreate(w http.ResponseWriter, r *http.Request) {
 	var in model.Route
@@ -586,10 +586,10 @@ func (s *Server) routeDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 func (s *Server) devices(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, s.store.Devices())
+	writeJSON(w, 200, asJSONList(s.store.Devices()))
 }
 func (s *Server) twins(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, s.store.Snapshot().Twins)
+	writeJSON(w, 200, asJSONList(s.store.Snapshot().Twins))
 }
 func (s *Server) twinDesired(w http.ResponseWriter, r *http.Request) {
 	dev, ok := s.store.Device(r.PathValue("id"))
@@ -653,7 +653,7 @@ func (s *Server) agentTwinReported(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, tw)
 }
 func (s *Server) deployments(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, s.store.Deployments())
+	writeJSON(w, 200, asJSONList(s.store.Deployments()))
 }
 func (s *Server) deploymentCreate(w http.ResponseWriter, r *http.Request) {
 	var in model.Deployment
@@ -683,7 +683,7 @@ func (s *Server) deploymentCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 201, in)
 }
-func (s *Server) alerts(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.store.Alerts()) }
+func (s *Server) alerts(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, asJSONList(s.store.Alerts())) }
 func (s *Server) alertResolve(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.ResolveAlert(r.PathValue("id")); err != nil {
 		errorJSON(w, 404, "alert not found")
@@ -754,7 +754,7 @@ func (s *Server) agentDeploymentStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deadletters(w http.ResponseWriter, r *http.Request) {
 	items, _ := s.dlq.List()
-	writeJSON(w, 200, items)
+	writeJSON(w, 200, asJSONList(items))
 }
 func (s *Server) deadletterReplay(w http.ResponseWriter, r *http.Request) {
 	idv := r.PathValue("id")
@@ -919,6 +919,14 @@ func (s *Server) asset(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = w.Write(b)
 }
+
+func asJSONList[T any](v []T) []T {
+	if v == nil {
+		return []T{}
+	}
+	return v
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

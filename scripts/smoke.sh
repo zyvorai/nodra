@@ -22,7 +22,17 @@ for _ in $(seq 1 50); do curl -fsS "http://127.0.0.1:$AGENT_PORT/healthz" >/dev/
 for _ in $(seq 1 50); do OUT=$("$TMP/bin/nodractl" --server "http://127.0.0.1:$SERVER_PORT" --token admin-smoke events); echo "$OUT" | grep -q 'smoke/site/telemetry' && break; sleep .1; done
 "$TMP/bin/nodractl" --server "http://127.0.0.1:$SERVER_PORT" --token admin-smoke events | grep -q 'smoke/site/telemetry'
 HOME_HTML="$(curl -fsS "http://127.0.0.1:$SERVER_PORT/")"
-grep -Fq 'Cloud optional.' <<<"$HOME_HTML"
+grep -Fq 'Sign in to Nodra' <<<"$HOME_HTML"
+grep -Fq 'Built by Zyvor' <<<"$HOME_HTML"
+LOGIN="$(curl -fsS -X POST "http://127.0.0.1:$SERVER_PORT/api/v1/auth/login" -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"admin-smoke"}')"
+echo "$LOGIN" | grep -Fq '"token":"admin-smoke"'
+OVERVIEW="$(curl -fsS -H 'Authorization: Bearer admin-smoke' "http://127.0.0.1:$SERVER_PORT/api/v1/overview")"
+echo "$OVERVIEW" | grep -Eq '"sites":[1-9]'
+for path in sites devices routes deployments alerts deadletters; do
+  body="$(curl -fsS -H 'Authorization: Bearer admin-smoke' "http://127.0.0.1:$SERVER_PORT/api/v1/${path}")"
+  [[ "$body" == \[* ]] || { echo "smoke: /api/v1/${path} not array: $body" >&2; exit 1; }
+done
 METRICS="$(curl -fsS "http://127.0.0.1:$SERVER_PORT/metrics")"
 grep -Fq 'nodra_events_total' <<<"$METRICS"
 echo "smoke: PASS"

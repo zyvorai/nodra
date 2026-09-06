@@ -1,6 +1,7 @@
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 let token=sessionStorage.getItem('nodra_token')||'';
 const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)};
+const asList=v=>Array.isArray(v)?v:(v==null?[]:[v]);
 
 async function api(path,opt={}){
   const h={...(opt.headers||{})};
@@ -89,7 +90,7 @@ async function refresh(){
   try{
     const [o,s,d,t,r,p,a,q]=await Promise.all([api('/api/v1/overview'),api('/api/v1/sites'),api('/api/v1/devices'),api('/api/v1/twins'),api('/api/v1/routes'),api('/api/v1/deployments'),api('/api/v1/alerts'),api('/api/v1/deadletters')]);
     $('#sitesCount').textContent=o.sites;$('#onlineCount').textContent=o.online_sites;$('#queueCount').textContent=o.pending_deliveries;$('#dlqCount').textContent=o.dead_letters;$('#queueBytes').textContent=`${bytes(o.delivery_queue_bytes)} durable WAL`;$('#siteHint').textContent=`${o.devices} devices · ${o.twins} twins`;
-    renderSites(s);renderDevices(d);renderTwins(t);renderRoutes(r);renderDeployments(p);renderAlerts(a);renderDLQ(q);
+    renderSites(asList(s));renderDevices(asList(d));renderTwins(asList(t));renderRoutes(asList(r));renderDeployments(asList(p));renderAlerts(asList(a));renderDLQ(asList(q));
     $('#fleetState').textContent='Connected';$('#fleetState').classList.add('ok')
   }catch(e){
     $('#fleetState').textContent='Disconnected';$('#fleetState').classList.remove('ok');
