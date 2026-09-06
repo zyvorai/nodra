@@ -53,7 +53,7 @@ pass "sign-in as ${USER_NAME}"
 AUTH=(-H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json')
 
 enroll="$(curl -fsS -X POST "$BASE/api/v1/enroll" -H 'Content-Type: application/json' \
-  -d "{\"name\":\"Client Demo Site\",\"enrollment_token\":\"${ENROLL}\",\"metadata\":{\"demo\":true}}")"
+  -d "{\"name\":\"Client Demo Site\",\"enrollment_token\":\"${ENROLL}\",\"metadata\":{\"demo\":\"true\"}}")"
 SITE="$(python3 -c "import json,sys;print(json.load(sys.stdin)['site_id'])" <<<"$enroll")"
 ATOK="$(python3 -c "import json,sys;print(json.load(sys.stdin)['agent_token'])" <<<"$enroll")"
 pass "enrolled site ${SITE}"
