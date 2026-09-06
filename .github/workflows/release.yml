@@ -45,7 +45,7 @@ jobs:
           cp LICENSE NOTICE README.md dist/pkg/
           base="nodra_${VERSION}_${GOOS}_${GOARCH}"
           if [ "$GOOS" = windows ]; then (cd dist/pkg && zip -q "../$base.zip" *); else tar -C dist/pkg -czf "dist/$base.tar.gz" .; fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: nodra-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/nodra_*
@@ -59,7 +59,7 @@ jobs:
           path: .
           format: spdx-json
           output-file: nodra-source.spdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: source-sbom
           path: nodra-source.spdx.json
