@@ -1,0 +1,21 @@
+[Unit]
+Description=Nodra control plane
+Documentation=https://github.com/zyvorai/nodra
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/nodra/nodra.env
+ExecStart=/usr/local/bin/nodra-server
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65535
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/nodra
+
+[Install]
+WantedBy=multi-user.target

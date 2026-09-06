@@ -1,0 +1,11 @@
+Nodra is installed.
+
+Dashboard (temporary local access):
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "nodra.fullname" . }} 8080:{{ .Values.service.port }}
+  open http://127.0.0.1:8080
+
+Admin token:
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "nodra.fullname" . }}-secrets -o jsonpath='{.data.admin-token}' | base64 -d; echo
+
+Enrollment token:
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "nodra.fullname" . }}-secrets -o jsonpath='{.data.enrollment-token}' | base64 -d; echo

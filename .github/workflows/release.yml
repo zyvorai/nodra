@@ -1,0 +1,128 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+jobs:
+  binaries:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - {goos: linux, goarch: amd64, ext: tar.gz}
+          - {goos: linux, goarch: arm64, ext: tar.gz}
+          - {goos: darwin, goarch: amd64, ext: tar.gz}
+          - {goos: darwin, goarch: arm64, ext: tar.gz}
+          - {goos: windows, goarch: amd64, ext: zip}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: false
+      - name: Build archive
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          set -eux
+          VERSION="${GITHUB_REF_NAME#v}"
+          DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          LDFLAGS="-s -w -X github.com/zyvorai/nodra/internal/version.Version=$VERSION -X github.com/zyvorai/nodra/internal/version.Commit=$GITHUB_SHA -X github.com/zyvorai/nodra/internal/version.BuildDate=$DATE"
+          mkdir -p dist/pkg
+          suffix=""; [ "$GOOS" = windows ] && suffix=".exe"
+          go build -trimpath -ldflags "$LDFLAGS" -o "dist/pkg/nodra-server$suffix" ./cmd/nodra-server
+          go build -trimpath -ldflags "$LDFLAGS" -o "dist/pkg/nodrad$suffix" ./cmd/nodrad
+          go build -trimpath -ldflags "$LDFLAGS" -o "dist/pkg/nodractl$suffix" ./cmd/nodractl
+          cp LICENSE NOTICE README.md dist/pkg/
+          base="nodra_${VERSION}_${GOOS}_${GOARCH}"
+          if [ "$GOOS" = windows ]; then (cd dist/pkg && zip -q "../$base.zip" *); else tar -C dist/pkg -czf "dist/$base.tar.gz" .; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nodra-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/nodra_*
+
+  source-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: nodra-source.spdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-sbom
+          path: nodra-source.spdx.json
+
+  image:
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - uses: sigstore/cosign-installer@v3
+      - name: Keyless-sign image digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${REGISTRY}/${IMAGE_NAME}@${DIGEST}"
+
+  publish:
+    needs: [binaries, source-sbom, image]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: nodra-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: source-sbom
+          path: dist
+      - name: Checksums
+        run: (cd dist && sha256sum nodra_* > SHA256SUMS.txt)
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --title "Nodra $GITHUB_REF_NAME"

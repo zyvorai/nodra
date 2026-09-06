@@ -1,0 +1,14 @@
+.DS_Store
+.idea/
+.vscode/
+bin/
+dist/
+data/
+nodra-agent-data/
+nodrad.json
+coverage.out
+*.zip
+*.tar.gz
+
+# Deploy state (no secrets)
+.deploy-last

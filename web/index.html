@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#f5f5f7" />
+  <title>Nodra — Open edge runtime</title>
+  <meta name="description" content="Nodra keeps sites moving when the cloud doesn't. Apache-2.0 edge runtime, local MQTT, offline queues, device twins and fleet control." />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='bg' x1='8' y1='8' x2='56' y2='56' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23ff5a15'/%3E%3Cstop offset='1' stop-color='%23cc420a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='15' fill='url(%23bg)'/%3E%3Cpath d='M18.5,20.5 45.5,20.5 18.5,43.5 45.5,43.5' fill='none' stroke='%23fff' stroke-width='8.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body>
+  <div class="ambient a1"></div><div class="ambient a2"></div>
+  <header class="nav shell">
+    <a class="brand" href="https://zyvor.dev" target="_blank" rel="noopener" aria-label="Zyvor home">
+      <svg class="brand-mark" width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 2h14L6.6 16H16" fill="none" stroke="#ff5a15" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/></svg>
+      <span><span class="brand-zyvor">zyvor</span> Nodra</span>
+    </a>
+    <nav id="navTabs">
+      <button data-tab="overview" class="active">Overview</button><button data-tab="sites">Sites</button><button data-tab="devices">Devices</button><button data-tab="streams">Streams</button><button data-tab="apps">Apps</button><button data-tab="dlq">Dead letters</button>
+    </nav>
+    <button id="tokenBtn" class="ghost">Connect</button>
+  </header>
+
+  <main class="shell workspace">
+    <section class="hero" data-page="overview">
+      <div class="eyebrow"><span></span> OPEN EDGE RUNTIME · APACHE-2.0</div>
+      <h1>Cloud optional.<br><b>Edge operational.</b></h1>
+      <p>Run local MQTT, route data, reconcile applications, synchronize device twins, and preserve events through unreliable networks — without a SaaS dependency.</p>
+      <div class="hero-actions"><button id="refreshBtn" class="primary">Refresh fleet</button><a class="link" href="/api/v1/version">API status ↗</a></div>
+      <div class="signal" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+      <div class="stat-grid">
+        <article><small>Sites</small><strong id="sitesCount">—</strong><span id="siteHint">connect to load</span></article>
+        <article><small>Online now</small><strong id="onlineCount">—</strong><span>90-second heartbeat window</span></article>
+        <article><small>Cloud queue</small><strong id="queueCount">—</strong><span id="queueBytes">durable delivery WAL</span></article>
+        <article><small>Dead letters</small><strong id="dlqCount">—</strong><span>inspectable and replayable</span></article>
+      </div>
+
+      <div class="feature-grid">
+        <article class="feature-card dark">
+          <span class="feature-tag">OFFLINE FIRST</span><h2>The WAN can disappear.<br>Your site doesn't.</h2>
+          <div class="edge-flow"><span>PLC</span><i>→</i><span>MQTT</span><i>→</i><span class="orange">nodrad</span><i>→</i><span>Local app</span></div>
+          <div class="offline"><span class="pulse"></span><div><b>Store · route · reconcile locally</b><small>Cloud sync resumes when connectivity returns.</small></div></div>
+        </article>
+        <article class="feature-card topology-card"><span class="feature-tag">ONE FABRIC</span><h2>Every edge path.<br>Visible.</h2><div class="topology"><div class="node source">Sensors<small>MQTT / HTTP</small></div><div class="beam"></div><div class="node core">Nodra<small>local runtime</small></div><div class="branches"><span></span><span></span><span></span></div><div class="targets"><div>MES</div><div>AI</div><div>Cloud</div></div></div></article>
+      </div>
+    </section>
+
+    <section class="page" data-page="sites" hidden><div class="page-head"><div><div class="eyebrow">FLEET</div><h2>Sites</h2><p>Heartbeat health, runtime version, queue pressure and certificate identity for every edge location.</p></div><span id="fleetState" class="chip">Disconnected</span></div><div id="sitesTable" class="table-card"></div></section>
+    <section class="page" data-page="devices" hidden><div class="page-head"><div><div class="eyebrow">DEVICE STATE</div><h2>Devices & twins</h2><p>Desired versus reported state, synchronized without coupling the device protocol to the cloud.</p></div></div><div class="split"><div><h3>Devices</h3><div id="devicesTable" class="table-card"></div></div><div><h3>Twins</h3><div id="twinsTable" class="table-card"></div></div></div></section>
+    <section class="page" data-page="streams" hidden><div class="page-head"><div><div class="eyebrow">DATA PLANE</div><h2>Streams</h2><p>MQTT-style topic filters to durable HTTP destinations, plus local agent routes that continue offline.</p></div><button id="seedRouteBtn" class="ghost">Create demo route</button></div><div id="routesTable" class="table-card"></div></section>
+    <section class="page" data-page="apps" hidden><div class="page-head"><div><div class="eyebrow">EDGE APPS</div><h2>Applications</h2><p>Desired-state container reconciliation at remote sites, with health flowing back to the control plane.</p></div></div><div id="deploymentsTable" class="table-card"></div><div class="section-gap"></div><div class="page-head compact"><div><div class="eyebrow">ATTENTION</div><h3>Open alerts</h3></div></div><div id="alertsTable" class="table-card"></div></section>
+    <section class="page" data-page="dlq" hidden><div class="page-head"><div><div class="eyebrow">RECOVERY</div><h2>Dead letters</h2><p>Failed deliveries are retained with their payload and retry history. Replay them when the destination is healthy.</p></div></div><div id="dlqTable" class="table-card"></div></section>
+  </main>
+
+  <footer class="shell footer"><span>Nodra v0.2 · Apache-2.0 · Built by Zyvor</span><span>Run apps. Move data. Control the edge.</span></footer>
+
+  <dialog id="tokenDialog"><form method="dialog"><div class="dialog-mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 18 18"><path d="M2 2h14L6.6 16H16" fill="none" stroke="#fff" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/></svg></div><h3>Connect to Nodra</h3><p>Enter the admin token configured on this control plane. It stays in this browser session and is never written by Nodra.</p><input id="tokenInput" type="password" autocomplete="current-password" placeholder="Admin token"/><div class="dialog-actions"><button value="cancel" class="ghost">Cancel</button><button id="saveToken" value="default" class="primary">Connect</button></div></form></dialog>
+  <div id="toast" class="toast"></div>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

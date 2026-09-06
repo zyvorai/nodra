@@ -1,0 +1,100 @@
+openapi: 3.1.0
+info:
+  title: Nodra Edge API
+  version: 0.2.0
+  description: Offline-first edge runtime and control-plane API.
+servers:
+  - url: /api/v1
+components:
+  securitySchemes:
+    bearer: {type: http, scheme: bearer}
+  schemas:
+    EventInput:
+      type: object
+      required: [site_id, topic, payload]
+      properties:
+        event_id: {type: string}
+        site_id: {type: string}
+        topic: {type: string}
+        payload: {}
+        headers: {type: object, additionalProperties: {type: string}}
+        event_time: {type: string, format: date-time}
+    Route:
+      type: object
+      required: [name, topic, target_url]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        site_id: {type: string}
+        topic: {type: string}
+        target_url: {type: string, format: uri}
+        method: {type: string, enum: [POST, PUT, PATCH]}
+        enabled: {type: boolean}
+        retry_max: {type: integer, minimum: 1, maximum: 20}
+        timeout_seconds: {type: integer, minimum: 1, maximum: 60}
+    Twin:
+      type: object
+      properties:
+        device_id: {type: string}
+        site_id: {type: string}
+        desired: {type: object}
+        reported: {type: object}
+        desired_version: {type: integer}
+        reported_version: {type: integer}
+paths:
+  /version:
+    get:
+      responses: {'200': {description: Build information}}
+  /enroll:
+    post:
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [name, enrollment_token], properties: {name: {type: string}, enrollment_token: {type: string}, csr_pem: {type: string}}}}}}
+      responses: {'201': {description: Site enrolled}, '401': {description: Bad bootstrap token}}
+  /events:
+    post:
+      security: [{bearer: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EventInput'}}}}
+      responses: {'202': {description: Durably accepted}, '503': {description: Delivery queue unavailable}, '507': {description: Persistence failed}}
+  /overview:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Fleet overview}}
+  /sites:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Sites}}
+  /routes:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Routes}}
+    post:
+      security: [{bearer: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Route'}}}}
+      responses: {'201': {description: Route created}}
+  /devices:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Devices}}
+  /twins:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Device twins}}
+  /twins/{id}/desired:
+    put:
+      security: [{bearer: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Desired twin updated}}
+  /deployments:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Deployments}}
+    post:
+      security: [{bearer: []}]
+      responses: {'201': {description: Deployment created}}
+  /alerts:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Alerts}}
+  /deadletters:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Replayable dead letters}}

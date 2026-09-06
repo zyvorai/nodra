@@ -1,0 +1,41 @@
+services:
+  control-plane:
+    build: .
+    image: nodra:dev
+    environment:
+      NODRA_ADMIN_TOKEN: ${NODRA_ADMIN_TOKEN:-change-me-admin}
+      NODRA_ENROLLMENT_TOKEN: ${NODRA_ENROLLMENT_TOKEN:-change-me-enroll}
+      NODRA_DATA_DIR: /var/lib/nodra
+    ports:
+      - "8080:8080"
+    volumes:
+      - control-data:/var/lib/nodra
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  edge-agent:
+    image: nodra:dev
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        if [ ! -f /var/lib/nodra/nodrad.json ]; then
+          nodrad init --config /var/lib/nodra/nodrad.json --server http://control-plane:8080 --site compose-edge --enrollment-token "$${NODRA_ENROLLMENT_TOKEN}" --data /var/lib/nodra/agent --listen 0.0.0.0:9091 --local-token "$${NODRA_LOCAL_TOKEN}"
+        fi
+        exec nodrad --config /var/lib/nodra/nodrad.json
+    environment:
+      NODRA_ENROLLMENT_TOKEN: ${NODRA_ENROLLMENT_TOKEN:-change-me-enroll}
+      NODRA_LOCAL_TOKEN: ${NODRA_LOCAL_TOKEN:-change-me-local}
+    ports:
+      - "9091:9091"
+    volumes:
+      - agent-data:/var/lib/nodra
+
+volumes:
+  control-data: {}
+  agent-data: {}

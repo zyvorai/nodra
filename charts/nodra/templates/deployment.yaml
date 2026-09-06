@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nodra.fullname" . }}
+  labels:
+    {{- include "nodra.labels" . | nindent 4 }}
+spec:
+  # v0.2 uses an embedded WAL state store. Keep this at one replica until HA storage lands.
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels:
+      {{- include "nodra.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nodra.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "nodra.fullname" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: nodra-server
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - {name: NODRA_DATA_DIR, value: /var/lib/nodra}
+            - name: NODRA_ADMIN_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: admin-token}}
+            - name: NODRA_ENROLLMENT_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: enrollment-token}}
+            - {name: NODRA_DELIVERY_WORKERS, value: {{ .Values.server.deliveryWorkers | quote }}}
+            - {name: NODRA_PKI_ENABLED, value: {{ .Values.server.pkiEnabled | quote }}}
+          ports: [{name: http, containerPort: 8080}]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          readinessProbe: {httpGet: {path: /readyz, port: http}, initialDelaySeconds: 2, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, initialDelaySeconds: 5, periodSeconds: 10}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/nodra}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim: {claimName: {{ include "nodra.fullname" . }}-data}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - {name: tmp, emptyDir: {}}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

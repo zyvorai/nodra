@@ -1,0 +1,33 @@
+name: Kubernetes E2E
+on:
+  pull_request:
+  push: {branches: [main]}
+permissions: {contents: read}
+jobs:
+  kind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.27.x', cache: false}
+      - uses: azure/setup-helm@v4
+      - uses: helm/kind-action@v1
+        with: {cluster_name: nodra-ci}
+      - name: Build and load
+        run: |
+          docker build -t nodra:e2e .
+          kind load docker-image nodra:e2e --name nodra-ci
+      - name: Install
+        run: |
+          kubectl create namespace nodra-e2e
+          kubectl label namespace nodra-e2e pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/enforce-version=v1.37
+          helm upgrade --install nodra charts/nodra --namespace nodra-e2e \
+            --set image.repository=nodra --set image.tag=e2e --set image.pullPolicy=Never \
+            --set secrets.adminToken=e2e-admin --set secrets.enrollmentToken=e2e-enroll
+          kubectl -n nodra-e2e rollout status deploy/nodra --timeout=120s
+      - name: API smoke
+        run: |
+          kubectl -n nodra-e2e port-forward svc/nodra 18080:8080 >/tmp/pf.log 2>&1 &
+          PF=$!; trap 'kill $PF 2>/dev/null || true' EXIT
+          for i in $(seq 1 50); do curl -fsS http://127.0.0.1:18080/readyz && break; sleep .2; done
+          curl -fsS -H 'Authorization: Bearer e2e-admin' http://127.0.0.1:18080/api/v1/overview | grep -q 'dead_letters'

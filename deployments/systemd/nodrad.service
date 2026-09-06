@@ -1,0 +1,22 @@
+[Unit]
+Description=Nodra edge agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nodra
+Group=nodra
+ExecStart=/usr/local/bin/nodrad --config /etc/nodra/nodrad.json
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/nodra
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

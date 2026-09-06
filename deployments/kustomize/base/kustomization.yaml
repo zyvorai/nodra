@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../kubernetes/namespace.yaml
+  - ../../kubernetes/serviceaccount.yaml
+  - ../../kubernetes/pvc.yaml
+  - ../../kubernetes/deployment.yaml
+  - ../../kubernetes/service.yaml
+  - ../../kubernetes/pdb.yaml
+  - ../../kubernetes/networkpolicy.yaml
+images:
+  - name: ghcr.io/zyvorai/nodra
+    newTag: 0.2.0

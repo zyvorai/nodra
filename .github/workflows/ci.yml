@@ -1,0 +1,51 @@
+name: CI
+on:
+  push: {branches: [main]}
+  pull_request:
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: {go: ['1.23.x', '1.27.x']}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '${{ matrix.go }}', cache: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.13'}
+      - run: pip install -r requirements-ci.txt
+      - name: Release checks
+        run: ./scripts/release-check.sh
+      - name: Coverage
+        if: matrix.go == '1.27.x'
+        run: go test -coverprofile=coverage.out ./...
+      - uses: actions/upload-artifact@v4
+        if: matrix.go == '1.27.x'
+        with: {name: coverage, path: coverage.out}
+  vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.27.x', cache: false}
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - run: govulncheck ./...
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with: {context: ., push: false, tags: 'nodra:ci'}
+  kubernetes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - uses: azure/setup-kubectl@v4
+      - run: helm lint charts/nodra --set secrets.adminToken=test-admin --set secrets.enrollmentToken=test-enroll
+      - run: helm template nodra charts/nodra --namespace nodra-system --set secrets.adminToken=test-admin --set secrets.enrollmentToken=test-enroll > /tmp/nodra.yaml
+      - run: kubectl apply --dry-run=client --validate=false -f /tmp/nodra.yaml >/dev/null
+      - run: kubectl kustomize deployments/kustomize/base > /tmp/kustomized.yaml
+      - run: kubectl apply --dry-run=client --validate=false -f /tmp/kustomized.yaml >/dev/null

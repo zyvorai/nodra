@@ -1,0 +1,7 @@
+.git
+.github
+*.zip
+bin/
+dist/
+data/
+coverage.out

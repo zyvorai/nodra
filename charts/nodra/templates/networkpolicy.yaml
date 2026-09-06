@@ -1,0 +1,13 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nodra.fullname" . }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nodra.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{protocol: TCP, port: {{ .Values.service.port }}}]
+{{- end }}

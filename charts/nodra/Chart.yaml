@@ -1,0 +1,13 @@
+apiVersion: v2
+name: nodra
+description: Nodra open-source edge runtime and control plane
+home: https://zyvor.dev
+sources:
+  - https://github.com/zyvorai/nodra
+type: application
+version: 0.2.0
+appVersion: "0.2.0"
+keywords: [edge, iot, offline, store-and-forward, fleet, gateway]
+maintainers:
+  - name: Zyvor
+    url: https://zyvor.dev
