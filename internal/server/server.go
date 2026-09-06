@@ -931,6 +931,8 @@ func (s *Server) asset(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css")
 	case ".js":
 		w.Header().Set("Content-Type", "application/javascript")
+	case ".svg":
+		w.Header().Set("Content-Type", "image/svg+xml")
 	}
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = w.Write(b)

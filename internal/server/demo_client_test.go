@@ -36,7 +36,7 @@ func TestClientDemoWalkthrough(t *testing.T) {
 		t.Fatalf("dashboard %d", code)
 	}
 	html := string(body)
-	for _, want := range []string{"Sign in to Nodra", "brand-zyvor", "Built by Zyvor", "loginForm"} {
+	for _, want := range []string{"Sign in to Nodra", "login-store-page", "login-wordmark", "Built by Zyvor", "loginForm", "zyvor-mark"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing %q", want)
 		}

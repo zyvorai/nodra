@@ -23,6 +23,7 @@ for _ in $(seq 1 50); do OUT=$("$TMP/bin/nodractl" --server "http://127.0.0.1:$S
 "$TMP/bin/nodractl" --server "http://127.0.0.1:$SERVER_PORT" --token admin-smoke events | grep -q 'smoke/site/telemetry'
 HOME_HTML="$(curl -fsS "http://127.0.0.1:$SERVER_PORT/")"
 grep -Fq 'Sign in to Nodra' <<<"$HOME_HTML"
+grep -Fq 'login-store-page' <<<"$HOME_HTML"
 grep -Fq 'Built by Zyvor' <<<"$HOME_HTML"
 LOGIN="$(curl -fsS -X POST "http://127.0.0.1:$SERVER_PORT/api/v1/auth/login" -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"admin-smoke"}')"

@@ -56,10 +56,12 @@ pass "readyz"
 code="$(curl -sS -o "${TMP}/nodra-dash.html" -w '%{http_code}' "${BASE}/")"
 [ "$code" = "200" ] || fail "dashboard HTTP ${code}"
 grep -Fq 'Sign in to Nodra' "${TMP}/nodra-dash.html" || fail "login chapter missing"
-grep -q 'brand-zyvor' "${TMP}/nodra-dash.html" || fail "missing Zyvor brand mark"
-grep -qi 'Built by Zyvor' "${TMP}/nodra-dash.html" || fail "footer missing Built by Zyvor"
+grep -Fq 'login-store-page' "${TMP}/nodra-dash.html" || fail "Kryton-style login store missing"
+grep -Fq 'login-wordmark' "${TMP}/nodra-dash.html" || fail "login wordmark missing"
+grep -qi 'zyvor' "${TMP}/nodra-dash.html" || fail "missing Zyvor brand"
+grep -qi 'Apache-2.0' "${TMP}/nodra-dash.html" || fail "footer missing Apache-2.0"
 grep -Fq 'data-tab="logs"' "${TMP}/nodra-dash.html" || fail "Logs tab missing"
-pass "login chapter + Zyvor brand + Logs tab"
+pass "login chapter + Kryton store + Logs tab"
 
 code="$(curl -sS -o "${TMP}/nodra-login.json" -w '%{http_code}' \
   -H 'Content-Type: application/json' \

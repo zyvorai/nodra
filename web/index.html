@@ -6,33 +6,86 @@
   <meta name="theme-color" content="#f5f5f7" />
   <title>Nodra — Open edge runtime</title>
   <meta name="description" content="Nodra keeps sites moving when the cloud doesn't. Apache-2.0 edge runtime, local MQTT, offline queues, device twins and fleet control." />
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='bg' x1='8' y1='8' x2='56' y2='56' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23ff5a15'/%3E%3Cstop offset='1' stop-color='%23cc420a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='15' fill='url(%23bg)'/%3E%3Cpath d='M18.5,20.5 45.5,20.5 18.5,43.5 45.5,43.5' fill='none' stroke='%23fff' stroke-width='8.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/svg+xml" href="/assets/zyvor-mark.svg" />
   <link rel="stylesheet" href="/assets/app.css" />
+  <link rel="stylesheet" href="/assets/login.css" />
 </head>
-<body>
-  <!-- Apple-style sign-in chapter (shown until authenticated) -->
-  <section id="loginGate" class="login-chapter" aria-label="Sign in">
-    <div class="login-nav">
-      <a class="brand" href="https://zyvor.dev" target="_blank" rel="noopener" aria-label="Zyvor home">
-        <svg class="brand-mark" width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 2h14L6.6 16H16" fill="none" stroke="#ff5a15" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/></svg>
-        <span><span class="brand-zyvor">zyvor</span> Nodra</span>
-      </a>
-    </div>
-    <div class="login-hero">
-      <div class="eyebrow blue">Control plane</div>
-      <h1 class="login-title">Sign in to Nodra.</h1>
-      <p class="login-sub">Enter your account to open the edge fleet console.</p>
-      <form id="loginForm" class="login-card" autocomplete="on">
-        <label for="loginUser">Username</label>
-        <input id="loginUser" name="username" type="text" autocomplete="username" required placeholder="admin" />
-        <label for="loginPass">Password</label>
-        <input id="loginPass" name="password" type="password" autocomplete="current-password" required placeholder="••••••••" />
-        <p class="login-err" id="loginErr" hidden></p>
-        <button class="primary login-submit" type="submit" id="loginBtn">Sign in</button>
-      </form>
-      <p class="login-foot">Built by Zyvor · Apache-2.0</p>
-    </div>
-  </section>
+<body class="login-locked">
+  <!-- Kryton-style Apple Store chapter login -->
+  <div id="loginGate" class="auth-backdrop login-page login-store-page open" data-testid="login-page" aria-hidden="false">
+    <nav class="login-localnav" aria-label="Login chapters">
+      <a href="#login-product" data-login-chapter="login-product">Product</a>
+      <a href="#login-edge" data-login-chapter="login-edge">This edge</a>
+      <a href="#login-sign-in" data-login-chapter="login-sign-in">Sign in</a>
+      <span class="login-localnav-host" id="loginNavHost"></span>
+    </nav>
+    <main class="login-store-scroll" aria-label="Sign in to Nodra">
+      <section id="login-product" class="login-chapter login-chapter-hero" data-tone="zyvor" aria-label="Nodra">
+        <div class="login-chapter-inner">
+          <a class="login-mark-link" href="https://zyvor.dev" target="_blank" rel="noopener noreferrer" title="Zyvor">
+            <img class="login-mark brand-logo" src="/assets/zyvor-mark.svg" alt="Zyvor" width="56" height="56">
+          </a>
+          <p class="login-wordmark">Nodra</p>
+          <p class="login-byline">by Zyvor</p>
+          <h1 class="login-hero-title">Cloud optional.<br>Edge operational.</h1>
+          <p class="login-tagline">Nodra is Zyvor’s open edge runtime — local MQTT, durable queues, device twins, and fleet control when the WAN disappears.</p>
+          <p class="login-tagline login-tagline-soft">Confirm this control plane, then sign in to open the console.</p>
+          <div class="login-pill-row">
+            <span class="login-pill" data-tone="sky"><span class="login-pill-dot" aria-hidden="true"></span>mqtt</span>
+            <span class="login-pill" data-tone="violet"><span class="login-pill-dot" aria-hidden="true"></span>twins</span>
+            <span class="login-pill" data-tone="emerald"><span class="login-pill-dot" aria-hidden="true"></span>offline</span>
+            <span class="login-pill" data-tone="amber"><span class="login-pill-dot" aria-hidden="true"></span>a–z sim</span>
+          </div>
+          <div class="login-cta">
+            <button type="button" class="login-cta-primary" data-login-chapter="login-edge">This edge</button>
+            <button type="button" class="login-cta-secondary" data-login-chapter="login-sign-in">Sign in</button>
+          </div>
+          <p class="login-chapter-note">Username + password · session storage for this tab</p>
+        </div>
+      </section>
+
+      <section id="login-edge" class="login-chapter login-chapter-destination" aria-label="This edge">
+        <div class="login-chapter-inner">
+          <p class="login-chapter-kicker">This edge</p>
+          <h2 class="login-dest-title" id="loginDestHost">localhost.</h2>
+          <p class="login-tagline">You are connecting to <strong style="color:#fff;font-weight:600">Nodra</strong> on this host — Zyvor’s edge control plane for this lab or cluster, not a public cloud console.</p>
+          <ul class="login-dest-facts">
+            <li class="login-dest-fact"><span class="login-dest-fact-label">Product</span><span class="login-dest-fact-value is-display">Nodra</span></li>
+            <li class="login-dest-fact"><span class="login-dest-fact-label">Host</span><span class="login-dest-fact-value" id="loginFactHost">—</span></li>
+            <li class="login-dest-fact"><span class="login-dest-fact-label">Port</span><span class="login-dest-fact-value" id="loginFactPort">—</span></li>
+            <li class="login-dest-fact"><span class="login-dest-fact-label">Origin</span><span class="login-dest-fact-value" id="loginFactOrigin">—</span></li>
+            <li class="login-dest-fact"><span class="login-dest-fact-label">Ready</span><span class="login-dest-fact-value" id="loginFactReady">—</span></li>
+            <li class="login-dest-fact"><span class="login-dest-fact-label">Version</span><span class="login-dest-fact-value" id="loginFactVersion">—</span></li>
+          </ul>
+          <div class="login-cta">
+            <button type="button" class="login-cta-primary" data-login-chapter="login-sign-in">Continue to sign in</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="login-sign-in" class="login-chapter login-chapter-sign-in" aria-label="Credentials">
+        <div class="login-chapter-inner login-sign-in-inner">
+          <img class="login-mark-sm" src="/assets/zyvor-mark.svg" alt="" width="36" height="36">
+          <p class="login-sign-in-context">Signing in to <strong>Nodra</strong> on <span class="login-apple-host" id="loginSignHost">localhost</span></p>
+          <p class="login-form-heading">Sign in to Nodra</p>
+          <p class="login-sign-in-blurb">Open the edge fleet console — sites, devices, streams, apps, dead letters, and live A–Z simulation logs.</p>
+          <div class="login-card" id="loginCard">
+            <form id="loginForm" class="login-apple-step" autocomplete="on">
+              <label for="loginUser" class="login-dest-fact-label" style="color:hsl(240 3% 46%);margin-bottom:.5rem;display:block">Username</label>
+              <input id="loginUser" class="login-input" name="username" type="text" autocomplete="username" required placeholder="admin" style="padding-left:1rem;margin-bottom:1rem">
+              <label for="loginPass" class="login-dest-fact-label" style="color:hsl(240 3% 46%);margin-bottom:.5rem;display:block">Password</label>
+              <input id="loginPass" class="login-input" name="password" type="password" autocomplete="current-password" required placeholder="••••••••" style="padding-left:1rem">
+              <p class="login-err" id="loginErr" hidden style="color:#d70015;font-size:13px;margin:10px 0 0;min-height:1.2em"></p>
+              <button class="login-btn-primary" type="submit" id="loginBtn">Sign in to Nodra</button>
+            </form>
+            <p class="login-security-note">Credentials stay in session storage for this browser tab only.</p>
+          </div>
+          <p class="login-hint">Lab default: <span class="login-apple-host">admin</span> / admin token from deploy (<span class="login-apple-host">nodra-lab-admin</span>).</p>
+        </div>
+      </section>
+    </main>
+    <p class="login-footer">Nodra by <a href="https://zyvor.dev" target="_blank" rel="noopener noreferrer">Zyvor</a> · Apache-2.0 · zyvor.dev</p>
+  </div>
 
   <div id="appShell" class="app-shell" hidden>
   <div class="ambient a1"></div><div class="ambient a2"></div>

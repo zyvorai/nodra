@@ -14,20 +14,69 @@ async function api(path,opt={}){
 }
 
 function showLogin(){
-  $('#loginGate').hidden=false;
+  const gate=$('#loginGate');
+  gate.classList.add('open');
+  gate.setAttribute('aria-hidden','false');
   $('#appShell').hidden=true;
-  document.body.classList.add('login-mode');
+  document.body.classList.add('login-locked');
+  fillLoginContext();
 }
 function showConsole(){
-  $('#loginGate').hidden=true;
+  const gate=$('#loginGate');
+  gate.classList.remove('open');
+  gate.setAttribute('aria-hidden','true');
   $('#appShell').hidden=false;
-  document.body.classList.remove('login-mode');
+  document.body.classList.remove('login-locked');
+  document.title='Nodra — Open edge runtime';
 }
 function signOut(toastMsg=true){
   token='';
   sessionStorage.removeItem('nodra_token');
   showLogin();
   if(toastMsg)toast('Signed out');
+}
+
+function loginDest(){
+  const{hostname,origin,port,protocol}=window.location;
+  return{
+    host:hostname||'localhost',
+    origin:origin||'',
+    port:port||(protocol==='https:'?'443':protocol==='http:'?'80':''),
+    protocol:(protocol||'http:').replace(':','')
+  };
+}
+function scrollLoginChapter(id){
+  const el=document.getElementById(id);
+  const sc=document.querySelector('.login-store-scroll');
+  if(!el||!sc)return;
+  sc.scrollTo({top:el.offsetTop,behavior:'smooth'});
+}
+async function fillLoginContext(){
+  const d=loginDest();
+  const set=(id,v)=>{const el=$(id);if(el)el.textContent=v||'—'};
+  set('#loginDestHost',(d.host||'localhost')+'.');
+  set('#loginFactHost',d.host);
+  set('#loginFactPort',d.port||'—');
+  set('#loginFactOrigin',d.origin);
+  set('#loginNavHost',d.host);
+  set('#loginSignHost',d.host);
+  document.title=`Sign in · Nodra · ${d.host||'edge'}`;
+  try{
+    const ready=await fetch('/readyz').then(r=>r.json()).catch(()=>null);
+    set('#loginFactReady',ready?.status||'—');
+  }catch{set('#loginFactReady','—')}
+  try{
+    const ver=await fetch('/api/v1/version').then(r=>r.json()).catch(()=>null);
+    set('#loginFactVersion',ver?.version||ver?.Version||'—');
+  }catch{set('#loginFactVersion','—')}
+}
+function wireLoginChapters(){
+  $$('[data-login-chapter]').forEach(b=>{
+    b.addEventListener('click',e=>{
+      e.preventDefault();
+      scrollLoginChapter(b.getAttribute('data-login-chapter')||b.getAttribute('href')?.slice(1));
+    });
+  });
 }
 
 async function ensureSession(){
@@ -67,8 +116,10 @@ $('#loginForm').addEventListener('submit',async e=>{
   }catch(ex){
     err.textContent=ex.message||'Sign in failed';
     err.hidden=false;
+    $('#loginCard')?.classList.add('login-shake');
+    setTimeout(()=>$('#loginCard')?.classList.remove('login-shake'),500);
   }finally{
-    btn.disabled=false;btn.textContent='Sign in';
+    btn.disabled=false;btn.textContent='Sign in to Nodra';
   }
 });
 
@@ -134,7 +185,9 @@ $('#refreshLogsBtn').onclick=refresh;
 $('#seedRouteBtn').onclick=async()=>{try{await api('/api/v1/routes',{method:'POST',body:JSON.stringify({name:'Telemetry webhook',topic:'factory/+/telemetry',target_url:'http://example.invalid/events',method:'POST',enabled:false,retry_max:5,timeout_seconds:5})});toast('Demo route created');refresh()}catch(e){toast(e.message||'Could not create route')}};
 
 (async()=>{
+  wireLoginChapters();
   const ok=await ensureSession();
+  if(!ok)fillLoginContext();
   const initial=location.hash.slice(1);
   if(['overview','sites','devices','streams','apps','dlq','logs'].includes(initial))page(initial);
   if(ok){await refresh();setInterval(refresh,5000)}
