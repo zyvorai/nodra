@@ -82,7 +82,7 @@ export NODRA_ADMIN_PASSWORD='change-this-admin-token'
   --data ./data
 ```
 
-Open `http://127.0.0.1:8080`, walk the login chapters, and **Sign in**. Binaries from `make build`: `nodra-server`, `nodrad`, `nodractl`, `nodra-sim`.
+Open `http://127.0.0.1:8080`, walk the login chapters, and **Sign in**. Binaries from `make build`: `nodra-server`, `nodrad`, `nodractl`, `nodra-sim`, `nodra-relay-bridge`.
 
 Customer demo path (kind/Helm/Compose/sim/console): see [docs/DEMO.md](docs/DEMO.md).
 
@@ -417,6 +417,7 @@ GitHub CI additionally runs:
 |---|---|
 | [https://zyvor.dev/docs/nodra](https://zyvor.dev/docs/nodra) | Product docs on zyvor.dev |
 | [docs/DEMO.md](docs/DEMO.md) | Customer demo, console, `nodra-sim`, lab scripts |
+| [docs/RELAY.md](docs/RELAY.md) | Nodra → Zyvor Relay Accept bridge |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components and durability |
 | [docs/API.md](docs/API.md) | HTTP API summary |
 | [docs/openapi.yaml](docs/openapi.yaml) | OpenAPI schemas |

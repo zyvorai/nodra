@@ -1,0 +1,35 @@
+services:
+  mock-relay:
+    image: python:3.12-alpine
+    command:
+      - python
+      - -c
+      - |
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        import json
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a): pass
+            def do_POST(self):
+                n=int(self.headers.get('Content-Length','0'))
+                body=json.loads(self.rfile.read(n).decode() or '{}')
+                print('ACCEPT', body.get('type'), body.get('idempotency_key'), flush=True)
+                self.send_response(200)
+                self.send_header('Content-Type','application/json')
+                self.end_headers()
+                self.wfile.write(b'{"event":{"id":"evt_mock"}}')
+            def do_GET(self):
+                self.send_response(200); self.end_headers(); self.wfile.write(b'ok')
+        HTTPServer(('0.0.0.0', 8080), H).serve_forever()
+    ports: ["18095:8080"]
+
+  bridge:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    entrypoint: ["nodra-relay-bridge"]
+    command: ["--listen", ":8095"]
+    environment:
+      RELAY_BASE_URL: http://mock-relay:8080
+      RELAY_AUTH_TOKEN: smoke
+    ports: ["8095:8095"]
+    depends_on: [mock-relay]

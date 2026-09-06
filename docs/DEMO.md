@@ -98,5 +98,20 @@ Default lab smoke credentials: `admin` / `nodra-lab-admin` (token `nodra-lab-adm
 | `scripts/demo-client.sh` | API login + console client walkthrough |
 | `scripts/smoke.sh` | Local control plane + agent smoke |
 | `scripts/smoke-remote.sh` | Health, login, lists, activity against a live URL |
+| `scripts/smoke-relay-bridge.sh` | Nodra→Relay bridge + mock Accept |
 | `scripts/test-all.sh` | Build + local smoke + optional remote deploy/smoke + short sim |
 | `scripts/deploy-remote.sh` | Build/push/restart remote systemd unit; writes `.deploy-last` |
+
+## Zyvor Relay
+
+Offline edge events can Accept into [Zyvor Relay](https://github.com/zyvorai/relay) via `nodra-relay-bridge`:
+
+```bash
+make build
+export RELAY_BASE_URL=https://relay.example:8443
+export RELAY_AUTH_TOKEN=<jwt>
+./bin/nodra-relay-bridge --listen :8095
+# Nodra Streams route target_url → http://127.0.0.1:8095/v1/nodra/delivery
+```
+
+See [docs/RELAY.md](RELAY.md) and [examples/relay](../examples/relay/).
