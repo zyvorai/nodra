@@ -11,7 +11,7 @@ RUN CGO_ENABLED=0 go test ./... && \
     CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/zyvorai/nodra/internal/version.Version=${VERSION} -X github.com/zyvorai/nodra/internal/version.Commit=${COMMIT} -X github.com/zyvorai/nodra/internal/version.BuildDate=${BUILD_DATE}" -o /out/nodrad ./cmd/nodrad && \
     CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/zyvorai/nodra/internal/version.Version=${VERSION} -X github.com/zyvorai/nodra/internal/version.Commit=${COMMIT} -X github.com/zyvorai/nodra/internal/version.BuildDate=${BUILD_DATE}" -o /out/nodractl ./cmd/nodractl
 
-FROM alpine:3.22
+FROM alpine:3.24
 RUN addgroup -S -g 65532 nodra && adduser -S -D -H -u 65532 -G nodra nodra && apk add --no-cache ca-certificates
 COPY --from=build /out/nodra-server /usr/local/bin/nodra-server
 COPY --from=build /out/nodrad /usr/local/bin/nodrad
