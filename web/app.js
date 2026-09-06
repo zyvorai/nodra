@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: Apache-2.0
+
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 let token=sessionStorage.getItem('nodra_token')||'';
 let role=sessionStorage.getItem('nodra_role')||'admin';

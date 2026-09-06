@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
 set -eu
 AGENT="${1:-http://127.0.0.1:9091}"
 TOKEN="${2:-local-secret}"

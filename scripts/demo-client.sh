@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Copyright 2026 Zyvor
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: Apache-2.0
-# ============================================================================
 # demo-client.sh — Seed + verify a client-demo fleet against a live Nodra
 # ============================================================================
 # Walks the same chapters a sales engineer shows in Chrome:

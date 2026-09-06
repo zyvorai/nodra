@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: Apache-2.0
+
 // Package modbus implements a dependency-free Modbus TCP client suitable for Nodra adapters.
 // It supports function 0x03 (Read Holding Registers) and 0x06 (Write Single Register).
 package modbus

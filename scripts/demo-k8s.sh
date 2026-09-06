@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Copyright 2026 Zyvor
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: Apache-2.0
-# ============================================================================
 # demo-k8s.sh — Deploy Nodra to Kubernetes (kind by default) with live simulation
 # ============================================================================
 # Customer-demo ready:

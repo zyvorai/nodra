@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Copyright 2026 Zyvor
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: Apache-2.0
-# ============================================================================
 # deploy-remote.sh — Deploy Nodra control plane to a remote host (systemd)
 # ============================================================================
 # nodra-server builds as a static binary (CGO_ENABLED=0):
