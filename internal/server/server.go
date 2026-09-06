@@ -934,7 +934,7 @@ func (s *Server) asset(w http.ResponseWriter, r *http.Request) {
 	case ".svg":
 		w.Header().Set("Content-Type", "image/svg+xml")
 	}
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Cache-Control", "public, max-age=60")
 	_, _ = w.Write(b)
 }
 

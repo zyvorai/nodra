@@ -49,7 +49,13 @@ function scrollLoginChapter(id){
   const el=document.getElementById(id);
   const sc=document.querySelector('.login-store-scroll');
   if(!el||!sc)return;
-  sc.scrollTo({top:el.offsetTop,behavior:'smooth'});
+  // offsetTop is wrong under the fixed auth gate — measure relative to the scrollport.
+  const top=Math.max(0, el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop);
+  sc.scrollTo({top, behavior:'auto'});
+  // Fallback if the scrollport still didn't move (layout race).
+  if(Math.abs(sc.scrollTop-top)>8){
+    try{el.scrollIntoView({block:'start', behavior:'auto'})}catch{}
+  }
 }
 async function fillLoginContext(){
   const d=loginDest();
@@ -63,18 +69,21 @@ async function fillLoginContext(){
   document.title=`Sign in · Nodra · ${d.host||'edge'}`;
   try{
     const ready=await fetch('/readyz').then(r=>r.json()).catch(()=>null);
-    set('#loginFactReady',ready?.status||'—');
+    set('#loginFactReady',(ready&&ready.status)||'—');
   }catch{set('#loginFactReady','—')}
   try{
     const ver=await fetch('/api/v1/version').then(r=>r.json()).catch(()=>null);
-    set('#loginFactVersion',ver?.version||ver?.Version||'—');
+    set('#loginFactVersion',(ver&&(ver.version||ver.Version))||'—');
   }catch{set('#loginFactVersion','—')}
 }
 function wireLoginChapters(){
   $$('[data-login-chapter]').forEach(b=>{
+    if(b.dataset.wired==='1')return;
+    b.dataset.wired='1';
     b.addEventListener('click',e=>{
       e.preventDefault();
-      scrollLoginChapter(b.getAttribute('data-login-chapter')||b.getAttribute('href')?.slice(1));
+      const id=b.getAttribute('data-login-chapter')||((b.getAttribute('href')||'').replace(/^#/,''));
+      if(id)scrollLoginChapter(id);
     });
   });
 }
@@ -116,8 +125,8 @@ $('#loginForm').addEventListener('submit',async e=>{
   }catch(ex){
     err.textContent=ex.message||'Sign in failed';
     err.hidden=false;
-    $('#loginCard')?.classList.add('login-shake');
-    setTimeout(()=>$('#loginCard')?.classList.remove('login-shake'),500);
+    $('#loginCard')&&$('#loginCard').classList.add('login-shake');
+    setTimeout(()=>{const c=$('#loginCard');if(c)c.classList.remove('login-shake')},500);
   }finally{
     btn.disabled=false;btn.textContent='Sign in to Nodra';
   }
@@ -181,8 +190,9 @@ function page(name){$$('[data-page]').forEach(p=>p.hidden=p.dataset.page!==name)
 $$('#navTabs button').forEach(b=>b.onclick=()=>page(b.dataset.tab));
 $('#signOutBtn').onclick=()=>signOut(true);
 $('#refreshBtn').onclick=refresh;
-$('#refreshLogsBtn').onclick=refresh;
-$('#seedRouteBtn').onclick=async()=>{try{await api('/api/v1/routes',{method:'POST',body:JSON.stringify({name:'Telemetry webhook',topic:'factory/+/telemetry',target_url:'http://example.invalid/events',method:'POST',enabled:false,retry_max:5,timeout_seconds:5})});toast('Demo route created');refresh()}catch(e){toast(e.message||'Could not create route')}};
+const refreshLogsBtn=$('#refreshLogsBtn'); if(refreshLogsBtn) refreshLogsBtn.onclick=refresh;
+const seedRouteBtn=$('#seedRouteBtn');
+if(seedRouteBtn) seedRouteBtn.onclick=async()=>{try{await api('/api/v1/routes',{method:'POST',body:JSON.stringify({name:'Telemetry webhook',topic:'factory/+/telemetry',target_url:'http://example.invalid/events',method:'POST',enabled:false,retry_max:5,timeout_seconds:5})});toast('Demo route created');refresh()}catch(e){toast(e.message||'Could not create route')}};
 
 (async()=>{
   wireLoginChapters();
