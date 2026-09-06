@@ -1,0 +1,47 @@
+# Customer-demo defaults for kind / any cluster.
+# Install:
+#   helm upgrade --install nodra charts/nodra -n nodra-demo --create-namespace -f charts/nodra/values-demo.yaml \
+#     --set image.repository=nodra --set image.tag=demo --set image.pullPolicy=Never
+#
+# Console: admin / nodra-demo-admin
+
+image:
+  pullPolicy: IfNotPresent
+
+persistence:
+  enabled: false # emptyDir — kind-friendly, no StorageClass required
+
+secrets:
+  adminToken: nodra-demo-admin
+  adminUser: admin
+  adminPassword: nodra-demo-admin
+  enrollmentToken: nodra-demo-enroll
+
+server:
+  deliveryWorkers: 4
+  pkiEnabled: false
+
+networkPolicy:
+  enabled: false # simpler for demos / kind
+
+podDisruptionBudget:
+  enabled: false
+
+agent:
+  enabled: true
+  siteName: kind-edge-01
+  serverURL: "http://nodra:8080"
+  localToken: nodra-demo-local
+  persistence:
+    enabled: false # emptyDir for kind demos
+  service:
+    enabled: true
+
+simulation:
+  enabled: true
+  serverURL: "http://nodra:8080"
+  interval: 10s
+  sites: 3
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 200m, memory: 96Mi}

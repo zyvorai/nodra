@@ -3,8 +3,10 @@ services:
     build: .
     image: nodra:dev
     environment:
-      NODRA_ADMIN_TOKEN: ${NODRA_ADMIN_TOKEN:-change-me-admin}
-      NODRA_ENROLLMENT_TOKEN: ${NODRA_ENROLLMENT_TOKEN:-change-me-enroll}
+      NODRA_ADMIN_TOKEN: ${NODRA_ADMIN_TOKEN:-nodra-demo-admin}
+      NODRA_ADMIN_USER: ${NODRA_ADMIN_USER:-admin}
+      NODRA_ADMIN_PASSWORD: ${NODRA_ADMIN_PASSWORD:-nodra-demo-admin}
+      NODRA_ENROLLMENT_TOKEN: ${NODRA_ENROLLMENT_TOKEN:-nodra-demo-enroll}
       NODRA_DATA_DIR: /var/lib/nodra
     ports:
       - "8080:8080"
@@ -29,13 +31,31 @@ services:
         fi
         exec nodrad --config /var/lib/nodra/nodrad.json
     environment:
-      NODRA_ENROLLMENT_TOKEN: ${NODRA_ENROLLMENT_TOKEN:-change-me-enroll}
-      NODRA_LOCAL_TOKEN: ${NODRA_LOCAL_TOKEN:-change-me-local}
+      NODRA_ENROLLMENT_TOKEN: ${NODRA_ENROLLMENT_TOKEN:-nodra-demo-enroll}
+      NODRA_LOCAL_TOKEN: ${NODRA_LOCAL_TOKEN:-nodra-demo-local}
     ports:
       - "9091:9091"
     volumes:
       - agent-data:/var/lib/nodra
 
+  simulation:
+    image: nodra:dev
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    entrypoint: ["nodra-sim"]
+    command:
+      - --server=http://control-plane:8080
+      - --interval=10s
+      - --sites=3
+      - --state=/tmp/nodra-sim-state.json
+    environment:
+      NODRA_ADMIN_TOKEN: ${NODRA_ADMIN_TOKEN:-nodra-demo-admin}
+      NODRA_ENROLLMENT_TOKEN: ${NODRA_ENROLLMENT_TOKEN:-nodra-demo-enroll}
+    volumes:
+      - sim-tmp:/tmp
+
 volumes:
   control-data: {}
   agent-data: {}
+  sim-tmp: {}

@@ -1,0 +1,48 @@
+{{- if .Values.simulation.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nodra.fullname" . }}-sim
+  labels:
+    {{- include "nodra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: simulation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nodra-sim
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nodra-sim
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: simulation
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: nodra-sim
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["nodra-sim"]
+          args:
+            - --server={{ .Values.simulation.serverURL }}
+            - --interval={{ .Values.simulation.interval }}
+            - --sites={{ .Values.simulation.sites }}
+            - --state=/tmp/nodra-sim-state.json
+          env:
+            - name: NODRA_ADMIN_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: admin-token}}
+            - name: NODRA_ENROLLMENT_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: enrollment-token}}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.simulation.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+{{- end }}

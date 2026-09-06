@@ -47,5 +47,9 @@ jobs:
       - run: helm lint charts/nodra --set secrets.adminToken=test-admin --set secrets.enrollmentToken=test-enroll
       - run: helm template nodra charts/nodra --namespace nodra-system --set secrets.adminToken=test-admin --set secrets.enrollmentToken=test-enroll > /tmp/nodra.yaml
       - run: kubectl apply --dry-run=client --validate=false -f /tmp/nodra.yaml >/dev/null
-      - run: kubectl kustomize deployments/kustomize/base > /tmp/kustomized.yaml
+      - run: helm template nodra charts/nodra -f charts/nodra/values-demo.yaml --namespace nodra-demo --set image.repository=nodra --set image.tag=demo > /tmp/nodra-demo.yaml
+      - run: kubectl apply --dry-run=client --validate=false -f /tmp/nodra-demo.yaml >/dev/null
+      - run: kubectl kustomize --load-restrictor LoadRestrictionsNone deployments/kustomize/base > /tmp/kustomized.yaml
       - run: kubectl apply --dry-run=client --validate=false -f /tmp/kustomized.yaml >/dev/null
+      - run: kubectl kustomize --load-restrictor LoadRestrictionsNone deployments/kustomize/demo > /tmp/kustomized-demo.yaml
+      - run: kubectl apply --dry-run=client --validate=false -f /tmp/kustomized-demo.yaml >/dev/null

@@ -4,8 +4,20 @@ Dashboard (temporary local access):
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "nodra.fullname" . }} 8080:{{ .Values.service.port }}
   open http://127.0.0.1:8080
 
-Admin token:
+Sign in (console):
+  user: {{ .Values.secrets.adminUser | default "admin" }}
+  password: kubectl -n {{ .Release.Namespace }} get secret {{ include "nodra.fullname" . }}-secrets -o jsonpath='{.data.admin-password}' | base64 -d; echo
+
+Admin API token:
   kubectl -n {{ .Release.Namespace }} get secret {{ include "nodra.fullname" . }}-secrets -o jsonpath='{.data.admin-token}' | base64 -d; echo
 
 Enrollment token:
   kubectl -n {{ .Release.Namespace }} get secret {{ include "nodra.fullname" . }}-secrets -o jsonpath='{.data.enrollment-token}' | base64 -d; echo
+{{- if .Values.simulation.enabled }}
+
+Simulation: enabled (nodra-sim seeds sites/devices and keeps the fleet online).
+{{- end }}
+{{- if .Values.agent.enabled }}
+
+Edge agent: enabled ({{ .Values.agent.siteName }} → {{ .Values.agent.serverURL }}).
+{{- end }}

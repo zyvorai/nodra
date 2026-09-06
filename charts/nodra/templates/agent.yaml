@@ -1,4 +1,5 @@
 {{- if .Values.agent.enabled }}
+{{- if .Values.agent.persistence.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -10,6 +11,7 @@ spec:
   {{- end }}
   resources: {requests: {storage: {{ .Values.agent.persistence.size }}}}
 ---
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -25,6 +27,7 @@ spec:
       initContainers:
         - name: configure
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -43,12 +46,19 @@ spec:
       containers:
         - name: nodrad
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["nodrad", "--config", "/data/nodrad.json"]
           ports: [{name: ingest, containerPort: 9091}, {name: mqtt, containerPort: 1883}]
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
           resources: {{- toYaml .Values.agent.resources | nindent 12 }}
           volumeMounts: [{name: data, mountPath: /data}]
-      volumes: [{name: data, persistentVolumeClaim: {claimName: {{ include "nodra.fullname" . }}-agent-data}}]
+      volumes:
+        - name: data
+          {{- if .Values.agent.persistence.enabled }}
+          persistentVolumeClaim: {claimName: {{ include "nodra.fullname" . }}-agent-data}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
 {{- if .Values.agent.service.enabled }}
 ---
 apiVersion: v1

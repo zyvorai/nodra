@@ -1,0 +1,40 @@
+# Optional in-cluster customer-demo simulator (requires nodra-sim in the image).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodra-sim
+  namespace: nodra-system
+  labels: {app.kubernetes.io/name: nodra-sim, app.kubernetes.io/component: simulation}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: nodra-sim}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: nodra-sim, app.kubernetes.io/component: simulation}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, fsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: nodra-sim
+          image: ghcr.io/zyvorai/nodra:0.2.0
+          command: ["nodra-sim"]
+          args:
+            - --server=http://nodra-server:8080
+            - --interval=10s
+            - --sites=3
+            - --state=/tmp/nodra-sim-state.json
+          env:
+            - name: NODRA_ADMIN_TOKEN
+              valueFrom: {secretKeyRef: {name: nodra-secrets, key: admin-token}}
+            - name: NODRA_ENROLLMENT_TOKEN
+              valueFrom: {secretKeyRef: {name: nodra-secrets, key: enrollment-token}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 96Mi}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {}}]

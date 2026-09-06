@@ -16,6 +16,8 @@ ingress:
 persistence: {enabled: true, size: 5Gi, storageClass: ""}
 secrets:
   adminToken: ""
+  adminUser: admin
+  adminPassword: "" # defaults to adminToken when empty
   enrollmentToken: ""
 
 server:
@@ -44,8 +46,18 @@ agent:
   maxSpoolBytes: 2147483648
   maxSpoolEvents: 1000000
   spoolPolicy: reject
-  persistence: {size: 2Gi, storageClass: ""}
+  persistence: {enabled: true, size: 2Gi, storageClass: ""}
   service: {enabled: true, port: 9091, mqttPort: 1883}
   resources:
     requests: {cpu: 25m, memory: 32Mi}
     limits: {cpu: 250m, memory: 128Mi}
+
+# Customer-demo fleet simulator (nodra-sim). Seeds sites/devices/routes and keeps heartbeats alive.
+simulation:
+  enabled: false
+  serverURL: "http://nodra:8080"
+  interval: 12s
+  sites: 3
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 200m, memory: 96Mi}

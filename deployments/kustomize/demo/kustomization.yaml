@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: nodra-system
+resources:
+  - ../../kubernetes/namespace.yaml
+  - ../../kubernetes/serviceaccount.yaml
+  - ../../kubernetes/secret.demo.yaml
+  - ../../kubernetes/deployment.yaml
+  - ../../kubernetes/service.yaml
+  - ../../kubernetes/simulation.yaml
+images:
+  - name: ghcr.io/zyvorai/nodra
+    newTag: 0.2.0
+patches:
+  - target:
+      kind: Deployment
+      name: nodra-server
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/volumes/0
+        value:
+          name: data
+          emptyDir: {}
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent

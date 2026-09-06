@@ -28,6 +28,10 @@ spec:
             - {name: NODRA_DATA_DIR, value: /var/lib/nodra}
             - name: NODRA_ADMIN_TOKEN
               valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: admin-token}}
+            - name: NODRA_ADMIN_USER
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: admin-user}}
+            - name: NODRA_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: admin-password}}
             - name: NODRA_ENROLLMENT_TOKEN
               valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: enrollment-token}}
             - {name: NODRA_DELIVERY_WORKERS, value: {{ .Values.server.deliveryWorkers | quote }}}

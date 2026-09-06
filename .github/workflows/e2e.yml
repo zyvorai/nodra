@@ -23,11 +23,24 @@ jobs:
           kubectl label namespace nodra-e2e pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/enforce-version=v1.37
           helm upgrade --install nodra charts/nodra --namespace nodra-e2e \
             --set image.repository=nodra --set image.tag=e2e --set image.pullPolicy=Never \
-            --set secrets.adminToken=e2e-admin --set secrets.enrollmentToken=e2e-enroll
+            --set secrets.adminToken=e2e-admin --set secrets.adminPassword=e2e-admin --set secrets.enrollmentToken=e2e-enroll \
+            --set persistence.enabled=false --set networkPolicy.enabled=false --set podDisruptionBudget.enabled=false \
+            --set agent.enabled=true --set agent.persistence.enabled=false --set agent.serverURL=http://nodra:8080 \
+            --set simulation.enabled=true --set simulation.serverURL=http://nodra:8080 --set simulation.sites=2 --set simulation.interval=5s
           kubectl -n nodra-e2e rollout status deploy/nodra --timeout=120s
+          kubectl -n nodra-e2e rollout status deploy/nodra-sim --timeout=120s
       - name: API smoke
         run: |
           kubectl -n nodra-e2e port-forward svc/nodra 18080:8080 >/tmp/pf.log 2>&1 &
           PF=$!; trap 'kill $PF 2>/dev/null || true' EXIT
           for i in $(seq 1 50); do curl -fsS http://127.0.0.1:18080/readyz && break; sleep .2; done
           curl -fsS -H 'Authorization: Bearer e2e-admin' http://127.0.0.1:18080/api/v1/overview | grep -q 'dead_letters'
+          # Wait for simulator to seed sites
+          for i in $(seq 1 40); do
+            OV=$(curl -fsS -H 'Authorization: Bearer e2e-admin' http://127.0.0.1:18080/api/v1/overview)
+            echo "$OV" | grep -Eq '"sites":[1-9]' && echo "$OV" | grep -Eq '"online_sites":[1-9]' && break
+            sleep .5
+          done
+          curl -fsS -H 'Authorization: Bearer e2e-admin' http://127.0.0.1:18080/api/v1/overview | grep -Eq '"sites":[1-9]'
+          curl -fsS -X POST http://127.0.0.1:18080/api/v1/auth/login -H 'Content-Type: application/json' \
+            -d '{"username":"admin","password":"e2e-admin"}' | grep -q '"token":"e2e-admin"'

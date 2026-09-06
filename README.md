@@ -74,7 +74,31 @@ export NODRA_ENROLLMENT_TOKEN='change-this-enrollment-token'
   --data ./data
 ```
 
-Open `http://127.0.0.1:8080` and choose **Connect**.
+Open `http://127.0.0.1:8080` and **Sign in** (`admin` / your admin token unless `NODRA_ADMIN_PASSWORD` is set).
+
+### Kubernetes customer demo (kind + simulation)
+
+One command builds the image, loads it into kind, installs Helm with control plane + edge agent + live fleet simulation, and port-forwards the console:
+
+```bash
+./scripts/demo-k8s.sh
+# or: make demo-k8s
+```
+
+Sign in: `admin` / `nodra-demo-admin`  
+Teardown: `./scripts/demo-k8s.sh --uninstall`
+
+Existing cluster (no kind):
+
+```bash
+./scripts/demo-k8s.sh --no-kind
+```
+
+Compose (control plane + agent + simulator):
+
+```bash
+docker compose up --build
+```
 
 ### Create an edge config
 
