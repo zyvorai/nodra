@@ -13,23 +13,22 @@
 #
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/ports.sh
+source "$ROOT/scripts/lib/ports.sh"
 PORT_FROM_CLI=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --port) PORT_FROM_CLI="$2"; shift 2 ;;
     --port=*) PORT_FROM_CLI="${1#*=}"; shift ;;
-    --help|-h) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help|-h) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+      echo "Port: --port → NODRA_PORT → .deploy-last"
+      exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
 done
 
-BASE="${NODRA_URL:-}"
-if [ -z "$BASE" ] && [ -f "$ROOT/.deploy-last" ]; then
-  # shellcheck disable=SC1091
-  source "$ROOT/.deploy-last"
-  [ -n "${HOST:-}" ] && [ -n "${PORT_FROM_CLI:-${PORT:-}}" ] && BASE="http://${HOST}:${PORT_FROM_CLI:-$PORT}"
-fi
-[ -n "$BASE" ] || { echo "Set NODRA_URL or run after deploy-remote.sh" >&2; exit 2; }
+BASE="$(nodra_resolve_base_url "$ROOT" "$PORT_FROM_CLI" || true)"
+[ -n "$BASE" ] || { echo "Set NODRA_URL or --port / NODRA_PORT after deploy-remote.sh" >&2; exit 2; }
 BASE="${BASE%/}"
 USER_NAME="${NODRA_ADMIN_USER:-admin}"
 PASS="${NODRA_ADMIN_PASSWORD:-${NODRA_ADMIN_TOKEN:-nodra-lab-admin}}"

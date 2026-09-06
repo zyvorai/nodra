@@ -76,7 +76,21 @@ export NODRA_ENROLLMENT_TOKEN='change-this-enrollment-token'
 
 Open `http://127.0.0.1:8080` and **Sign in** (`admin` / your admin token unless `NODRA_ADMIN_PASSWORD` is set).
 
-### Kubernetes customer demo (kind + simulation)
+### Configurable ports
+
+| Surface | How |
+|---|---|
+| Remote systemd | `--port N` / `NODRA_PORT` / `.deploy-last` (else random 18000–28999) |
+| Compose | `NODRA_PORT` (UI), `NODRA_AGENT_PORT`, `NODRA_MQTT_PORT` |
+| Helm | `service.port`, optional `service.type=NodePort` + `service.nodePort` |
+| kind demo PF | `./scripts/demo-k8s.sh --port 18080` |
+| Local smoke | `NODRA_SMOKE_SERVER_PORT`, `NODRA_SMOKE_AGENT_PORT` |
+
+```bash
+./scripts/deploy-remote.sh 212.8.248.187 sus --port 20059
+NODRA_PORT=20059 ./scripts/test-all.sh
+make test-all PORT=20059 HOST=212.8.248.187
+```
 
 One command builds the image, loads it into kind, installs Helm with control plane + edge agent + live fleet simulation, and port-forwards the console:
 

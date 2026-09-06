@@ -9,44 +9,32 @@
 #   ./scripts/smoke-remote.sh --port 18447
 #   ./scripts/smoke-remote.sh   # uses HOST:PORT from .deploy-last
 #
+# Port resolution: --port → NODRA_PORT → .deploy-last PORT
+#
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/ports.sh
+source "$ROOT/scripts/lib/ports.sh"
+
 PORT_FROM_CLI=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --port) [ $# -ge 2 ] || { echo "--port requires a value" >&2; exit 2; }; PORT_FROM_CLI="$2"; shift 2 ;;
     --port=*) PORT_FROM_CLI="${1#*=}"; shift ;;
     --help|-h)
-      sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
 done
 
-BASE="${NODRA_URL:-}"
-HOST_FROM_LAST=""
-PORT_FROM_LAST=""
-if [ -f "$ROOT/.deploy-last" ]; then
-  # shellcheck disable=SC1091
-  source "$ROOT/.deploy-last"
-  HOST_FROM_LAST="${HOST:-}"
-  PORT_FROM_LAST="${PORT:-}"
-fi
-
-if [ -z "$BASE" ]; then
-  PORT_RESOLVED="${PORT_FROM_CLI:-${NODRA_PORT:-$PORT_FROM_LAST}}"
-  HOST_RESOLVED="${NODRA_HOST:-$HOST_FROM_LAST}"
-  if [ -n "$HOST_RESOLVED" ] && [ -n "$PORT_RESOLVED" ]; then
-    BASE="http://${HOST_RESOLVED}:${PORT_RESOLVED}"
-  fi
-fi
+BASE="$(nodra_resolve_base_url "$ROOT" "$PORT_FROM_CLI" || true)"
 [ -n "$BASE" ] || {
   echo "Set NODRA_URL=http://host:port, or --port / NODRA_PORT with host from .deploy-last" >&2
   exit 2
 }
-BASE="${BASE%/}"
 TMP="${TMPDIR:-/tmp}"
 TOKEN="${NODRA_ADMIN_TOKEN:-nodra-lab-admin}"
 
@@ -70,7 +58,8 @@ code="$(curl -sS -o "${TMP}/nodra-dash.html" -w '%{http_code}' "${BASE}/")"
 grep -Fq 'Sign in to Nodra' "${TMP}/nodra-dash.html" || fail "login chapter missing"
 grep -q 'brand-zyvor' "${TMP}/nodra-dash.html" || fail "missing Zyvor brand mark"
 grep -qi 'Built by Zyvor' "${TMP}/nodra-dash.html" || fail "footer missing Built by Zyvor"
-pass "login chapter + Zyvor brand"
+grep -Fq 'data-tab="logs"' "${TMP}/nodra-dash.html" || fail "Logs tab missing"
+pass "login chapter + Zyvor brand + Logs tab"
 
 code="$(curl -sS -o "${TMP}/nodra-login.json" -w '%{http_code}' \
   -H 'Content-Type: application/json' \
@@ -88,6 +77,12 @@ code="$(curl -sS -o "${TMP}/nodra-overview.json" -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${BASE}/api/v1/overview")"
 [ "$code" = "200" ] || fail "overview HTTP ${code} (after login token)"
 pass "api/v1/overview (admin)"
+
+code="$(curl -sS -o "${TMP}/nodra-activity.json" -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" "${BASE}/api/v1/activity?limit=5")"
+[ "$code" = "200" ] || fail "activity HTTP ${code}"
+[[ "$(head -c1 "${TMP}/nodra-activity.json")" == "[" ]] || fail "activity not JSON array"
+pass "api/v1/activity"
 
 code="$(curl -sS -o "${TMP}/nodra-metrics.txt" -w '%{http_code}' "${BASE}/metrics")"
 [ "$code" = "200" ] || fail "metrics HTTP ${code}"

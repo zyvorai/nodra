@@ -4,7 +4,10 @@ image:
   pullPolicy: IfNotPresent
 
 replicaCount: 1 # v0.2 embedded WAL state is single-writer by design.
-service: {type: ClusterIP, port: 8080}
+service:
+  type: ClusterIP
+  port: 8080
+  nodePort: null # set e.g. 30059 when type=NodePort
 
 ingress:
   enabled: false

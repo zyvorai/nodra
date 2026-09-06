@@ -8,8 +8,9 @@ services:
       NODRA_ADMIN_PASSWORD: ${NODRA_ADMIN_PASSWORD:-nodra-demo-admin}
       NODRA_ENROLLMENT_TOKEN: ${NODRA_ENROLLMENT_TOKEN:-nodra-demo-enroll}
       NODRA_DATA_DIR: /var/lib/nodra
+      NODRA_LISTEN: 0.0.0.0:8080
     ports:
-      - "8080:8080"
+      - "${NODRA_PORT:-8080}:8080"
     volumes:
       - control-data:/var/lib/nodra
     healthcheck:
@@ -27,14 +28,15 @@ services:
     command:
       - |
         if [ ! -f /var/lib/nodra/nodrad.json ]; then
-          nodrad init --config /var/lib/nodra/nodrad.json --server http://control-plane:8080 --site compose-edge --enrollment-token "$${NODRA_ENROLLMENT_TOKEN}" --data /var/lib/nodra/agent --listen 0.0.0.0:9091 --local-token "$${NODRA_LOCAL_TOKEN}"
+          nodrad init --config /var/lib/nodra/nodrad.json --server http://control-plane:8080 --site compose-edge --enrollment-token "$${NODRA_ENROLLMENT_TOKEN}" --data /var/lib/nodra/agent --listen 0.0.0.0:9091 --mqtt-listen 0.0.0.0:1883 --local-token "$${NODRA_LOCAL_TOKEN}"
         fi
         exec nodrad --config /var/lib/nodra/nodrad.json
     environment:
       NODRA_ENROLLMENT_TOKEN: ${NODRA_ENROLLMENT_TOKEN:-nodra-demo-enroll}
       NODRA_LOCAL_TOKEN: ${NODRA_LOCAL_TOKEN:-nodra-demo-local}
     ports:
-      - "9091:9091"
+      - "${NODRA_AGENT_PORT:-9091}:9091"
+      - "${NODRA_MQTT_PORT:-1883}:1883"
     volumes:
       - agent-data:/var/lib/nodra
 

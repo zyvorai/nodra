@@ -9,4 +9,9 @@ spec:
   selector:
     {{- include "nodra.selectorLabels" . | nindent 4 }}
   ports:
-    - {name: http, port: {{ .Values.service.port }}, targetPort: http}
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.nodePort }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}
