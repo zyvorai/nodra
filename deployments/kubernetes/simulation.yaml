@@ -1,4 +1,4 @@
-# Optional in-cluster customer-demo simulator (requires nodra-sim in the image).
+# Optional in-cluster user-demo simulator (requires nodra-sim in the image).
 apiVersion: apps/v1
 kind: Deployment
 metadata:

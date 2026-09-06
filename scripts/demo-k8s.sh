@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # demo-k8s.sh — Deploy Nodra to Kubernetes (kind by default) with live simulation
 # ============================================================================
-# Customer-demo ready:
+# User-demo ready:
 #   control plane + edge agent + nodra-sim (3 sites, devices, routes, heartbeats)
 #
 # Usage:
@@ -114,7 +114,7 @@ echo "$OV" | grep -Eq '"sites":[1-9]' || { echo "overview missing sites: $OV" >&
 echo "$OV" | grep -Eq '"online_sites":[1-9]' || { echo "overview missing online sites: $OV" >&2; exit 1; }
 
 echo ""
-echo "  ✨ Nodra customer demo is ready"
+echo "  ✨ Nodra user demo is ready"
 echo "     ╭──────────────────────────────────────────────────╮"
 echo "     │ Dashboard  http://127.0.0.1:${LOCAL_PORT}/"
 echo "     │ Sign in    admin / nodra-demo-admin"

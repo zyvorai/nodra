@@ -84,7 +84,7 @@ export NODRA_ADMIN_PASSWORD='change-this-admin-token'
 
 Open `http://127.0.0.1:8080`, walk the login chapters, and **Sign in**. Binaries from `make build`: `nodra-server`, `nodrad`, `nodractl`, `nodra-sim`, `nodra-relay-bridge`.
 
-Customer demo path (kind/Helm/Compose/sim/console): see [docs/DEMO.md](docs/DEMO.md).
+User demo path (kind/Helm/Compose/sim/console): see [docs/DEMO.md](docs/DEMO.md).
 
 ### Configurable ports
 
@@ -265,7 +265,7 @@ Run the agent with `runner: "docker"`. It continuously compares desired state to
 
 ## Kubernetes
 
-### Customer demo (recommended)
+### User demo (recommended)
 
 ```bash
 ./scripts/demo-k8s.sh
@@ -416,7 +416,7 @@ GitHub CI additionally runs:
 | Doc | Topic |
 |---|---|
 | [https://zyvor.dev/docs/nodra](https://zyvor.dev/docs/nodra) | Product docs on zyvor.dev |
-| [docs/DEMO.md](docs/DEMO.md) | Customer demo, console, `nodra-sim`, lab scripts |
+| [docs/DEMO.md](docs/DEMO.md) | User demo, console, `nodra-sim`, lab scripts |
 | [docs/RELAY.md](docs/RELAY.md) | Nodra → Zyvor Relay Accept bridge |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components and durability |
 | [docs/API.md](docs/API.md) | HTTP API summary |

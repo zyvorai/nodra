@@ -1,4 +1,4 @@
-# Customer-demo defaults for kind / any cluster.
+# User-demo defaults for kind / any cluster.
 # Install:
 #   helm upgrade --install nodra charts/nodra -n nodra-demo --create-namespace -f charts/nodra/values-demo.yaml \
 #     --set image.repository=nodra --set image.tag=demo --set image.pullPolicy=Never

@@ -112,7 +112,7 @@ func TestClientDemoWalkthrough(t *testing.T) {
 	// ── Chapter 2: enroll edge site + heartbeat (fleet online) ──
 	code, body = c.req("POST", "/api/v1/enroll", map[string]any{
 		"name": "Demo Factory Floor", "enrollment_token": "demo-enroll",
-		"metadata": map[string]string{"region": "lab", "customer": "acme"},
+		"metadata": map[string]string{"region": "lab", "user": "acme"},
 	}, "")
 	if code != 201 {
 		t.Fatalf("enroll %d %s", code, body)

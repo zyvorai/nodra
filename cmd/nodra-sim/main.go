@@ -1,7 +1,7 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 // SPDX-License-Identifier: Apache-2.0
 
-// Command nodra-sim seeds an A–Z customer-demo fleet and continuously publishes
+// Command nodra-sim seeds an A–Z user-demo fleet and continuously publishes
 // heartbeats, telemetry, twin sync, and detailed activity logs for the console.
 package main
 
@@ -33,7 +33,7 @@ type siteSpec struct {
 	Story    string
 }
 
-// azSites is the full A–Z customer demo catalog (26 lettered simulations).
+// azSites is the full A–Z user demo catalog (26 lettered simulations).
 var azSites = []siteSpec{
 	{Letter: "A", Name: "Site A — Assembly", Region: "plant-a", Device: "Assembler PLC", Protocol: "mqtt", Topic: "factory/a/telemetry", Story: "Assemble line telemetry"},
 	{Letter: "B", Name: "Site B — Bottling", Region: "plant-b", Device: "Filler Contoller", Protocol: "mqtt", Topic: "factory/b/fill", Story: "Bottling fill levels"},
@@ -122,7 +122,7 @@ func main() {
 		if err := saveState(*statePath, st); err != nil {
 			slog.Warn("could not persist sim state", "error", err)
 		}
-		slog.Info("A-Z customer demo fleet seeded", "sites", len(st.Sites))
+		slog.Info("A-Z user demo fleet seeded", "sites", len(st.Sites))
 	} else {
 		slog.Info("resuming A-Z simulated fleet", "sites", len(st.Sites), "state", *statePath)
 		_ = c.logActivity([]map[string]any{{

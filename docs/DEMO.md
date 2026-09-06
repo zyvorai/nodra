@@ -1,6 +1,6 @@
-# Demo and customer walkthrough
+# Demo and user walkthrough
 
-Nodra ships a full customer-demo path: control plane console, A–Z fleet simulation, and verification scripts.
+Nodra ships a full user-demo path: control plane console, A–Z fleet simulation, and verification scripts.
 
 ## One-command Kubernetes demo
 
@@ -94,7 +94,7 @@ Default lab smoke credentials: `admin` / `nodra-lab-admin` (token `nodra-lab-adm
 
 | Script | Purpose |
 |---|---|
-| `scripts/demo-k8s.sh` | kind/Helm customer demo |
+| `scripts/demo-k8s.sh` | kind/Helm user demo |
 | `scripts/demo-client.sh` | API login + console client walkthrough |
 | `scripts/smoke.sh` | Local control plane + agent smoke |
 | `scripts/smoke-remote.sh` | Health, login, lists, activity against a live URL |
