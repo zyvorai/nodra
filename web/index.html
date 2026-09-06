@@ -42,7 +42,7 @@
       <span><span class="brand-zyvor">zyvor</span> Nodra</span>
     </a>
     <nav id="navTabs">
-      <button data-tab="overview" class="active">Overview</button><button data-tab="sites">Sites</button><button data-tab="devices">Devices</button><button data-tab="streams">Streams</button><button data-tab="apps">Apps</button><button data-tab="dlq">Dead letters</button>
+      <button data-tab="overview" class="active">Overview</button><button data-tab="sites">Sites</button><button data-tab="devices">Devices</button><button data-tab="streams">Streams</button><button data-tab="apps">Apps</button><button data-tab="dlq">Dead letters</button><button data-tab="logs">Logs</button>
     </nav>
     <button id="signOutBtn" class="ghost" type="button">Sign out</button>
   </header>
@@ -64,14 +64,8 @@
 
       <div class="feature-grid">
         <article class="feature-card dark terminal-card">
-          <div class="terminal-top"><div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div><span>Terminal — nodrad logs</span><span></span></div>
-          <div class="terminal-body">
-            <div><span class="prompt">$</span> nodrad status --site factory-floor</div>
-            <div class="muted">wan: down · queue: durable · mqtt: local</div>
-            <div><span class="prompt">$</span> The WAN can disappear. Your site doesn't.</div>
-            <div class="edge-flow" style="margin-top:16px"><span>PLC</span><i>→</i><span>MQTT</span><i>→</i><span class="orange">nodrad</span><i>→</i><span>Local app</span></div>
-            <div class="offline" style="position:static;margin-top:18px;left:auto;bottom:auto"><span class="pulse"></span><div><b>Store · route · reconcile locally</b><small>Cloud sync resumes when connectivity returns.</small></div></div>
-          </div>
+          <div class="terminal-top"><div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div><span>Terminal — live simulation</span><span class="terminal-live" aria-hidden="true"></span></div>
+          <pre id="liveLogPreview" class="terminal-body terminal-scroll" aria-live="polite"><span class="muted">Waiting for A–Z simulation activity…</span></pre>
         </article>
         <article class="feature-card topology-card"><span class="feature-tag">ONE FABRIC</span><h2>Every edge path.<br>Visible.</h2><div class="topology"><div class="node source">Sensors<small>MQTT / HTTP</small></div><div class="beam"></div><div class="node core">Nodra<small>local runtime</small></div><div class="branches"><span></span><span></span><span></span></div><div class="targets"><div>MES</div><div>AI</div><div>Cloud</div></div></div></article>
       </div>
@@ -82,6 +76,24 @@
     <section class="page" data-page="streams" hidden><div class="page-head"><div><div class="eyebrow">DATA PLANE</div><h2>Streams</h2><p>MQTT-style topic filters to durable HTTP destinations, plus local agent routes that continue offline.</p></div><button id="seedRouteBtn" class="ghost">Create demo route</button></div><div id="routesTable" class="table-card"></div></section>
     <section class="page" data-page="apps" hidden><div class="page-head"><div><div class="eyebrow">EDGE APPS</div><h2>Applications</h2><p>Desired-state container reconciliation at remote sites, with health flowing back to the control plane.</p></div></div><div id="deploymentsTable" class="table-card"></div><div class="section-gap"></div><div class="page-head compact"><div><div class="eyebrow">ATTENTION</div><h3>Open alerts</h3></div></div><div class="terminal-card"><div class="terminal-top"><div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div><span>Terminal — alerts</span><span></span></div><div id="alertsTable" class="table-card terminal"></div></div></section>
     <section class="page" data-page="dlq" hidden><div class="page-head"><div><div class="eyebrow">RECOVERY</div><h2>Dead letters</h2><p>Failed deliveries are retained with their payload and retry history. Replay them when the destination is healthy.</p></div></div><div class="terminal-card"><div class="terminal-top"><div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div><span>Terminal — dead letters</span><span></span></div><div id="dlqTable" class="table-card terminal"></div></div></section>
+    <section class="page" data-page="logs" hidden>
+      <div class="page-head">
+        <div>
+          <div class="eyebrow">A–Z SIMULATION</div>
+          <h2>Logs</h2>
+          <p>Detailed live feed of what Nodra and the A–Z simulator are doing — enrollments, heartbeats, telemetry, twins, routes, and dead letters.</p>
+        </div>
+        <button id="refreshLogsBtn" class="ghost" type="button">Refresh logs</button>
+      </div>
+      <div class="terminal-card log-terminal">
+        <div class="terminal-top">
+          <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+          <span>Terminal — nodra activity · A→Z</span>
+          <span class="terminal-live" aria-hidden="true"></span>
+        </div>
+        <pre id="activityLog" class="terminal-body terminal-scroll tall" aria-live="polite"></pre>
+      </div>
+    </section>
   </main>
 
   <footer class="shell footer"><span>Nodra v0.2 · Apache-2.0 · Built by Zyvor</span><span>Run apps. Move data. Control the edge.</span></footer>

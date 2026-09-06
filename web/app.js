@@ -85,12 +85,40 @@ function renderDeployments(items){const h=$('#deploymentsTable');h.replaceChildr
 function renderAlerts(items){const h=$('#alertsTable');h.replaceChildren();items=(items||[]).filter(x=>!x.resolved).slice().reverse().slice(0,20);if(!items.length)return empty(h,'No open alerts.');items.forEach(v=>h.append(row([[v.type,v.message],null,v.site_id||'control plane',ago(v.created_at)],v.severity)))}
 function renderDLQ(items){const h=$('#dlqTable');h.replaceChildren();if(!items?.length)return empty(h,'No failed deliveries. That is exactly what you want.');items.forEach(v=>{const d=v.delivery||{};h.append(row([[d.topic,`${d.event_id} · ${v.reason||d.last_error||'failed'}`],null,`${d.attempts||0}/${d.max_attempts||0} attempts`,ago(v.failed_at)],'failed',{label:'Replay',click:async()=>{try{await api(`/api/v1/deadletters/${encodeURIComponent(d.id)}/replay`,{method:'POST',body:'{}'});toast('Delivery replayed');refresh()}catch{toast('Replay failed')}}}))})}
 
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]))}
+function fmtTS(t){try{const d=new Date(t);return d.toISOString().replace('T',' ').replace('Z','Z')}catch{return String(t||'')}}
+function renderActivity(items,host,limit){
+  const h=host||$('#activityLog');
+  if(!h)return;
+  items=asList(items).slice().reverse();
+  if(limit)items=items.slice(0,limit);
+  if(!items.length){h.innerHTML='<span class="muted">No activity yet. Start nodra-sim or wait for edge heartbeats.</span>';return}
+  h.innerHTML=items.map(e=>{
+    const lvl=esc(e.level||'info');
+    const chap=e.chapter?`<span class="chap">[${esc(e.chapter)}]</span> `:'';
+    const src=e.source?`<span class="detail">${esc(e.source)}</span> `:'';
+    const act=e.action?`<span class="detail">${esc(e.action)}</span> · `:'';
+    let detail='';
+    if(e.detail&&typeof e.detail==='object'){
+      try{detail=` <span class="detail">${esc(JSON.stringify(e.detail))}</span>`}catch{}
+    }
+    return `<span class="log-line"><span class="ts">${esc(fmtTS(e.time))}</span> <span class="lvl-${lvl}">${lvl.toUpperCase().padEnd(7)}</span> ${chap}${src}${act}<span class="msg">${esc(e.message||'')}</span>${detail}</span>`
+  }).join('\n');
+  h.scrollTop=h.scrollHeight
+}
+
 async function refresh(){
   if(!token)return;
   try{
-    const [o,s,d,t,r,p,a,q]=await Promise.all([api('/api/v1/overview'),api('/api/v1/sites'),api('/api/v1/devices'),api('/api/v1/twins'),api('/api/v1/routes'),api('/api/v1/deployments'),api('/api/v1/alerts'),api('/api/v1/deadletters')]);
+    const [o,s,d,t,r,p,a,q,act]=await Promise.all([
+      api('/api/v1/overview'),api('/api/v1/sites'),api('/api/v1/devices'),api('/api/v1/twins'),
+      api('/api/v1/routes'),api('/api/v1/deployments'),api('/api/v1/alerts'),api('/api/v1/deadletters'),
+      api('/api/v1/activity?limit=300')
+    ]);
     $('#sitesCount').textContent=o.sites;$('#onlineCount').textContent=o.online_sites;$('#queueCount').textContent=o.pending_deliveries;$('#dlqCount').textContent=o.dead_letters;$('#queueBytes').textContent=`${bytes(o.delivery_queue_bytes)} durable WAL`;$('#siteHint').textContent=`${o.devices} devices · ${o.twins} twins`;
     renderSites(asList(s));renderDevices(asList(d));renderTwins(asList(t));renderRoutes(asList(r));renderDeployments(asList(p));renderAlerts(asList(a));renderDLQ(asList(q));
+    renderActivity(act,$('#activityLog'));
+    renderActivity(act,$('#liveLogPreview'),14);
     $('#fleetState').textContent='Connected';$('#fleetState').classList.add('ok')
   }catch(e){
     $('#fleetState').textContent='Disconnected';$('#fleetState').classList.remove('ok');
@@ -102,11 +130,12 @@ function page(name){$$('[data-page]').forEach(p=>p.hidden=p.dataset.page!==name)
 $$('#navTabs button').forEach(b=>b.onclick=()=>page(b.dataset.tab));
 $('#signOutBtn').onclick=()=>signOut(true);
 $('#refreshBtn').onclick=refresh;
+$('#refreshLogsBtn').onclick=refresh;
 $('#seedRouteBtn').onclick=async()=>{try{await api('/api/v1/routes',{method:'POST',body:JSON.stringify({name:'Telemetry webhook',topic:'factory/+/telemetry',target_url:'http://example.invalid/events',method:'POST',enabled:false,retry_max:5,timeout_seconds:5})});toast('Demo route created');refresh()}catch(e){toast(e.message||'Could not create route')}};
 
 (async()=>{
   const ok=await ensureSession();
   const initial=location.hash.slice(1);
-  if(['overview','sites','devices','streams','apps','dlq'].includes(initial))page(initial);
-  if(ok){await refresh();setInterval(refresh,15000)}
+  if(['overview','sites','devices','streams','apps','dlq','logs'].includes(initial))page(initial);
+  if(ok){await refresh();setInterval(refresh,5000)}
 })();

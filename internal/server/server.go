@@ -58,6 +58,7 @@ type Server struct {
 	deliveries *queue.Queue[model.Delivery]
 	dlq        *queue.Queue[model.DeadLetter]
 	metrics    *telemetry.Metrics
+	activity   *activityLog
 	client     *http.Client
 	http       *http.Server
 	wg         sync.WaitGroup
@@ -109,7 +110,7 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, store: st, deliveries: q, dlq: dlq, metrics: &telemetry.Metrics{}, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}}
+	s := &Server{cfg: cfg, store: st, deliveries: q, dlq: dlq, metrics: &telemetry.Metrics{}, activity: &activityLog{}, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}}
 	if cfg.PKIEnabled {
 		dir := cfg.PKIDir
 		if dir == "" {
@@ -203,6 +204,8 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET /api/v1/deadletters", s.admin(http.HandlerFunc(s.deadletters)))
 	mux.Handle("POST /api/v1/deadletters/{id}/replay", s.admin(http.HandlerFunc(s.deadletterReplay)))
 	mux.Handle("DELETE /api/v1/deadletters/{id}", s.admin(http.HandlerFunc(s.deadletterDelete)))
+	mux.Handle("GET /api/v1/activity", s.admin(http.HandlerFunc(s.activityList)))
+	mux.Handle("POST /api/v1/activity", s.admin(http.HandlerFunc(s.activityPost)))
 	mux.HandleFunc("GET /assets/{name}", s.asset)
 	mux.HandleFunc("GET /", s.index)
 	return s.securityHeaders(s.requestLog(mux))
@@ -360,6 +363,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	publicSite := site
 	publicSite.TokenHash = ""
 	out["site"] = publicSite
+	s.note("ok", "control-plane", "", site.ID, site.Name, "enroll", "site enrolled and agent token issued", map[string]any{"metadata": in.Metadata})
 	writeJSON(w, 201, out)
 }
 func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
@@ -440,6 +444,12 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.metrics.Events.Add(1)
+	// Keep event auto-logs light — detailed chapter lines come from nodra-sim.
+	if matched > 0 {
+		s.note("info", "agent", "", in.SiteID, "", "event", "telemetry accepted on "+in.Topic, map[string]any{
+			"event_id": ev.ID, "matched_routes": matched,
+		})
+	}
 	writeJSON(w, 202, map[string]any{"accepted": true, "event_id": ev.ID, "matched_routes": matched, "event_time": eventTime, "ingested_at": now})
 }
 func mergeHeaders(a, b map[string]string) map[string]string {
@@ -484,6 +494,7 @@ func (s *Server) registerDevice(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.store.Twin(in.ID); !ok {
 		_ = s.store.SetTwin(model.Twin{DeviceID: in.ID, SiteID: in.SiteID, UpdatedAt: time.Now().UTC()})
 	}
+	s.note("ok", "agent", "", in.SiteID, "", "device.register", "device registered: "+in.Name, map[string]any{"device_id": in.ID, "protocol": in.Protocol})
 	writeJSON(w, 201, in)
 }
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
@@ -683,7 +694,9 @@ func (s *Server) deploymentCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 201, in)
 }
-func (s *Server) alerts(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, asJSONList(s.store.Alerts())) }
+func (s *Server) alerts(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, asJSONList(s.store.Alerts()))
+}
 func (s *Server) alertResolve(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.ResolveAlert(r.PathValue("id")); err != nil {
 		errorJSON(w, 404, "alert not found")
@@ -696,7 +709,7 @@ func (s *Server) eventsList(w http.ResponseWriter, r *http.Request) {
 	if mins <= 0 {
 		mins = 60
 	}
-	writeJSON(w, 200, s.store.EventsSince(time.Now().Add(-time.Duration(mins)*time.Minute)))
+	writeJSON(w, 200, asJSONList(s.store.EventsSince(time.Now().Add(-time.Duration(mins)*time.Minute))))
 }
 func (s *Server) agentDeployments(w http.ResponseWriter, r *http.Request) {
 	siteID := r.URL.Query().Get("site_id")
@@ -846,6 +859,9 @@ func (s *Server) processOne(ctx context.Context, d model.Delivery) {
 			return
 		}
 		_ = s.store.AddAlert(model.Alert{ID: id("alert"), SiteID: d.SiteID, Severity: "high", Type: "delivery_failed", Message: fmt.Sprintf("route %s moved to dead letter queue: %s", d.RouteID, err), CreatedAt: time.Now().UTC()})
+		s.note("error", "control-plane", "", d.SiteID, "", "delivery.dlq", "delivery exhausted retries → dead letter", map[string]any{
+			"route_id": d.RouteID, "event_id": d.EventID, "topic": d.Topic, "reason": err.Error(), "attempts": d.Attempts,
+		})
 		return
 	}
 	delay := time.Duration(1<<min(d.Attempts, 6)) * time.Second

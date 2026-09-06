@@ -46,8 +46,8 @@ services:
     entrypoint: ["nodra-sim"]
     command:
       - --server=http://control-plane:8080
-      - --interval=10s
-      - --sites=3
+      - --interval=8s
+      - --sites=26
       - --state=/tmp/nodra-sim-state.json
     environment:
       NODRA_ADMIN_TOKEN: ${NODRA_ADMIN_TOKEN:-nodra-demo-admin}

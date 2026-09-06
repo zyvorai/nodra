@@ -40,8 +40,8 @@ agent:
 simulation:
   enabled: true
   serverURL: "http://nodra:8080"
-  interval: 10s
-  sites: 3
+  interval: 8s
+  sites: 26
   resources:
-    requests: {cpu: 25m, memory: 32Mi}
-    limits: {cpu: 200m, memory: 96Mi}
+    requests: {cpu: 25m, memory: 48Mi}
+    limits: {cpu: 250m, memory: 128Mi}

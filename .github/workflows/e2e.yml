@@ -42,5 +42,6 @@ jobs:
             sleep .5
           done
           curl -fsS -H 'Authorization: Bearer e2e-admin' http://127.0.0.1:18080/api/v1/overview | grep -Eq '"sites":[1-9]'
+          curl -fsS -H 'Authorization: Bearer e2e-admin' http://127.0.0.1:18080/api/v1/activity?limit=50 | grep -Eq 'chapter|seed|Site'
           curl -fsS -X POST http://127.0.0.1:18080/api/v1/auth/login -H 'Content-Type: application/json' \
             -d '{"username":"admin","password":"e2e-admin"}' | grep -q '"token":"e2e-admin"'

@@ -47,3 +47,18 @@ body.login-mode{background:radial-gradient(circle at 50% -10%,#fff 0,#f5f5f7 45%
 .feature-card.terminal-card .terminal-body .offline small{color:#8e8e93}
 .feature-card.terminal-card .edge-flow{border-color:#2c2c2e;background:#0a0a0a}
 
+.terminal-live{justify-self:end;width:8px;height:8px;border-radius:50%;background:#30d158;box-shadow:0 0 0 0 rgba(48,209,88,.55);animation:livepulse 1.6s ease-out infinite}
+@keyframes livepulse{0%{box-shadow:0 0 0 0 rgba(48,209,88,.45)}70%{box-shadow:0 0 0 10px rgba(48,209,88,0)}100%{box-shadow:0 0 0 0 rgba(48,209,88,0)}}
+.terminal-scroll{display:block;margin:0;white-space:pre-wrap;word-break:break-word;max-height:280px;overflow:auto}
+.terminal-scroll.tall{max-height:min(70vh,640px);min-height:360px;padding:20px 22px;font-size:12.5px;line-height:1.65}
+.log-line{display:block}
+.log-line .ts{color:#636366}
+.log-line .chap{color:#ff9f0a;font-weight:600}
+.log-line .lvl-ok,.log-line .lvl-chapter{color:#30d158}
+.log-line .lvl-info{color:#64d2ff}
+.log-line .lvl-warn{color:#ffd60a}
+.log-line .lvl-error{color:#ff453a}
+.log-line .msg{color:#f5f5f7}
+.log-line .detail{color:#8e8e93}
+.log-terminal{margin-top:4px}
+

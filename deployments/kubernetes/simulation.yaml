@@ -20,7 +20,7 @@ spec:
           args:
             - --server=http://nodra-server:8080
             - --interval=10s
-            - --sites=3
+            - --sites=26
             - --state=/tmp/nodra-sim-state.json
           env:
             - name: NODRA_ADMIN_TOKEN
