@@ -72,6 +72,8 @@ Usage:
   nodractl routes delete ROUTE_ID
   nodractl deployments list
   nodractl deployments create --site SITE_ID --name NAME --version VERSION --image IMAGE [--desired running|stopped]
+  nodractl deployments patch DEP_ID [--version V] [--image IMG] [--desired running|stopped]
+  nodractl deployments delete DEP_ID
   nodractl alerts list | alerts resolve ALERT_ID
   nodractl dlq list | dlq replay DELIVERY_ID | dlq delete DELIVERY_ID
   nodractl publish --agent URL --topic TOPIC --data JSON [--token LOCAL_TOKEN]
@@ -142,6 +144,29 @@ func deployments(c client, args []string) error {
 			return err
 		}
 		return c.print("POST", "/api/v1/deployments", map[string]any{"site_id": *site, "name": *name, "version": *ver, "image": *image, "desired_state": *desired})
+	}
+	if args[0] == "patch" && len(args) >= 2 {
+		fs := flag.NewFlagSet("deployments patch", flag.ContinueOnError)
+		ver := fs.String("version", "", "app version")
+		image := fs.String("image", "", "container image")
+		desired := fs.String("desired", "", "running|stopped")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		body := map[string]any{}
+		if *ver != "" {
+			body["version"] = *ver
+		}
+		if *image != "" {
+			body["image"] = *image
+		}
+		if *desired != "" {
+			body["desired_state"] = *desired
+		}
+		return c.print("PATCH", "/api/v1/deployments/"+args[1], body)
+	}
+	if args[0] == "delete" && len(args) == 2 {
+		return c.print("DELETE", "/api/v1/deployments/"+args[1], nil)
 	}
 	return fmt.Errorf("unknown deployments command")
 }

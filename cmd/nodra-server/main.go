@@ -18,7 +18,12 @@ func main() {
 	admin := flag.String("admin-token", os.Getenv("NODRA_ADMIN_TOKEN"), "admin bearer token")
 	adminUser := flag.String("admin-user", env("NODRA_ADMIN_USER", "admin"), "console login username")
 	adminPass := flag.String("admin-password", os.Getenv("NODRA_ADMIN_PASSWORD"), "console login password (defaults to admin-token)")
+	viewer := flag.String("viewer-token", os.Getenv("NODRA_VIEWER_TOKEN"), "optional viewer bearer token (read-only)")
+	viewerUser := flag.String("viewer-user", env("NODRA_VIEWER_USER", "viewer"), "viewer console username")
+	viewerPass := flag.String("viewer-password", os.Getenv("NODRA_VIEWER_PASSWORD"), "viewer password (defaults to viewer-token)")
 	enroll := flag.String("enrollment-token", os.Getenv("NODRA_ENROLLMENT_TOKEN"), "site enrollment token")
+	storeDriver := flag.String("store", env("NODRA_STORE", "file"), "fleet store: file|postgres")
+	databaseURL := flag.String("database-url", os.Getenv("NODRA_DATABASE_URL"), "postgres DSN when --store=postgres")
 	public := flag.Bool("public-read", false, "allow unauthenticated management GET requests")
 	workers := flag.Int("workers", envInt("NODRA_DELIVERY_WORKERS", 8), "delivery worker concurrency")
 	pkiEnabled := flag.Bool("pki", envBool("NODRA_PKI_ENABLED", false), "enable CSR signing for site identities")
@@ -32,8 +37,10 @@ func main() {
 	srv, err := server.New(server.Config{
 		Listen: *listen, DataDir: *data,
 		AdminToken: *admin, AdminUser: *adminUser, AdminPassword: *adminPass,
+		ViewerToken: *viewer, ViewerUser: *viewerUser, ViewerPassword: *viewerPass,
 		EnrollmentToken: *enroll, PublicRead: *public, WorkerConcurrency: *workers,
 		PKIEnabled: *pkiEnabled, TLSCertFile: *tlsCert, TLSKeyFile: *tlsKey, ClientCAFile: *clientCA,
+		StoreDriver: *storeDriver, DatabaseURL: *databaseURL,
 	})
 	if err != nil {
 		slog.Error("init failed", "error", err)

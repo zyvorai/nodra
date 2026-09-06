@@ -7,3 +7,5 @@ After starting a control plane and `nodrad`, publish machine telemetry through t
 ```
 
 The script emits temperature, vibration, and RPM on `factory/press-07/telemetry`.
+
+For a full A–Z fleet demo without physical PLCs, use `nodra-sim` or Compose/`demo-k8s` — see [docs/DEMO.md](../../docs/DEMO.md).

@@ -47,3 +47,5 @@ body.login-locked .app-shell{visibility:hidden!important;pointer-events:none!imp
 .log-line .detail{color:#8e8e93}
 .log-terminal{margin-top:4px}
 
+
+.inline-form{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 18px;align-items:center}.inline-form input,.inline-form select{flex:1 1 160px;min-width:140px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit;background:#fff}.row-actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}.action.danger{color:#b42318;border-color:rgba(180,35,24,.25)}.nav .chip{justify-self:end;margin-left:10px}

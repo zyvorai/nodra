@@ -2,24 +2,26 @@
 
 ## Components
 
-`nodra-server` is the management/control plane. `nodrad` is the edge runtime. `nodractl` is the operator CLI.
+`nodra-server` is the management/control plane. `nodrad` is the edge runtime. `nodractl` is the operator CLI. `nodra-sim` is the optional A–Z fleet simulator for demos.
 
 ```text
                      nodra-server
-         fleet · routes · twins · apps · DLQ
+    fleet · routes · twins · apps · DLQ · activity · console
                          │
                      HTTPS/mTLS
                          │
         ┌────────────────┼────────────────┐
         │                │                │
-      nodrad           nodrad           nodrad
+      nodrad           nodrad           nodra-sim (demo)
         │                │                │
-   MQTT / HTTP      MQTT / HTTP      MQTT / HTTP
+   MQTT / HTTP      MQTT / HTTP      enroll + heartbeat + events
         │
   local routes + local apps
         │
   durable edge WAL -> cloud when available
 ```
+
+The embedded web console is served from the control plane binary (`web/`). Login is a chaptered gate; after auth the shell tabs map to management APIs plus the activity ring for **Logs**.
 
 ## Durability
 
@@ -31,9 +33,15 @@ Queue limits are enforced before a put. `reject` is the default because silent d
 
 ### Control plane state
 
-Fleet metadata uses `state.wal` plus periodic `state.snapshot.json`. Heartbeats therefore append small WAL records instead of rewriting the complete state document.
+Fleet metadata uses `state.wal` plus periodic `state.snapshot.json` by default (`NODRA_STORE=file`). Optional `NODRA_STORE=postgres` persists the same fleet entities in PostgreSQL via `store.Backend` while delivery/DLQ queues remain local WAL on the single writer.
 
-Cloud delivery and DLQ also use durable WAL queues.
+Heartbeats therefore append small records instead of rewriting the complete state document.
+
+Cloud delivery and DLQ also use durable WAL queues (local to the control-plane writer).
+
+### Activity log
+
+Console activity is an in-memory ring (cap 2000). It is intentionally non-durable so demo/ops noise does not inflate the WAL. Sources include control-plane notes and `nodra-sim` chapter posts via `POST /api/v1/activity`.
 
 ## Event ACK invariant
 
@@ -67,6 +75,14 @@ Twins have independent `desired_version` and `reported_version`. The server owns
 
 With `runner=docker`, each reconciliation loop checks actual container state against the desired deployment. `running` creates/restarts a missing container; `stopped` removes it. The default distribution never mounts the Docker socket automatically.
 
+## Simulation boundary
+
+`nodra-sim` exercises the public management and agent APIs only. It is not in the production data path. Demo Helm charts and Compose optionally run it as a sidecar/workload alongside the control plane.
+
+## Connectors
+
+`pkg/connector` provides a registry (`Register` / `New`). `nodrad` loads `connectors[]` from config and starts each factory. The Modbus TCP poller (`connectors/modbus`) publishes into the same ingest path as MQTT with `x-nodra-ingress: modbus`.
+
 ## Scale boundary
 
-v0.2 supports many edge agents but one control-plane writer. Embedded WAL storage avoids v0.1's rewrite bottleneck, but it is not a distributed database. A future HA mode will use an external transactional store and multiple stateless control-plane replicas.
+v0.2 supports many edge agents but one control-plane writer for delivery/DLQ. Postgres fleet state survives restarts and can sit on a managed HA database, but delivery workers are not yet multi-replica. A future HA mode will externalize queues as well.

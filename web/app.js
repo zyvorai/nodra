@@ -1,7 +1,9 @@
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 let token=sessionStorage.getItem('nodra_token')||'';
+let role=sessionStorage.getItem('nodra_role')||'admin';
 const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)};
 const asList=v=>Array.isArray(v)?v:(v==null?[]:[v]);
+const isAdmin=()=>role!=='viewer';
 
 async function api(path,opt={}){
   const h={...(opt.headers||{})};
@@ -28,12 +30,20 @@ function showConsole(){
   $('#appShell').hidden=false;
   document.body.classList.remove('login-locked');
   document.title='Nodra — Open edge runtime';
+  applyRoleUI();
 }
 function signOut(toastMsg=true){
   token='';
+  role='admin';
   sessionStorage.removeItem('nodra_token');
+  sessionStorage.removeItem('nodra_role');
   showLogin();
   if(toastMsg)toast('Signed out');
+}
+function applyRoleUI(){
+  $$('[data-admin-only]').forEach(el=>{el.hidden=!isAdmin()});
+  const chip=$('#roleChip');
+  if(chip){chip.textContent=isAdmin()?'Admin':'Viewer';chip.classList.toggle('ok',isAdmin())}
 }
 
 function loginDest(){
@@ -49,10 +59,8 @@ function scrollLoginChapter(id){
   const el=document.getElementById(id);
   const sc=document.querySelector('.login-store-scroll');
   if(!el||!sc)return;
-  // offsetTop is wrong under the fixed auth gate — measure relative to the scrollport.
   const top=Math.max(0, el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop);
   sc.scrollTo({top, behavior:'auto'});
-  // Fallback if the scrollport still didn't move (layout race).
   if(Math.abs(sc.scrollTop-top)>8){
     try{el.scrollIntoView({block:'start', behavior:'auto'})}catch{}
   }
@@ -93,6 +101,8 @@ async function ensureSession(){
   try{
     const me=await api('/api/v1/auth/me');
     if(!me.authenticated){signOut(false);return false}
+    role=(me.user&&me.user.role)||'admin';
+    sessionStorage.setItem('nodra_role',role);
     showConsole();
     return true
   }catch{
@@ -117,11 +127,13 @@ $('#loginForm').addEventListener('submit',async e=>{
     if(!res.ok)throw new Error(data.error||'Sign in failed');
     token=data.token||'';
     if(!token)throw new Error('No session token returned');
+    role=(data.user&&data.user.role)||'admin';
     sessionStorage.setItem('nodra_token',token);
+    sessionStorage.setItem('nodra_role',role);
     $('#loginPass').value='';
     showConsole();
     await refresh();
-    toast('Welcome back');
+    toast(role==='viewer'?'Signed in as viewer':'Welcome back');
   }catch(ex){
     err.textContent=ex.message||'Sign in failed';
     err.hidden=false;
@@ -136,14 +148,115 @@ const ago=s=>{if(!s)return'never';const n=(Date.now()-new Date(s).getTime())/100
 const bytes=n=>{if(!Number.isFinite(Number(n)))return'—';n=Number(n);for(const u of ['B','KB','MB','GB','TB']){if(n<1024||u==='TB')return`${n<10&&u!=='B'?n.toFixed(1):Math.round(n)} ${u}`;n/=1024}};
 function E(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=String(text);return e}
 function empty(host,msg='Nothing here yet.'){host.replaceChildren(E('div','empty',msg))}
-function row(cols,status,action){const r=E('div','row');const first=E('div','cell-main');first.append(E('b','',cols[0]?.[0]||'—'),E('small','',cols[0]?.[1]||''));r.append(first);if(status)r.append(E('span',`status ${String(status).toLowerCase()}`,status));else r.append(E('small','',cols[1]||'—'));for(let i=2;i<4;i++)r.append(E('small','',cols[i]||'—'));if(action){const b=E('button','action',action.label);b.onclick=action.click;r.lastChild.replaceWith(b)}return r}
-function renderSites(items){const h=$('#sitesTable');h.replaceChildren();if(!items?.length)return empty(h);items.forEach(v=>{const q=v.metrics?.queue_depth??0, qb=bytes(v.metrics?.queue_bytes||0);h.append(row([[v.name,v.id],null,v.version||'—',`${ago(v.last_seen)} · ${q} queued / ${qb}`],v.status))})}
-function renderDevices(items){const h=$('#devicesTable');h.replaceChildren();if(!items?.length)return empty(h,'No devices registered.');items.forEach(v=>h.append(row([[v.name,v.id],null,v.protocol||'—',ago(v.last_seen)],v.status)))}
-function renderTwins(items){const h=$('#twinsTable');h.replaceChildren();if(!items?.length)return empty(h,'No device twins yet.');items.forEach(v=>h.append(row([[v.device_id,`desired v${v.desired_version||0} · reported v${v.reported_version||0}`],null,Object.keys(v.desired||{}).length+' desired keys',ago(v.updated_at)],v.desired_version===v.reported_version?'healthy':'syncing')))}
-function renderRoutes(items){const h=$('#routesTable');h.replaceChildren();if(!items?.length)return empty(h,'Create a route to forward edge topics.');items.forEach(v=>{let host='invalid';try{host=new URL(v.target_url).host}catch{};h.append(row([[v.name,v.topic],null,v.method||'POST',host],v.enabled?'active':'paused'))})}
-function renderDeployments(items){const h=$('#deploymentsTable');h.replaceChildren();if(!items?.length)return empty(h,'No edge applications deployed.');items.forEach(v=>h.append(row([[v.name,v.image],null,`${v.version} · desired ${v.desired_state||'running'}`,v.site_id],v.status||v.actual_state)))}
-function renderAlerts(items){const h=$('#alertsTable');h.replaceChildren();items=(items||[]).filter(x=>!x.resolved).slice().reverse().slice(0,20);if(!items.length)return empty(h,'No open alerts.');items.forEach(v=>h.append(row([[v.type,v.message],null,v.site_id||'control plane',ago(v.created_at)],v.severity)))}
-function renderDLQ(items){const h=$('#dlqTable');h.replaceChildren();if(!items?.length)return empty(h,'No failed deliveries. That is exactly what you want.');items.forEach(v=>{const d=v.delivery||{};h.append(row([[d.topic,`${d.event_id} · ${v.reason||d.last_error||'failed'}`],null,`${d.attempts||0}/${d.max_attempts||0} attempts`,ago(v.failed_at)],'failed',{label:'Replay',click:async()=>{try{await api(`/api/v1/deadletters/${encodeURIComponent(d.id)}/replay`,{method:'POST',body:'{}'});toast('Delivery replayed');refresh()}catch{toast('Replay failed')}}}))})}
+function actionCell(actions){
+  const wrap=E('div','row-actions');
+  (actions||[]).forEach(a=>{
+    if(!a||(a.admin&&!isAdmin()))return;
+    const b=E('button','action',a.label);
+    if(a.danger)b.classList.add('danger');
+    b.onclick=a.click;
+    wrap.append(b);
+  });
+  return wrap;
+}
+function row(cols,status,actions){
+  const r=E('div','row');
+  const first=E('div','cell-main');
+  first.append(E('b','',cols[0]?.[0]||'—'),E('small','',cols[0]?.[1]||''));
+  r.append(first);
+  if(status)r.append(E('span',`status ${String(status).toLowerCase()}`,status));
+  else r.append(E('small','',cols[1]||'—'));
+  for(let i=2;i<4;i++)r.append(E('small','',cols[i]||'—'));
+  if(actions&&actions.length)r.append(actionCell(actions));
+  return r;
+}
+
+function renderSites(items){
+  const h=$('#sitesTable');h.replaceChildren();
+  if(!items?.length)return empty(h);
+  items.forEach(v=>{
+    const q=v.metrics?.queue_depth??0, qb=bytes(v.metrics?.queue_bytes||0);
+    const actions=[];
+    if(!v.revoked)actions.push({label:'Revoke',admin:true,danger:true,click:async()=>{
+      if(!confirm(`Revoke site ${v.name||v.id}?`))return;
+      try{await api(`/api/v1/sites/${encodeURIComponent(v.id)}/revoke`,{method:'POST',body:'{}'});toast('Site revoked');refresh()}catch(e){toast(e.message||'Revoke failed')}
+    }});
+    h.append(row([[v.name,v.id],null,v.version||'—',`${ago(v.last_seen)} · ${q} queued / ${qb}`],v.status,actions));
+  });
+}
+function renderDevices(items){
+  const h=$('#devicesTable');h.replaceChildren();
+  if(!items?.length)return empty(h,'No devices registered.');
+  items.forEach(v=>h.append(row([[v.name,v.id],null,v.protocol||'—',ago(v.last_seen)],v.status)));
+}
+function renderTwins(items){
+  const h=$('#twinsTable');h.replaceChildren();
+  if(!items?.length)return empty(h,'No device twins yet.');
+  items.forEach(v=>{
+    const actions=[{label:'Set desired',admin:true,click:async()=>{
+      const raw=prompt('Desired twin JSON',JSON.stringify(v.desired||{mode:'auto'},null,0));
+      if(raw==null)return;
+      let desired;try{desired=JSON.parse(raw)}catch{toast('Invalid JSON');return}
+      try{await api(`/api/v1/twins/${encodeURIComponent(v.device_id)}/desired`,{method:'PUT',body:JSON.stringify({desired})});toast('Desired state updated');refresh()}catch(e){toast(e.message||'Update failed')}
+    }}];
+    h.append(row([[v.device_id,`desired v${v.desired_version||0} · reported v${v.reported_version||0}`],null,Object.keys(v.desired||{}).length+' desired keys',ago(v.updated_at)],v.desired_version===v.reported_version?'healthy':'syncing',actions));
+  });
+}
+function renderRoutes(items){
+  const h=$('#routesTable');h.replaceChildren();
+  if(!items?.length)return empty(h,'Create a route to forward edge topics.');
+  items.forEach(v=>{
+    let host='invalid';try{host=new URL(v.target_url).host}catch{}
+    const actions=[{label:'Delete',admin:true,danger:true,click:async()=>{
+      if(!confirm(`Delete route ${v.name}?`))return;
+      try{await api(`/api/v1/routes/${encodeURIComponent(v.id)}`,{method:'DELETE'});toast('Route deleted');refresh()}catch(e){toast(e.message||'Delete failed')}
+    }}];
+    h.append(row([[v.name,v.topic],null,v.method||'POST',host],v.enabled?'active':'paused',actions));
+  });
+}
+function renderDeployments(items){
+  const h=$('#deploymentsTable');h.replaceChildren();
+  if(!items?.length)return empty(h,'No edge applications deployed.');
+  items.forEach(v=>{
+    const actions=[
+      {label:v.desired_state==='stopped'?'Start':'Stop',admin:true,click:async()=>{
+        const next=v.desired_state==='stopped'?'running':'stopped';
+        try{await api(`/api/v1/deployments/${encodeURIComponent(v.id)}`,{method:'PATCH',body:JSON.stringify({desired_state:next})});toast(`Desired ${next}`);refresh()}catch(e){toast(e.message||'Update failed')}
+      }},
+      {label:'Delete',admin:true,danger:true,click:async()=>{
+        if(!confirm(`Delete deployment ${v.name}?`))return;
+        try{await api(`/api/v1/deployments/${encodeURIComponent(v.id)}`,{method:'DELETE'});toast('Deployment deleted');refresh()}catch(e){toast(e.message||'Delete failed')}
+      }}
+    ];
+    h.append(row([[v.name,v.image],null,`${v.version} · desired ${v.desired_state||'running'}`,v.site_id],v.status||v.actual_state,actions));
+  });
+}
+function renderAlerts(items){
+  const h=$('#alertsTable');h.replaceChildren();
+  items=(items||[]).filter(x=>!x.resolved).slice().reverse().slice(0,20);
+  if(!items.length)return empty(h,'No open alerts.');
+  items.forEach(v=>{
+    const actions=[{label:'Resolve',admin:true,click:async()=>{
+      try{await api(`/api/v1/alerts/${encodeURIComponent(v.id)}/resolve`,{method:'POST',body:'{}'});toast('Alert resolved');refresh()}catch(e){toast(e.message||'Resolve failed')}
+    }}];
+    h.append(row([[v.type,v.message],null,v.site_id||'control plane',ago(v.created_at)],v.severity,actions));
+  });
+}
+function renderDLQ(items){
+  const h=$('#dlqTable');h.replaceChildren();
+  if(!items?.length)return empty(h,'No failed deliveries. That is exactly what you want.');
+  items.forEach(v=>{
+    const d=v.delivery||{};
+    const actions=[
+      {label:'Replay',admin:true,click:async()=>{try{await api(`/api/v1/deadletters/${encodeURIComponent(d.id)}/replay`,{method:'POST',body:'{}'});toast('Delivery replayed');refresh()}catch{toast('Replay failed')}}},
+      {label:'Delete',admin:true,danger:true,click:async()=>{
+        if(!confirm('Delete this dead letter?'))return;
+        try{await api(`/api/v1/deadletters/${encodeURIComponent(d.id)}`,{method:'DELETE'});toast('Dead letter deleted');refresh()}catch(e){toast(e.message||'Delete failed')}
+      }}
+    ];
+    h.append(row([[d.topic,`${d.event_id} · ${v.reason||d.last_error||'failed'}`],null,`${d.attempts||0}/${d.max_attempts||0} attempts`,ago(v.failed_at)],'failed',actions));
+  });
+}
 
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]))}
 function fmtTS(t){try{const d=new Date(t);return d.toISOString().replace('T',' ').replace('Z','Z')}catch{return String(t||'')}}
@@ -179,7 +292,8 @@ async function refresh(){
     renderSites(asList(s));renderDevices(asList(d));renderTwins(asList(t));renderRoutes(asList(r));renderDeployments(asList(p));renderAlerts(asList(a));renderDLQ(asList(q));
     renderActivity(act,$('#activityLog'));
     renderActivity(act,$('#liveLogPreview'),14);
-    $('#fleetState').textContent='Connected';$('#fleetState').classList.add('ok')
+    $('#fleetState').textContent='Connected';$('#fleetState').classList.add('ok');
+    applyRoleUI();
   }catch(e){
     $('#fleetState').textContent='Disconnected';$('#fleetState').classList.remove('ok');
     if(token)toast(e.message||'Could not load control plane')
@@ -193,6 +307,44 @@ $('#refreshBtn').onclick=refresh;
 const refreshLogsBtn=$('#refreshLogsBtn'); if(refreshLogsBtn) refreshLogsBtn.onclick=refresh;
 const seedRouteBtn=$('#seedRouteBtn');
 if(seedRouteBtn) seedRouteBtn.onclick=async()=>{try{await api('/api/v1/routes',{method:'POST',body:JSON.stringify({name:'Telemetry webhook',topic:'factory/+/telemetry',target_url:'http://example.invalid/events',method:'POST',enabled:false,retry_max:5,timeout_seconds:5})});toast('Demo route created');refresh()}catch(e){toast(e.message||'Could not create route')}};
+
+const routeForm=$('#routeForm');
+if(routeForm)routeForm.addEventListener('submit',async e=>{
+  e.preventDefault();
+  if(!isAdmin())return;
+  try{
+    await api('/api/v1/routes',{method:'POST',body:JSON.stringify({
+      name:$('#routeName').value.trim(),
+      topic:$('#routeTopic').value.trim(),
+      target_url:$('#routeTarget').value.trim(),
+      method:'POST',
+      enabled:true,
+      retry_max:5,
+      timeout_seconds:10
+    })});
+    routeForm.reset();
+    toast('Route created');
+    refresh();
+  }catch(ex){toast(ex.message||'Create failed')}
+});
+
+const depForm=$('#depForm');
+if(depForm)depForm.addEventListener('submit',async e=>{
+  e.preventDefault();
+  if(!isAdmin())return;
+  try{
+    await api('/api/v1/deployments',{method:'POST',body:JSON.stringify({
+      site_id:$('#depSite').value.trim(),
+      name:$('#depName').value.trim(),
+      version:$('#depVersion').value.trim(),
+      image:$('#depImage').value.trim(),
+      desired_state:$('#depDesired').value||'running'
+    })});
+    depForm.reset();
+    toast('Deployment created');
+    refresh();
+  }catch(ex){toast(ex.message||'Create failed')}
+});
 
 (async()=>{
   wireLoginChapters();

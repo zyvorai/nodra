@@ -19,6 +19,13 @@ type LocalRoute struct {
 	Headers   map[string]string `json:"headers,omitempty"`
 }
 
+// ConnectorSpec configures an optional protocol adapter (e.g. modbus poller).
+type ConnectorSpec struct {
+	Type   string          `json:"type"`
+	Name   string          `json:"name,omitempty"`
+	Config json.RawMessage `json:"config"`
+}
+
 type Config struct {
 	ServerURL          string            `json:"server_url"`
 	SiteName           string            `json:"site_name"`
@@ -39,6 +46,7 @@ type Config struct {
 	MaxSpoolEvents     int               `json:"max_spool_events"`
 	SpoolPolicy        string            `json:"spool_policy"`
 	LocalRoutes        []LocalRoute      `json:"local_routes,omitempty"`
+	Connectors         []ConnectorSpec   `json:"connectors,omitempty"`
 	RequestCertificate bool              `json:"request_certificate,omitempty"`
 	ClientCertFile     string            `json:"client_cert_file,omitempty"`
 	ClientKeyFile      string            `json:"client_key_file,omitempty"`

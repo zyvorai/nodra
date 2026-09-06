@@ -45,8 +45,13 @@ PLC / sensor / app
 - **Fleet revocation**: revoke a site identity/token centrally.
 - **Edge app reconciliation**: Docker desired `running|stopped` state, environment, ports, volumes and command.
 - **Modbus TCP client**: dependency-free function 0x03/0x06 building block for adapters.
-- **Connector SDK**: stable Go interface for MQTT/Modbus/OPC-UA/NATS/Zenoh/etc adapters without coupling them to the core.
 - **Metrics**: Prometheus counters plus delivery queue/DLQ gauges.
+- **Kryton-style console login** + write-capable fleet console (revoke, routes, twins, apps, DLQ).
+- **Live activity Logs** and A–Z `nodra-sim`.
+- **Connector SDK + Modbus poller**: registry factories; Modbus TCP poller publishes into nodrad ingest.
+- **Viewer/admin RBAC**: optional viewer token; console write actions gated by role.
+- **Optional Postgres fleet store**: `NODRA_STORE=postgres` for sites/routes/twins/apps (delivery/DLQ remain local WAL).
+- **Configurable ports**: `--port` / `NODRA_PORT` / Compose / Helm NodePort / smoke ports share one convention.
 - **Apple-inspired Zyvor UX**: embedded, no CDN, no external fonts, orange Zyvor accent.
 - **Kubernetes-ready**: raw manifests, Kustomize, Helm, Restricted Pod Security defaults, no service-account token.
 - **Supply chain**: CodeQL, race tests, current-Go CI, govulncheck, multi-arch OCI, SBOM, provenance and keyless cosign signing on releases.
@@ -61,20 +66,25 @@ cd nodra
 make build
 ```
 
-The repository has no runtime Go module dependencies.
+The repository has few runtime Go module dependencies (optional Postgres driver via pgx when `NODRA_STORE=postgres`).
 
 ### Start the control plane
 
 ```bash
 export NODRA_ADMIN_TOKEN='change-this-admin-token'
 export NODRA_ENROLLMENT_TOKEN='change-this-enrollment-token'
+# optional console login (defaults: user admin, password = admin token)
+export NODRA_ADMIN_USER='admin'
+export NODRA_ADMIN_PASSWORD='change-this-admin-token'
 
 ./bin/nodra-server \
   --listen :8080 \
   --data ./data
 ```
 
-Open `http://127.0.0.1:8080` and **Sign in** (`admin` / your admin token unless `NODRA_ADMIN_PASSWORD` is set).
+Open `http://127.0.0.1:8080`, walk the login chapters, and **Sign in**. Binaries from `make build`: `nodra-server`, `nodrad`, `nodractl`, `nodra-sim`.
+
+Customer demo path (kind/Helm/Compose/sim/console): see [docs/DEMO.md](docs/DEMO.md).
 
 ### Configurable ports
 
@@ -302,6 +312,22 @@ If tokens are omitted, Helm creates long random values and preserves them across
 
 The v0.2 control plane is intentionally **one replica** because its embedded WAL is single-writer. The PDB allows the single pod to be drained instead of blocking node maintenance.
 
+## Web console
+
+Embedded static UI (no CDN). After login the shell exposes:
+
+| Tab | Contents |
+|---|---|
+| Overview | Fleet counts + live activity preview |
+| Sites | Enrolled sites |
+| Devices | Devices and twins |
+| Streams | Cloud routes (+ seed demo route) |
+| Apps | Deployments and alerts |
+| Dead letters | Replayable DLQ |
+| Logs | Terminal-style activity stream |
+
+Auth uses the admin bearer as the session token returned by login. See [docs/DEMO.md](docs/DEMO.md) and [docs/API.md](docs/API.md).
+
 ## CLI
 
 ```text
@@ -338,7 +364,8 @@ Planned/community adapters: OPC-UA, serial, NATS, Zenoh and Kafka bridge. See `p
 
 ## Security defaults
 
-- management API requires an admin bearer token
+- management API requires an admin bearer token (optional viewer token is GET-only)
+- console login uses admin or viewer credentials (`NODRA_ADMIN_*` / `NODRA_VIEWER_*`)
 - per-site random credentials are stored as SHA-256 hashes centrally
 - optional CSR certificate enrollment
 - site revocation
@@ -359,8 +386,18 @@ See [SECURITY.md](SECURITY.md) and [docs/SECURITY-MODEL.md](docs/SECURITY-MODEL.
 make test
 make race
 make vet
+make smoke
+make test-all PORT=20059 HOST=212.8.248.187   # local + remote when HOST reachable
 ./scripts/release-check.sh
 ```
+
+| Target / script | What it covers |
+|---|---|
+| `make smoke` | Local control plane + agent + login + list APIs |
+| `make demo-client` | Client demo against live URL / `.deploy-last` |
+| `make demo-k8s` | kind + Helm + sim |
+| `make test-all` | Build, local smoke, optional remote deploy/smoke + short sim |
+| `./scripts/smoke-remote.sh` | Health, login, activity, array list endpoints |
 
 The release check runs formatting, vet, race tests, static builds, YAML/OpenAPI parsing, a live control-plane + agent smoke test and licensing checks.
 
@@ -371,8 +408,24 @@ GitHub CI additionally runs:
 - container build
 - Helm lint/render
 - kubectl/Kustomize client validation
-- kind Kubernetes E2E
+- kind Kubernetes E2E (including sim + activity assertions)
 - CodeQL
+
+## Docs
+
+| Doc | Topic |
+|---|---|
+| [https://zyvor.dev/docs/nodra](https://zyvor.dev/docs/nodra) | Product docs on zyvor.dev |
+| [docs/DEMO.md](docs/DEMO.md) | Customer demo, console, `nodra-sim`, lab scripts |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components and durability |
+| [docs/API.md](docs/API.md) | HTTP API summary |
+| [docs/openapi.yaml](docs/openapi.yaml) | OpenAPI schemas |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Backup, upgrades, ports, stores, disk pressure |
+| [docs/SECURITY-MODEL.md](docs/SECURITY-MODEL.md) | Trust boundaries + RBAC |
+| [docs/SUPPLY_CHAIN.md](docs/SUPPLY_CHAIN.md) | Release / SBOM / signing |
+| [ROADMAP.md](ROADMAP.md) | Next milestones |
+
+Product page: [https://zyvor.dev/nodra](https://zyvor.dev/nodra).
 
 ## License
 

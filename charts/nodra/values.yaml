@@ -21,11 +21,16 @@ secrets:
   adminToken: ""
   adminUser: admin
   adminPassword: "" # defaults to adminToken when empty
+  viewerToken: "" # optional read-only console/API token
+  viewerUser: viewer
+  viewerPassword: "" # defaults to viewerToken when empty
   enrollmentToken: ""
+  databaseURL: "" # required when server.store=postgres
 
 server:
   deliveryWorkers: 8
   pkiEnabled: false
+  store: file # file|postgres
 
 resources:
   requests: {cpu: 100m, memory: 64Mi}

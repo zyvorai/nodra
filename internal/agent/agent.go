@@ -29,6 +29,7 @@ import (
 	"github.com/zyvorai/nodra/internal/queue"
 	"github.com/zyvorai/nodra/internal/router"
 	"github.com/zyvorai/nodra/internal/version"
+	"github.com/zyvorai/nodra/pkg/connector"
 )
 
 type Agent struct {
@@ -39,6 +40,7 @@ type Agent struct {
 	client          *http.Client
 	http            *http.Server
 	mqtt            *mqtt.Broker
+	connectors      []connector.Connector
 	wg              sync.WaitGroup
 	cancel          context.CancelFunc
 	twinsMu         sync.RWMutex
@@ -127,12 +129,45 @@ func (a *Agent) Run(ctx context.Context) error {
 			}
 		}()
 	}
-	slog.Info("nodrad listening", "http", a.cfg.Listen, "mqtt", a.cfg.MQTTListen, "site_id", a.cfg.SiteID)
+	if err := a.startConnectors(ctx); err != nil {
+		return err
+	}
+	slog.Info("nodrad listening", "http", a.cfg.Listen, "mqtt", a.cfg.MQTTListen, "site_id", a.cfg.SiteID, "connectors", len(a.connectors))
 	err := a.http.ListenAndServe()
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
 	return err
+}
+func (a *Agent) startConnectors(ctx context.Context) error {
+	for _, spec := range a.cfg.Connectors {
+		c, err := connector.New(spec.Type, spec.Name, spec.Config)
+		if err != nil {
+			return fmt.Errorf("connector %s: %w", spec.Type, err)
+		}
+		handler := func(ctx context.Context, ev connector.Event) error {
+			headers := map[string]string{}
+			for k, v := range ev.Headers {
+				headers[k] = v
+			}
+			if headers["x-nodra-ingress"] == "" {
+				headers["x-nodra-ingress"] = spec.Type
+			}
+			payload := json.RawMessage(ev.Payload)
+			if !json.Valid(payload) {
+				payload, _ = json.Marshal(string(ev.Payload))
+			}
+			_, err := a.ingest(ctx, ev.Topic, payload, headers)
+			return err
+		}
+		if err := c.Start(ctx, handler); err != nil {
+			_ = c.Close()
+			return fmt.Errorf("start connector %s: %w", c.Name(), err)
+		}
+		a.connectors = append(a.connectors, c)
+		slog.Info("connector started", "type", spec.Type, "name", c.Name())
+	}
+	return nil
 }
 func (a *Agent) Shutdown(ctx context.Context) error {
 	if a.cancel != nil {
@@ -140,6 +175,9 @@ func (a *Agent) Shutdown(ctx context.Context) error {
 	}
 	if a.mqtt != nil {
 		_ = a.mqtt.Close()
+	}
+	for _, c := range a.connectors {
+		_ = c.Close()
 	}
 	err := a.http.Shutdown(ctx)
 	a.wg.Wait()

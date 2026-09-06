@@ -41,10 +41,80 @@ components:
         reported: {type: object}
         desired_version: {type: integer}
         reported_version: {type: integer}
+    ActivityEntry:
+      type: object
+      required: [message]
+      properties:
+        id: {type: string}
+        time: {type: string, format: date-time}
+        level: {type: string, enum: [info, warn, error, chapter, ok]}
+        source: {type: string}
+        chapter: {type: string}
+        site_id: {type: string}
+        site: {type: string}
+        action: {type: string}
+        message: {type: string}
+        detail: {type: object}
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: {type: string}
+        password: {type: string}
 paths:
   /version:
     get:
       responses: {'200': {description: Build information}}
+  /auth/login:
+    post:
+      summary: Console login; returns admin bearer token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LoginRequest'}
+      responses:
+        '200': {description: Authenticated}
+        '401': {description: Invalid credentials}
+  /auth/me:
+    get:
+      security: [{bearer: []}]
+      summary: Current console user
+      responses:
+        '200': {description: User descriptor}
+        '401': {description: Unauthorized}
+  /activity:
+    get:
+      security: [{bearer: []}]
+      summary: Recent console/simulation activity lines
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 1000, default: 250}
+      responses:
+        '200':
+          description: Activity entries (JSON array)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ActivityEntry'}
+    post:
+      security: [{bearer: []}]
+      summary: Append one or many activity entries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entries:
+                  type: array
+                  items: {$ref: '#/components/schemas/ActivityEntry'}
+              additionalProperties: true
+      responses:
+        '200': {description: Accepted entries}
   /enroll:
     post:
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [name, enrollment_token], properties: {name: {type: string}, enrollment_token: {type: string}, csr_pem: {type: string}}}}}}
@@ -90,6 +160,25 @@ paths:
     post:
       security: [{bearer: []}]
       responses: {'201': {description: Deployment created}}
+  /deployments/{id}:
+    patch:
+      security: [{bearer: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version: {type: string}
+                image: {type: string}
+                desired_state: {type: string, enum: [running, stopped]}
+      responses: {'200': {description: Deployment updated}, '404': {description: Not found}}
+    delete:
+      security: [{bearer: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'204': {description: Deleted}, '404': {description: Not found}}
   /alerts:
     get:
       security: [{bearer: []}]

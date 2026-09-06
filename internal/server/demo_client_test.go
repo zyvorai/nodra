@@ -65,6 +65,33 @@ func TestClientDemoWalkthrough(t *testing.T) {
 		t.Fatalf("auth/me %d %s", code, body)
 	}
 
+	// Viewer role: read OK, mutate forbidden.
+	s.cfg.ViewerToken = "viewer-token"
+	s.cfg.ViewerUser = "viewer"
+	s.cfg.ViewerPassword = "viewer-pass"
+	code, body = c.req("POST", "/api/v1/auth/login", map[string]any{"username": "viewer", "password": "viewer-pass"}, "")
+	if code != 200 {
+		t.Fatalf("viewer login %d %s", code, body)
+	}
+	var vlogin struct {
+		Token string `json:"token"`
+		User  struct {
+			Role string `json:"role"`
+		} `json:"user"`
+	}
+	_ = json.Unmarshal(body, &vlogin)
+	if vlogin.Token != "viewer-token" || vlogin.User.Role != "viewer" {
+		t.Fatalf("viewer login payload %s", body)
+	}
+	code, _ = c.req("GET", "/api/v1/overview", nil, vlogin.Token)
+	if code != 200 {
+		t.Fatalf("viewer overview %d", code)
+	}
+	code, body = c.req("POST", "/api/v1/routes", map[string]any{"name": "x", "topic": "a/b", "target_url": "http://example.invalid/x"}, vlogin.Token)
+	if code != 403 {
+		t.Fatalf("viewer mutate want 403 got %d %s", code, body)
+	}
+
 	// Empty console lists must be JSON arrays, not null (UI Promise.all / .length).
 	for _, path := range []string{"/api/v1/sites", "/api/v1/devices", "/api/v1/twins", "/api/v1/routes", "/api/v1/deployments", "/api/v1/alerts", "/api/v1/deadletters"} {
 		code, body = c.req("GET", path, nil, login.Token)
@@ -190,6 +217,16 @@ func TestClientDemoWalkthrough(t *testing.T) {
 	if code != 201 {
 		t.Fatalf("deployment %d %s", code, body)
 	}
+	var dep struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(body, &dep); err != nil || dep.ID == "" {
+		t.Fatalf("deployment id %s", body)
+	}
+	code, body = c.req("PATCH", "/api/v1/deployments/"+dep.ID, map[string]any{"desired_state": "stopped"}, login.Token)
+	if code != 200 {
+		t.Fatalf("deployment patch %d %s", code, body)
+	}
 
 	// ── Chapter 7: overview matches the demo console strip ──
 	code, body = c.req("GET", "/api/v1/overview", nil, login.Token)
@@ -214,5 +251,10 @@ func TestClientDemoWalkthrough(t *testing.T) {
 		if code != 200 || len(body) == 0 || body[0] != '[' {
 			t.Fatalf("%s not array: %d %s", path, code, body)
 		}
+	}
+
+	code, body = c.req("DELETE", "/api/v1/deployments/"+dep.ID, nil, login.Token)
+	if code != 204 {
+		t.Fatalf("deployment delete %d %s", code, body)
 	}
 }

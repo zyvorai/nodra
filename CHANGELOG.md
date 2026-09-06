@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- Console write actions: site revoke, route create/delete, twin desired, deployment create/start-stop/delete, alert resolve, DLQ delete.
+- Deployment `PATCH` / `DELETE` APIs and `nodractl deployments patch|delete`.
+- Viewer/admin RBAC: `NODRA_VIEWER_TOKEN` (+ optional viewer user/password); GETs for both roles, mutations admin-only; console hides write controls for viewers.
+- Optional Postgres fleet store: `NODRA_STORE=postgres` + `NODRA_DATABASE_URL` (`store.Backend`); file WAL remains default. Delivery/DLQ stay local WAL.
+- Connector registry + Modbus TCP poller wired into `nodrad` ingest (`connectors` in agent config).
+- First intentional Go module dependency: `github.com/jackc/pgx/v5` (Postgres driver only).
+- Console login: Kryton-style chaptered gate; `POST /api/v1/auth/login`, `GET /api/v1/auth/me`; `NODRA_ADMIN_USER` / `NODRA_ADMIN_PASSWORD`.
+- Live **Logs** tab and overview activity preview via `GET/POST /api/v1/activity`.
+- `nodra-sim` A–Z fleet simulator (seed + continuous heartbeats/telemetry/twins/activity).
+- Helm `values-demo.yaml`, Compose simulator service, `scripts/demo-k8s.sh`, `scripts/demo-client.sh`.
+- Configurable ports across deploy, Compose, Helm NodePort, smoke, and `scripts/test-all.sh`.
+- Empty list APIs always return `[]` (never `null`) for safe console rendering.
+- Remote smoke (`scripts/smoke-remote.sh`) covers login + activity.
+- Marketing/docs on zyvor.dev: `/nodra` and `/docs/nodra`.
+
 ## 0.2.0
 
 - Replace file-per-event spool with fsynced append-only WAL queues.

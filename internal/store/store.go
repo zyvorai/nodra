@@ -199,6 +199,14 @@ func (s *Store) apply(o op) error {
 				return nil
 			}
 		}
+	case "deployment.del":
+		out := s.state.Deployments[:0]
+		for _, v := range s.state.Deployments {
+			if v.ID != o.ID {
+				out = append(out, v)
+			}
+		}
+		s.state.Deployments = out
 	case "alert.add":
 		var v model.Alert
 		_ = json.Unmarshal(o.Data, &v)
@@ -360,6 +368,21 @@ func (s *Store) UpdateDeployment(id string, fn func(*model.Deployment)) error {
 		}
 	}
 	return os.ErrNotExist
+}
+func (s *Store) DeleteDeployment(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	found := false
+	for _, v := range s.state.Deployments {
+		if v.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return os.ErrNotExist
+	}
+	return s.mutate(op{Type: "deployment.del", ID: id})
 }
 func (s *Store) AddAlert(v model.Alert) error {
 	s.mu.Lock()

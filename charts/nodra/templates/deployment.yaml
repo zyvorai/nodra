@@ -32,10 +32,21 @@ spec:
               valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: admin-user}}
             - name: NODRA_ADMIN_PASSWORD
               valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: admin-password}}
+            - name: NODRA_VIEWER_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: viewer-token, optional: true}}
+            - name: NODRA_VIEWER_USER
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: viewer-user, optional: true}}
+            - name: NODRA_VIEWER_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: viewer-password, optional: true}}
             - name: NODRA_ENROLLMENT_TOKEN
               valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: enrollment-token}}
             - {name: NODRA_DELIVERY_WORKERS, value: {{ .Values.server.deliveryWorkers | quote }}}
             - {name: NODRA_PKI_ENABLED, value: {{ .Values.server.pkiEnabled | quote }}}
+            - {name: NODRA_STORE, value: {{ .Values.server.store | default "file" | quote }}}
+            {{- if eq (.Values.server.store | default "file") "postgres" }}
+            - name: NODRA_DATABASE_URL
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: database-url}}
+            {{- end }}
           ports: [{name: http, containerPort: 8080}]
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}

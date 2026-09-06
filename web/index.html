@@ -7,8 +7,8 @@
   <title>Nodra — Open edge runtime</title>
   <meta name="description" content="Nodra keeps sites moving when the cloud doesn't. Apache-2.0 edge runtime, local MQTT, offline queues, device twins and fleet control." />
   <link rel="icon" type="image/svg+xml" href="/assets/zyvor-mark.svg" />
-  <link rel="stylesheet" href="/assets/app.css?v=2" />
-  <link rel="stylesheet" href="/assets/login.css?v=2" />
+  <link rel="stylesheet" href="/assets/app.css?v=3" />
+  <link rel="stylesheet" href="/assets/login.css?v=3" />
 </head>
 <body class="login-locked">
   <!-- Kryton-style Apple Store chapter login -->
@@ -98,6 +98,7 @@
       <button data-tab="overview" class="active">Overview</button><button data-tab="sites">Sites</button><button data-tab="devices">Devices</button><button data-tab="streams">Streams</button><button data-tab="apps">Apps</button><button data-tab="dlq">Dead letters</button><button data-tab="logs">Logs</button>
     </nav>
     <button id="signOutBtn" class="ghost" type="button">Sign out</button>
+    <span id="roleChip" class="chip" title="Session role">Admin</span>
   </header>
 
   <main class="shell workspace">
@@ -126,8 +127,33 @@
 
     <section class="page" data-page="sites" hidden><div class="page-head"><div><div class="eyebrow">FLEET</div><h2>Sites</h2><p>Heartbeat health, runtime version, queue pressure and certificate identity for every edge location.</p></div><span id="fleetState" class="chip">Disconnected</span></div><div id="sitesTable" class="table-card"></div></section>
     <section class="page" data-page="devices" hidden><div class="page-head"><div><div class="eyebrow">DEVICE STATE</div><h2>Devices & twins</h2><p>Desired versus reported state, synchronized without coupling the device protocol to the cloud.</p></div></div><div class="split"><div><h3>Devices</h3><div id="devicesTable" class="table-card"></div></div><div><h3>Twins</h3><div id="twinsTable" class="table-card"></div></div></div></section>
-    <section class="page" data-page="streams" hidden><div class="page-head"><div><div class="eyebrow">DATA PLANE</div><h2>Streams</h2><p>MQTT-style topic filters to durable HTTP destinations, plus local agent routes that continue offline.</p></div><button id="seedRouteBtn" class="ghost">Create demo route</button></div><div id="routesTable" class="table-card"></div></section>
-    <section class="page" data-page="apps" hidden><div class="page-head"><div><div class="eyebrow">EDGE APPS</div><h2>Applications</h2><p>Desired-state container reconciliation at remote sites, with health flowing back to the control plane.</p></div></div><div id="deploymentsTable" class="table-card"></div><div class="section-gap"></div><div class="page-head compact"><div><div class="eyebrow">ATTENTION</div><h3>Open alerts</h3></div></div><div class="terminal-card"><div class="terminal-top"><div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div><span>Terminal — alerts</span><span></span></div><div id="alertsTable" class="table-card terminal"></div></div></section>
+    <section class="page" data-page="streams" hidden>
+      <div class="page-head"><div><div class="eyebrow">DATA PLANE</div><h2>Streams</h2><p>MQTT-style topic filters to durable HTTP destinations, plus local agent routes that continue offline.</p></div>
+        <button id="seedRouteBtn" class="ghost" data-admin-only type="button">Create demo route</button>
+      </div>
+      <form id="routeForm" class="inline-form" data-admin-only>
+        <input id="routeName" required placeholder="Route name" />
+        <input id="routeTopic" required placeholder="Topic filter e.g. factory/+/telemetry" />
+        <input id="routeTarget" required placeholder="https://destination.example/events" />
+        <button class="primary" type="submit">Add route</button>
+      </form>
+      <div id="routesTable" class="table-card"></div>
+    </section>
+    <section class="page" data-page="apps" hidden>
+      <div class="page-head"><div><div class="eyebrow">EDGE APPS</div><h2>Applications</h2><p>Desired-state container reconciliation at remote sites, with health flowing back to the control plane.</p></div></div>
+      <form id="depForm" class="inline-form" data-admin-only>
+        <input id="depSite" required placeholder="Site ID" />
+        <input id="depName" required placeholder="App name" />
+        <input id="depVersion" required placeholder="Version" />
+        <input id="depImage" required placeholder="ghcr.io/org/app:tag" />
+        <select id="depDesired"><option value="running">running</option><option value="stopped">stopped</option></select>
+        <button class="primary" type="submit">Deploy</button>
+      </form>
+      <div id="deploymentsTable" class="table-card"></div>
+      <div class="section-gap"></div>
+      <div class="page-head compact"><div><div class="eyebrow">ATTENTION</div><h3>Open alerts</h3></div></div>
+      <div class="terminal-card"><div class="terminal-top"><div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div><span>Terminal — alerts</span><span></span></div><div id="alertsTable" class="table-card terminal"></div></div>
+    </section>
     <section class="page" data-page="dlq" hidden><div class="page-head"><div><div class="eyebrow">RECOVERY</div><h2>Dead letters</h2><p>Failed deliveries are retained with their payload and retry history. Replay them when the destination is healthy.</p></div></div><div class="terminal-card"><div class="terminal-top"><div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div><span>Terminal — dead letters</span><span></span></div><div id="dlqTable" class="table-card terminal"></div></div></section>
     <section class="page" data-page="logs" hidden>
       <div class="page-head">
@@ -153,6 +179,6 @@
   </div>
 
   <div id="toast" class="toast"></div>
-  <script src="/assets/app.js?v=2"></script>
+  <script src="/assets/app.js?v=3"></script>
 </body>
 </html>

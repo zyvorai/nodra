@@ -38,6 +38,9 @@ type Config struct {
 	AdminToken        string
 	AdminUser         string
 	AdminPassword     string
+	ViewerToken       string
+	ViewerUser        string
+	ViewerPassword    string
 	EnrollmentToken   string
 	PublicRead        bool
 	MaxBodyBytes      int64
@@ -50,11 +53,13 @@ type Config struct {
 	TLSCertFile       string
 	TLSKeyFile        string
 	ClientCAFile      string
+	StoreDriver       string // file|postgres
+	DatabaseURL       string
 }
 
 type Server struct {
 	cfg        Config
-	store      *store.Store
+	store      store.Backend
 	deliveries *queue.Queue[model.Delivery]
 	dlq        *queue.Queue[model.DeadLetter]
 	metrics    *telemetry.Metrics
@@ -80,6 +85,15 @@ func New(cfg Config) (*Server, error) {
 	if cfg.AdminPassword == "" {
 		cfg.AdminPassword = cfg.AdminToken
 	}
+	if cfg.ViewerUser == "" {
+		cfg.ViewerUser = "viewer"
+	}
+	if cfg.ViewerPassword == "" && cfg.ViewerToken != "" {
+		cfg.ViewerPassword = cfg.ViewerToken
+	}
+	if cfg.StoreDriver == "" {
+		cfg.StoreDriver = "file"
+	}
 	if cfg.MaxBodyBytes == 0 {
 		cfg.MaxBodyBytes = 1 << 20
 	}
@@ -98,7 +112,7 @@ func New(cfg Config) (*Server, error) {
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return nil, err
 	}
-	st, err := store.Open(filepath.Join(cfg.DataDir, "state.json"))
+	st, err := store.OpenBackend(cfg.StoreDriver, filepath.Join(cfg.DataDir, "state.json"), cfg.DatabaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +212,8 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("PUT /api/v1/twins/{id}/desired", s.admin(http.HandlerFunc(s.twinDesired)))
 	mux.Handle("GET /api/v1/deployments", s.admin(http.HandlerFunc(s.deployments)))
 	mux.Handle("POST /api/v1/deployments", s.admin(http.HandlerFunc(s.deploymentCreate)))
+	mux.Handle("PATCH /api/v1/deployments/{id}", s.admin(http.HandlerFunc(s.deploymentPatch)))
+	mux.Handle("DELETE /api/v1/deployments/{id}", s.admin(http.HandlerFunc(s.deploymentDelete)))
 	mux.Handle("GET /api/v1/alerts", s.admin(http.HandlerFunc(s.alerts)))
 	mux.Handle("POST /api/v1/alerts/{id}/resolve", s.admin(http.HandlerFunc(s.alertResolve)))
 	mux.Handle("GET /api/v1/events", s.admin(http.HandlerFunc(s.eventsList)))
@@ -233,16 +249,38 @@ func (s *Server) admin(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if s.cfg.AdminToken == "" {
-			errorJSON(w, 503, "admin authentication is not configured")
+		role := s.roleForBearer(bearer(r))
+		if role == "" {
+			if s.cfg.AdminToken == "" && s.cfg.ViewerToken == "" {
+				errorJSON(w, 503, "admin authentication is not configured")
+				return
+			}
+			errorJSON(w, 401, "unauthorized")
 			return
 		}
-		if !auth.EqualToken(bearer(r), s.cfg.AdminToken) {
-			errorJSON(w, 401, "unauthorized")
+		if !isSafeMethod(r.Method) && role != "admin" {
+			errorJSON(w, 403, "admin role required")
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isSafeMethod(m string) bool {
+	return m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions
+}
+
+func (s *Server) roleForBearer(tok string) string {
+	if tok == "" {
+		return ""
+	}
+	if s.cfg.AdminToken != "" && auth.EqualToken(tok, s.cfg.AdminToken) {
+		return "admin"
+	}
+	if s.cfg.ViewerToken != "" && auth.EqualToken(tok, s.cfg.ViewerToken) {
+		return "viewer"
+	}
+	return ""
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
@@ -253,34 +291,43 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &in) {
 		return
 	}
-	if s.cfg.AdminToken == "" || s.cfg.AdminPassword == "" {
+	user := strings.TrimSpace(in.Username)
+	if s.cfg.AdminToken != "" && s.cfg.AdminPassword != "" &&
+		auth.EqualToken(user, s.cfg.AdminUser) && auth.EqualToken(in.Password, s.cfg.AdminPassword) {
+		writeJSON(w, 200, map[string]any{
+			"token": s.cfg.AdminToken,
+			"user":  map[string]string{"username": s.cfg.AdminUser, "role": "admin"},
+		})
+		return
+	}
+	if s.cfg.ViewerToken != "" && s.cfg.ViewerPassword != "" &&
+		auth.EqualToken(user, s.cfg.ViewerUser) && auth.EqualToken(in.Password, s.cfg.ViewerPassword) {
+		writeJSON(w, 200, map[string]any{
+			"token": s.cfg.ViewerToken,
+			"user":  map[string]string{"username": s.cfg.ViewerUser, "role": "viewer"},
+		})
+		return
+	}
+	if s.cfg.AdminToken == "" && s.cfg.ViewerToken == "" {
 		errorJSON(w, 503, "login is not configured")
 		return
 	}
-	userOK := auth.EqualToken(strings.TrimSpace(in.Username), s.cfg.AdminUser)
-	passOK := auth.EqualToken(in.Password, s.cfg.AdminPassword)
-	if !userOK || !passOK {
-		errorJSON(w, 401, "invalid username or password")
-		return
-	}
-	writeJSON(w, 200, map[string]any{
-		"token": s.cfg.AdminToken,
-		"user":  map[string]string{"username": s.cfg.AdminUser, "role": "admin"},
-	})
+	errorJSON(w, 401, "invalid username or password")
 }
 
 func (s *Server) authMe(w http.ResponseWriter, r *http.Request) {
-	if s.cfg.AdminToken == "" {
+	role := s.roleForBearer(bearer(r))
+	if role == "" {
 		writeJSON(w, 200, map[string]any{"authenticated": false})
 		return
 	}
-	if !auth.EqualToken(bearer(r), s.cfg.AdminToken) {
-		writeJSON(w, 200, map[string]any{"authenticated": false})
-		return
+	user := s.cfg.AdminUser
+	if role == "viewer" {
+		user = s.cfg.ViewerUser
 	}
 	writeJSON(w, 200, map[string]any{
 		"authenticated": true,
-		"user":          map[string]string{"username": s.cfg.AdminUser, "role": "admin"},
+		"user":          map[string]string{"username": user, "role": role},
 	})
 }
 
@@ -693,6 +740,54 @@ func (s *Server) deploymentCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 201, in)
+}
+func (s *Server) deploymentPatch(w http.ResponseWriter, r *http.Request) {
+	idv := r.PathValue("id")
+	var in struct {
+		Version      *string `json:"version"`
+		Image        *string `json:"image"`
+		DesiredState *string `json:"desired_state"`
+	}
+	if !s.decode(w, r, &in) {
+		return
+	}
+	if in.Version == nil && in.Image == nil && in.DesiredState == nil {
+		errorJSON(w, 400, "version, image or desired_state is required")
+		return
+	}
+	if in.DesiredState != nil {
+		ds := strings.ToLower(strings.TrimSpace(*in.DesiredState))
+		if ds != "running" && ds != "stopped" {
+			errorJSON(w, 400, "desired_state must be running or stopped")
+			return
+		}
+		*in.DesiredState = ds
+	}
+	if err := s.store.UpdateDeployment(idv, func(d *model.Deployment) {
+		if in.Version != nil && *in.Version != "" {
+			d.Version = *in.Version
+		}
+		if in.Image != nil && *in.Image != "" {
+			d.Image = *in.Image
+		}
+		if in.DesiredState != nil {
+			d.DesiredState = *in.DesiredState
+			d.Status = "queued"
+		}
+		d.UpdatedAt = time.Now().UTC()
+	}); err != nil {
+		errorJSON(w, 404, "deployment not found")
+		return
+	}
+	dep, _ := s.store.Deployment(idv)
+	writeJSON(w, 200, dep)
+}
+func (s *Server) deploymentDelete(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.DeleteDeployment(r.PathValue("id")); err != nil {
+		errorJSON(w, 404, "deployment not found")
+		return
+	}
+	w.WriteHeader(204)
 }
 func (s *Server) alerts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, asJSONList(s.store.Alerts()))

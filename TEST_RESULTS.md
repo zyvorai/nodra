@@ -2,6 +2,8 @@
 
 Release validation date: 2026-09-06
 
+Post-release main line (docs as of later same cycle) also exercises console login, activity Logs, `nodra-sim`, and remote smoke; see Unreleased in [CHANGELOG.md](CHANGELOG.md) and [docs/DEMO.md](docs/DEMO.md).
+
 ## Result
 
 **PASS** for the locally executable release gate.
@@ -21,7 +23,7 @@ The release candidate was validated from source and is also revalidated after ex
 - `go vet ./...`: PASS
 - `go test -race ./...`: PASS
 - 36 named Go test functions: PASS
-- all three static binaries build (`nodra-server`, `nodrad`, `nodractl`): PASS
+- static binaries build (`nodra-server`, `nodrad`, `nodractl`; `nodra-sim` on current main): PASS
 - live control-plane + edge-agent smoke flow: PASS
 - site enrollment and authenticated heartbeat: PASS
 - durable HTTP edge publish and cloud flush: PASS
@@ -80,6 +82,7 @@ The repository includes GitHub Actions jobs for container build, Helm/Kustomize/
 - The control plane remains intentionally single-writer; horizontal HA is not claimed for the embedded WAL state engine.
 - OPC-UA, NATS and Zenoh are roadmap connectors, not v0.2 claims.
 - Docker workload reconciliation requires a Docker runtime on the edge node and is opt-in.
+- Console activity Logs are in-memory only (not part of durable backup).
 
 ## Exact ZIP verification
 
