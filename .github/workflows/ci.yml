@@ -7,7 +7,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
-      matrix: {go: ['1.23.x', '1.27.x']}
+      matrix: {go: ['1.25.x', '1.27.x']}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v7
@@ -44,12 +44,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
       - uses: azure/setup-kubectl@v5
+      - uses: actions/setup-go@v7
+        with: {go-version: '1.27.x', cache: false}
+      - name: Install kubeconform
+        run: go install github.com/yannh/kubeconform/cmd/kubeconform@latest
       - run: helm lint charts/nodra --set secrets.adminToken=test-admin --set secrets.enrollmentToken=test-enroll
       - run: helm template nodra charts/nodra --namespace nodra-system --set secrets.adminToken=test-admin --set secrets.enrollmentToken=test-enroll > /tmp/nodra.yaml
-      - run: kubectl apply --dry-run=client --validate=false -f /tmp/nodra.yaml >/dev/null
       - run: helm template nodra charts/nodra -f charts/nodra/values-demo.yaml --namespace nodra-demo --set image.repository=nodra --set image.tag=demo > /tmp/nodra-demo.yaml
-      - run: kubectl apply --dry-run=client --validate=false -f /tmp/nodra-demo.yaml >/dev/null
       - run: kubectl kustomize --load-restrictor LoadRestrictionsNone deployments/kustomize/base > /tmp/kustomized.yaml
-      - run: kubectl apply --dry-run=client --validate=false -f /tmp/kustomized.yaml >/dev/null
       - run: kubectl kustomize --load-restrictor LoadRestrictionsNone deployments/kustomize/demo > /tmp/kustomized-demo.yaml
-      - run: kubectl apply --dry-run=client --validate=false -f /tmp/kustomized-demo.yaml >/dev/null
+      # kubectl apply --dry-run=client still requires live API discovery (it needs
+      # RESTMapping/OpenAPI to merge the last-applied-config annotation), so it
+      # cannot validate manifests without a real cluster. kubeconform validates
+      # structure against the upstream Kubernetes OpenAPI schemas entirely offline.
+      - run: kubeconform -summary -strict /tmp/nodra.yaml /tmp/nodra-demo.yaml /tmp/kustomized.yaml /tmp/kustomized-demo.yaml
