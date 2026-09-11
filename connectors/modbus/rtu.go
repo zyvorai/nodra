@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"syscall"
 	"time"
@@ -122,7 +123,16 @@ func (c *RTUClient) roundTrip(ctx context.Context, request []byte, expected int)
 				expected = 5 // unit + exception-function + code + CRC
 			}
 		}
-		if readErr != nil && !errors.Is(readErr, syscall.EAGAIN) && !errors.Is(readErr, syscall.EWOULDBLOCK) {
+		// A termios line configured with VMIN=0/VTIME=0 (set in configureSerial)
+		// returns a 0-byte read - which Go's os.File surfaces as io.EOF - the
+		// moment no data happens to be buffered yet. That is normal non-canonical
+		// "nothing available right now" behavior for a character device, not an
+		// actual end-of-file condition, so it must be treated the same as
+		// EAGAIN/EWOULDBLOCK: keep polling until data arrives or the deadline
+		// above fires. Treating it as fatal here made any live slave response
+		// that wasn't already queued before the very first read() attempt fail
+		// with a spurious "EOF" - i.e. effectively all of them.
+		if readErr != nil && !errors.Is(readErr, syscall.EAGAIN) && !errors.Is(readErr, syscall.EWOULDBLOCK) && !errors.Is(readErr, io.EOF) {
 			return nil, readErr
 		}
 		if n == 0 {
