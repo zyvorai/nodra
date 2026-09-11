@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — Industrial transports
+
+- Add Modbus RTU transport to the existing Modbus connector (TCP remains the default).
+- Add Linux termios serial configuration and Modbus CRC16 validation.
+- Add `j1939-device-agent` connector for Device Agent RX-only CAN SSE streams.
+- Decode 29-bit J1939 PGN/source/destination inside Nodra, not Device Agent.
+- Add deterministic CRC, config, J1939 identifier and SSE connector tests.
+
 ## Unreleased
 
 - Nodra → Zyvor Relay Accept bridge (`nodra-relay-bridge`): map cloud-route webhooks to `POST /v1/events` (direct or relay-pubsub gateway).
