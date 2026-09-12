@@ -1,4 +1,8 @@
-# Security model
+---
+hero:
+  eyebrow: SECURITY MODEL
+  title: Security model
+---
 
 ## Trust boundaries
 

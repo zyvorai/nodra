@@ -1,4 +1,8 @@
-# Operations
+---
+hero:
+  eyebrow: OPERATIONS
+  title: Operations
+---
 
 ## Backup
 

@@ -1,4 +1,8 @@
-# Nodra ↔ Zyvor Relay
+---
+hero:
+  eyebrow: RELAY
+  title: Nodra ↔ Zyvor Relay
+---
 
 Nodra keeps the edge online (MQTT/HTTP, offline WAL, twins). [Zyvor Relay](https://github.com/zyvorai/relay) owns the durable ops loop: **Accept → Notify → Ack → Act → Verify**.
 

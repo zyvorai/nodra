@@ -16,3 +16,4 @@ coverage.out
 # MkDocs
 .venv-docs/
 site/
+__pycache__/

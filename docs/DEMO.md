@@ -1,4 +1,8 @@
-# Demo and user walkthrough
+---
+hero:
+  eyebrow: DEMO
+  title: Demo and user walkthrough
+---
 
 Nodra ships a full user-demo path: control plane console, A–Z fleet simulation, and verification scripts.
 

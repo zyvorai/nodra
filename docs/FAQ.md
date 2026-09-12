@@ -1,4 +1,8 @@
-# FAQ
+---
+hero:
+  eyebrow: FAQ
+  title: FAQ
+---
 
 Questions people evaluating Nodra actually ask, before they've decided to
 adopt it. Already decided? [`docs/DEMO.md`](DEMO.md) and

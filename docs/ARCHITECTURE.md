@@ -1,4 +1,8 @@
-# Architecture
+---
+hero:
+  eyebrow: ARCHITECTURE
+  title: Architecture
+---
 
 ## Components
 

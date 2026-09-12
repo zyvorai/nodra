@@ -1,4 +1,8 @@
-# Supply-chain and release model
+---
+hero:
+  eyebrow: SUPPLY CHAIN
+  title: Supply-chain and release model
+---
 
 Nodra's core edge runtime stays dependency-light. The **optional** Postgres fleet store pulls `github.com/jackc/pgx/v5` (and its transitive modules) as the first intentional runtime Go dependency. File-store deployments do not require a live Postgres connection.
 

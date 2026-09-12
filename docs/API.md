@@ -1,4 +1,8 @@
-# API guide
+---
+hero:
+  eyebrow: API
+  title: API guide
+---
 
 Base path: `/api/v1`.
 

@@ -1,4 +1,8 @@
-# Troubleshooting
+---
+hero:
+  eyebrow: TROUBLESHOOTING
+  title: Troubleshooting
+---
 
 Real operational issues, with the documented fix — not a generic checklist.
 If your symptom isn't here, check [`docs/OPERATIONS.md`](OPERATIONS.md) in
@@ -49,8 +53,9 @@ Nodra's J1939 connector consumes Zyvor Device Agent's read-only CAN capture
 SSE stream — it does not talk to CAN hardware directly. Confirm Device
 Agent's `industrial.can_capture` is enabled and streaming first (see Device
 Agent's own `docs/CAN_CAPTURE.md`), then check
-[`docs/INDUSTRIAL_PROTOCOLS.md`](INDUSTRIAL_PROTOCOLS.md#j1939-from-device-agent)
-for the exact `j1939-device-agent` configuration this depends on.
+[`docs/INDUSTRIAL_PROTOCOLS.md`](INDUSTRIAL_PROTOCOLS.md) (see the
+"J1939 (Device Agent)" tab) for the exact `j1939-device-agent` configuration
+this depends on.
 
 ## An OPC-UA/serial/NATS/Zenoh/Kafka connector isn't available
 
