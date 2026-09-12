@@ -114,4 +114,4 @@ export RELAY_AUTH_TOKEN=<jwt>
 # Nodra Streams route target_url → http://127.0.0.1:8095/v1/nodra/delivery
 ```
 
-See [docs/RELAY.md](RELAY.md) and [examples/relay](../examples/relay/).
+See [docs/RELAY.md](RELAY.md) and [examples/relay](https://github.com/zyvorai/nodra/tree/main/examples/relay).

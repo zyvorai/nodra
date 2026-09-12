@@ -9,8 +9,8 @@ starting points.
 
 **Is it really free?** Yes. Apache-2.0 — use, modify, and run it for
 personal, lab, and commercial production use at no charge, subject to
-preserving notices (see [`NOTICE`](../NOTICE)). See the README's
-[License](../README.md#license) section.
+preserving notices (see [`NOTICE`](https://github.com/zyvorai/nodra/blob/main/NOTICE)). See the README's
+[License](https://github.com/zyvorai/nodra#license) section.
 
 **What does "Enterprise" mean here?** Production support, SLAs, and
 Zyvor's other commercial products are licensed separately from this
@@ -21,7 +21,7 @@ requires it.
 
 **What if I find a bug?** Open a GitHub issue.
 
-**What if I find a security vulnerability?** See [`SECURITY.md`](../SECURITY.md)
+**What if I find a security vulnerability?** See [`SECURITY.md`](https://github.com/zyvorai/nodra/blob/main/SECURITY.md)
 for private reporting — supported versions are `main` plus the latest
 tagged minor release only. See [`docs/SECURITY-MODEL.md`](SECURITY-MODEL.md)
 for the trust-boundary model.
@@ -31,7 +31,7 @@ for the trust-boundary model.
 **Is this production-ready?** The README is explicit: "v0.2.0 is a serious
 single-control-plane release... The control plane uses an embedded
 append-only WAL and intentionally runs as one writer/replica. Horizontal HA
-is a future storage mode, not a claim in this release." [`ROADMAP.md`](../ROADMAP.md)
+is a future storage mode, not a claim in this release." [`ROADMAP.md`](https://github.com/zyvorai/nodra/blob/main/ROADMAP.md)
 lists what's still required before v1.0: a stable API compatibility policy,
 an HA control plane including delivery workers, upgrade/migration
 guarantees, multi-day soak tests under WAN loss and disk pressure, protocol

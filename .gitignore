@@ -12,3 +12,7 @@ coverage.out
 
 # Deploy state (no secrets)
 .deploy-last
+
+# MkDocs
+.venv-docs/
+site/

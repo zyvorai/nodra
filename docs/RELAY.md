@@ -67,7 +67,7 @@ Bridge returns **2xx only when Relay Accept succeeds**, so Nodra retries and DLQ
 
 ## Compose sketch
 
-See [`examples/relay/`](../examples/relay/) for a bridge + mock Accept compose file.
+See [`examples/relay/`](https://github.com/zyvorai/nodra/tree/main/examples/relay) for a bridge + mock Accept compose file.
 
 ```bash
 ./scripts/smoke-relay-bridge.sh
