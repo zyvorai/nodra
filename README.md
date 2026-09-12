@@ -29,6 +29,39 @@ PLC / sensor / app
  MES   local AI/app
 ```
 
+## Is this for you?
+
+Nodra is a small, open-source (Apache-2.0), offline-first edge runtime: local
+MQTT/HTTP ingress, a durable store-and-forward WAL, local routes, device
+twins, and edge app reconciliation, running on a single site's own hardware.
+It is not a no-code automation platform, not a managed cloud IoT service,
+and not a distributed/HA data store today (the single-writer caveat above is
+load-bearing, not a footnote).
+
+| | **Nodra** | Node-RED | EMQX/HiveMQ Edge | AWS IoT Greengrass | Azure IoT Edge |
+|---|---|---|---|---|---|
+| Primary scope | Edge ingress + durable store-and-forward + device twins + app reconciliation | Visual flow-based automation | MQTT broker (edge-deployed) | Cloud-connected edge runtime | Cloud-connected edge runtime |
+| Cloud dependency | None required — WAN-loss is a first-class operating mode, not a degraded one | None required | Usually paired with a cloud broker/console | AWS IoT Core | Azure IoT Hub |
+| License | Apache-2.0 | Apache-2.0 | Apache-2.0 core (EMQX) / proprietary (HiveMQ Edge) | Proprietary (free tier) | Proprietary (free tier) |
+| Industrial protocol decoding | Modbus TCP + RTU implemented; OPC-UA/serial/NATS/Zenoh/Kafka are roadmap, not shipped (`docs/INDUSTRIAL_PROTOCOLS.md`) | Via community nodes | Not built-in | Via custom components | Via custom modules |
+| HA / clustering | Not yet — v0.2 is intentionally single-writer; see `ROADMAP.md`'s v1.0 criteria | N/A (single instance) | Yes (broker clustering) | Managed by AWS | Managed by Azure |
+
+*(General characterizations as of writing — verify current features against
+each project's own docs.)*
+
+**Maturity, stated honestly**: current release is v0.2.1. The project's own
+`ROADMAP.md` lists what's still required before v1.0 — stable API
+compatibility, an HA control plane, upgrade/migration guarantees, multi-day
+soak tests, protocol conformance suites, and published recovery runbooks/
+scale envelope. If you need HA or a stability guarantee today, this isn't
+there yet; if you need a single-site, offline-resilient edge runtime, this
+is exactly the scope.
+
+New here? [`docs/FAQ.md`](docs/FAQ.md) covers licensing, support,
+production-readiness and protocol-support questions;
+[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) covers real
+operational issues with their documented fix.
+
 ## v0.2 highlights
 
 - **Real MQTT 3.1.1 edge ingress**: CONNECT, SUBSCRIBE, QoS 0/1 PUBLISH, PUBACK, PINGREQ and local subscriber fan-out.
@@ -416,6 +449,8 @@ GitHub CI additionally runs:
 | Doc | Topic |
 |---|---|
 | [https://zyvor.dev/docs/nodra](https://zyvor.dev/docs/nodra) | Product docs on zyvor.dev |
+| [docs/FAQ.md](docs/FAQ.md) | Licensing, support, production-readiness, protocol support |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Real operational issues, with the fix |
 | [docs/DEMO.md](docs/DEMO.md) | User demo, console, `nodra-sim`, lab scripts |
 | [docs/RELAY.md](docs/RELAY.md) | Nodra → Zyvor Relay Accept bridge |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components and durability |
