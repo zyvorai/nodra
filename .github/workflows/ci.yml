@@ -88,3 +88,74 @@ jobs:
         env:
           NODRA_DATABASE_URL: postgres://nodra:nodra@127.0.0.1:5432/nodra?sslmode=disable
         run: go test ./internal/store/ -count=1 -run Postgres -v
+
+  relay-bridge-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with: {go-version: '1.27.x', cache: false}
+      - run: chmod +x scripts/smoke-relay-bridge.sh && ./scripts/smoke-relay-bridge.sh
+
+  compose-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose control-plane + edge smoke
+        run: |
+          chmod +x scripts/ci/compose-smoke.sh
+          ./scripts/ci/compose-smoke.sh
+
+  compose-relay-bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose relay-bridge example
+        run: |
+          docker compose -f examples/relay/docker-compose.bridge.yml up --build -d
+          for i in $(seq 1 40); do
+            curl -fsS http://127.0.0.1:8095/healthz >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8095/healthz >/dev/null
+          curl -fsS -X POST http://127.0.0.1:8095/v1/nodra/delivery \
+            -H 'Content-Type: application/json' \
+            -d '{"event_id":"edge_ci_1","site_id":"site_ci","topic":"factory/line-1/alert","payload":{"ok":true},"delivery_id":"dlv_ci_1","event_time":"2026-09-14T00:00:00Z"}' \
+            | grep -Fq '"accepted":true'
+          docker compose -f examples/relay/docker-compose.bridge.yml down -v
+
+  backup-restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with: {go-version: '1.27.x', cache: false}
+      - run: |
+          chmod +x scripts/ci/backup-restore.sh scripts/backup-state.sh scripts/restore-state.sh
+          ./scripts/ci/backup-restore.sh
+
+  suite-ci:
+    needs: [test, vuln, container, kubernetes, postgres, relay-bridge-smoke, compose-stack, compose-relay-bridge, backup-restore]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with: {go-version: '1.27.x', cache: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.13'}
+      - run: pip install -r requirements-ci.txt
+      - name: Qualify with CI markers
+        env:
+          NODRA_QUALIFY_FAST: "1"
+          NODRA_CI_BACKUP: "1"
+          NODRA_CI_RELAY_BRIDGE: "1"
+          NODRA_CI_COMPOSE: "1"
+          NODRA_CI_COMPOSE_BRIDGE: "1"
+        run: make qualify
+      - uses: actions/upload-artifact@v7
+        with:
+          name: qualification-suite-ci
+          path: evidence/qualification/software-matrix.json
+          if-no-files-found: error

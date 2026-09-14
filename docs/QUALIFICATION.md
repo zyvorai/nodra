@@ -6,7 +6,7 @@ hero:
 
 Software rows are automated by `make qualify`. Multi-hour WAN-loss / disk-pressure
 soaks, HA claims, and signed backup/restore drills remain operator-recorded in
-[`evidence/qualification/ops-checklist.md`](../evidence/qualification/ops-checklist.md).
+[`evidence/qualification/ops-checklist.md`](https://github.com/zyvorai/nodra/blob/main/evidence/qualification/ops-checklist.md).
 
 ## Software (host) rows — `make qualify`
 
@@ -41,3 +41,7 @@ optional Postgres fleet store. They **do not** prove HA or multi-day soak.
 
 v0.2.x does not provide multi-replica delivery/DLQ HA. Production is one
 control-plane writer with a tested backup. See [ROADMAP.md](https://github.com/zyvorai/nodra/blob/main/ROADMAP.md).
+
+## GitHub CI (lab substitute)
+
+CI runs relay-bridge smoke, compose stack, compose relay-bridge, and backup/restore. Soak/HA rows stay operator-signed.

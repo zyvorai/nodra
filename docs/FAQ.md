@@ -37,7 +37,7 @@ single-control-plane product. Edge sites are offline-first. The control plane
 uses an embedded append-only WAL and intentionally runs as one writer/replica.
 Horizontal HA is a future storage mode, not a claim in this release. Run
 `make qualify` and sign [`docs/QUALIFICATION.md`](QUALIFICATION.md) /
-[`evidence/qualification/ops-checklist.md`](../evidence/qualification/ops-checklist.md)
+[`evidence/qualification/ops-checklist.md`](https://github.com/zyvorai/nodra/blob/main/evidence/qualification/ops-checklist.md)
 before go-live. See [`docs/PRODUCTION.md`](PRODUCTION.md).
 [`ROADMAP.md`](https://github.com/zyvorai/nodra/blob/main/ROADMAP.md)
 lists what's still required before v1.0: a stable API compatibility policy,

@@ -100,8 +100,21 @@ def main():
     else:
         row(results, "postgres_store_ci", "skip", "set NODRA_DATABASE_URL — covered by CI postgres job")
 
+    for name, env_key, detail in [
+        ("backup_restore_drill", "NODRA_CI_BACKUP", "scripts/ci/backup-restore.sh + CI backup-restore"),
+        ("ci_relay_bridge_smoke", "NODRA_CI_RELAY_BRIDGE", "scripts/smoke-relay-bridge.sh"),
+        ("ci_compose_stack", "NODRA_CI_COMPOSE", "scripts/ci/compose-smoke.sh"),
+        ("ci_compose_relay_bridge", "NODRA_CI_COMPOSE_BRIDGE", "examples/relay/docker-compose.bridge.yml"),
+    ]:
+        val = os.environ.get(env_key, "")
+        if val in ("1", "true", "pass", "yes"):
+            row(results, name, "pass", detail)
+        elif name == "backup_restore_drill":
+            row(results, name, "skip", "operator-signed or set NODRA_CI_BACKUP=1 — evidence/qualification/ops-checklist.md")
+        else:
+            row(results, name, "skip", f"set {env_key}=1 after CI job; {detail}")
+
     for name, detail in [
-        ("backup_restore_drill", "operator-signed — evidence/qualification/ops-checklist.md"),
         ("wan_loss_disk_pressure_soak", "operator-signed multi-hour soak; see docs/QUALIFICATION.md"),
         ("ha_multi_writer", "not claimed in v0.2.x — ROADMAP v1.0"),
     ]:

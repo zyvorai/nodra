@@ -14,7 +14,8 @@
 
 ## Unreleased
 
-- (none)
+- GitHub CI lab substitutes: relay-bridge smoke, compose stack, compose
+  relay-bridge example, backup/restore drill, suite-ci qualify markers.
 
 ## 0.2.2 — 2026-09-14
 
