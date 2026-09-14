@@ -115,8 +115,10 @@ jobs:
       - name: Compose relay-bridge example
         run: |
           docker compose -f examples/relay/docker-compose.bridge.yml up --build -d
-          for i in $(seq 1 40); do
-            curl -fsS http://127.0.0.1:8095/healthz >/dev/null 2>&1 && break
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8095/healthz >/dev/null 2>&1; then
+              break
+            fi
             sleep 2
           done
           curl -fsS http://127.0.0.1:8095/healthz >/dev/null
