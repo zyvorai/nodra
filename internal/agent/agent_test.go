@@ -10,10 +10,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/zyvorai/nodra/internal/model"
 	"github.com/zyvorai/nodra/internal/server"
 )
 
@@ -232,5 +234,93 @@ func TestAgentSendsOriginalEventTime(t *testing.T) {
 	a.FlushNow(context.Background())
 	if !got.Equal(when) {
 		t.Fatalf("got=%s", got)
+	}
+}
+
+func writeFakeDocker(t *testing.T, dir string, script string) string {
+	t.Helper()
+	path := filepath.Join(dir, "docker")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestReconcileDockerAlreadyRunning(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "calls.log")
+	bin := writeFakeDocker(t, dir, "#!/bin/sh\necho \"$@\" >>\""+logPath+"\"\nif [ \"$1\" = inspect ]; then echo true; exit 0; fi\necho unexpected >&2; exit 1\n")
+	t.Setenv("NODRA_DOCKER_BIN", bin)
+	cfg := DefaultConfig()
+	cfg.DataDir = t.TempDir()
+	a, err := New(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := a.reconcileDocker(context.Background(), model.Deployment{
+		ID: "dep_abc", Image: "busybox:latest", DesiredState: "running",
+	})
+	if err != nil || state != "running" {
+		t.Fatalf("state=%s err=%v", state, err)
+	}
+	b, _ := os.ReadFile(logPath)
+	if !bytes.Contains(b, []byte("inspect")) {
+		t.Fatalf("log=%s", b)
+	}
+	if bytes.Contains(b, []byte("pull")) || bytes.Contains(b, []byte("run")) {
+		t.Fatalf("should not pull/run when already running: %s", b)
+	}
+}
+
+func TestReconcileDockerStartWhenStopped(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "calls.log")
+	bin := writeFakeDocker(t, dir, "#!/bin/sh\necho \"$@\" >>\""+logPath+"\"\nif [ \"$1\" = inspect ]; then echo false; exit 0; fi\nif [ \"$1\" = pull ] || [ \"$1\" = rm ] || [ \"$1\" = run ]; then exit 0; fi\necho unexpected >&2; exit 1\n")
+	t.Setenv("NODRA_DOCKER_BIN", bin)
+	cfg := DefaultConfig()
+	cfg.DataDir = t.TempDir()
+	a, err := New(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := a.reconcileDocker(context.Background(), model.Deployment{
+		ID: "dep_start1", Image: "alpine:3.19", DesiredState: "running",
+		Env: map[string]string{"K": "V"}, Ports: []string{"8080:80"},
+	})
+	if err != nil || state != "running" {
+		t.Fatalf("state=%s err=%v", state, err)
+	}
+	b, _ := os.ReadFile(logPath)
+	if !bytes.Contains(b, []byte("pull alpine:3.19")) {
+		t.Fatalf("missing pull: %s", b)
+	}
+	if !bytes.Contains(b, []byte("run -d")) || !bytes.Contains(b, []byte("--name nodra-start1")) {
+		t.Fatalf("missing run: %s", b)
+	}
+	if !bytes.Contains(b, []byte("-e K=V")) || !bytes.Contains(b, []byte("-p 8080:80")) {
+		t.Fatalf("missing env/ports: %s", b)
+	}
+}
+
+func TestReconcileDockerStopRunning(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "calls.log")
+	bin := writeFakeDocker(t, dir, "#!/bin/sh\necho \"$@\" >>\""+logPath+"\"\nif [ \"$1\" = inspect ]; then echo true; exit 0; fi\nif [ \"$1\" = rm ]; then exit 0; fi\necho unexpected >&2; exit 1\n")
+	t.Setenv("NODRA_DOCKER_BIN", bin)
+	cfg := DefaultConfig()
+	cfg.DataDir = t.TempDir()
+	a, err := New(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := a.reconcileDocker(context.Background(), model.Deployment{
+		ID: "dep_x", Image: "busybox:latest", DesiredState: "stopped",
+	})
+	if err != nil || state != "stopped" {
+		t.Fatalf("state=%s err=%v", state, err)
+	}
+	b, _ := os.ReadFile(logPath)
+	if !bytes.Contains(b, []byte("rm -f nodra-x")) {
+		t.Fatalf("missing rm: %s", b)
 	}
 }

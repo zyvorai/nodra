@@ -658,14 +658,24 @@ func (a *Agent) syncDeployments(ctx context.Context) {
 		}
 	}
 }
+// dockerBin resolves the Docker CLI. Override with NODRA_DOCKER_BIN for tests
+// or alternate runtimes (e.g. a PATH shim that logs argv).
+func dockerBin() string {
+	if v := strings.TrimSpace(os.Getenv("NODRA_DOCKER_BIN")); v != "" {
+		return v
+	}
+	return "docker"
+}
+
 func (a *Agent) reconcileDocker(ctx context.Context, d model.Deployment) (string, error) {
+	bin := dockerBin()
 	name := "nodra-" + strings.TrimPrefix(d.ID, "dep_")
-	running := exec.CommandContext(ctx, "docker", "inspect", "-f", "{{.State.Running}}", name)
+	running := exec.CommandContext(ctx, bin, "inspect", "-f", "{{.State.Running}}", name)
 	out, _ := running.Output()
 	isRunning := strings.TrimSpace(string(out)) == "true"
 	if d.DesiredState == "stopped" {
 		if isRunning {
-			if b, err := exec.CommandContext(ctx, "docker", "rm", "-f", name).CombinedOutput(); err != nil {
+			if b, err := exec.CommandContext(ctx, bin, "rm", "-f", name).CombinedOutput(); err != nil {
 				return "unknown", fmt.Errorf("docker stop: %v: %s", err, strings.TrimSpace(string(b)))
 			}
 		}
@@ -674,10 +684,10 @@ func (a *Agent) reconcileDocker(ctx context.Context, d model.Deployment) (string
 	if isRunning {
 		return "running", nil
 	}
-	if out, err := exec.CommandContext(ctx, "docker", "pull", d.Image).CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, bin, "pull", d.Image).CombinedOutput(); err != nil {
 		return "stopped", fmt.Errorf("docker pull: %v: %s", err, strings.TrimSpace(string(out)))
 	}
-	_ = exec.CommandContext(ctx, "docker", "rm", "-f", name).Run()
+	_ = exec.CommandContext(ctx, bin, "rm", "-f", name).Run()
 	args := []string{"run", "-d", "--restart", "unless-stopped", "--name", name, "--label", "io.zyvor.nodra.deployment=" + d.ID}
 	for k, v := range d.Env {
 		args = append(args, "-e", k+"="+v)
@@ -690,7 +700,7 @@ func (a *Agent) reconcileDocker(ctx context.Context, d model.Deployment) (string
 	}
 	args = append(args, d.Image)
 	args = append(args, d.Command...)
-	if out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, bin, args...).CombinedOutput(); err != nil {
 		return "stopped", fmt.Errorf("docker run: %v: %s", err, strings.TrimSpace(string(out)))
 	}
 	return "running", nil
