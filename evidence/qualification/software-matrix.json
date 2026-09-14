@@ -1,0 +1,84 @@
+{
+  "generated_at": "2026-09-14T10:48:08.340799+00:00",
+  "finished_at": "2026-09-14T10:48:10.774986+00:00",
+  "product": "nodra",
+  "version": "0.2.1",
+  "host": "Darwin",
+  "results": [
+    {
+      "id": "version_lockstep",
+      "status": "pass",
+      "detail": "0.2.1",
+      "class": "software"
+    },
+    {
+      "id": "gofmt",
+      "status": "pass",
+      "detail": "",
+      "class": "software"
+    },
+    {
+      "id": "go_vet",
+      "status": "pass",
+      "detail": "",
+      "class": "software"
+    },
+    {
+      "id": "unit_race",
+      "status": "skip",
+      "detail": "NODRA_QUALIFY_FAST=1 \u2014 covered by release-check / CI race job",
+      "class": "software"
+    },
+    {
+      "id": "readyz_store_ping",
+      "status": "pass",
+      "detail": "ok  \tgithub.com/zyvorai/nodra/internal/server\t0.222s\n",
+      "class": "software"
+    },
+    {
+      "id": "openapi_yaml_parse",
+      "status": "pass",
+      "detail": "",
+      "class": "software"
+    },
+    {
+      "id": "build_binaries",
+      "status": "pass",
+      "detail": "sim\nCGO_ENABLED=0 go build -trimpath -ldflags \"-s -w -X github.com/zyvorai/nodra/internal/version.Version=0.2.1 -X github.com/zyvorai/nodra/internal/version.Commit=5b6a62e -X github.com/zyvorai/nodra/internal/version.BuildDate=2026-09-14T10:48:09Z\" -o bin/nodra-relay-bridge ./cmd/nodra-relay-bridge\n",
+      "class": "software"
+    },
+    {
+      "id": "local_smoke",
+      "status": "skip",
+      "detail": "NODRA_QUALIFY_FAST=1 \u2014 covered by release-check smoke",
+      "class": "software"
+    },
+    {
+      "id": "backup_restore_drill",
+      "status": "skip",
+      "detail": "operator-signed \u2014 evidence/qualification/ops-checklist.md",
+      "class": "software"
+    },
+    {
+      "id": "wan_loss_disk_pressure_soak",
+      "status": "skip",
+      "detail": "operator-signed multi-hour soak; see docs/QUALIFICATION.md",
+      "class": "software"
+    },
+    {
+      "id": "ha_multi_writer",
+      "status": "skip",
+      "detail": "not claimed in v0.2.x \u2014 ROADMAP v1.0",
+      "class": "software"
+    },
+    {
+      "id": "postgres_store_ci",
+      "status": "skip",
+      "detail": "optional backend; no CI Postgres job yet",
+      "class": "software"
+    }
+  ],
+  "software_pass": true,
+  "ops_claimed": false,
+  "note": "Ops/lab rows are skip until evidence/qualification/ops-checklist.md is signed."
+}

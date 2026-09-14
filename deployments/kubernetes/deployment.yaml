@@ -23,7 +23,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: nodra-server
-          image: ghcr.io/zyvorai/nodra:0.2.0
+          image: ghcr.io/zyvorai/nodra:0.2.1
           imagePullPolicy: IfNotPresent
           env:
             - name: NODRA_DATA_DIR

@@ -4,6 +4,7 @@
 package store
 
 import (
+	"context"
 	"time"
 
 	"github.com/zyvorai/nodra/internal/model"
@@ -13,6 +14,7 @@ import (
 // The default file WAL implementation and optional Postgres backend both satisfy it.
 type Backend interface {
 	Snapshot() model.State
+	Ping(ctx context.Context) error
 	AddSite(v model.Site) error
 	Site(id string) (model.Site, bool)
 	UpdateSite(id string, fn func(*model.Site)) error

@@ -57,7 +57,7 @@ ATOK="$(python3 -c "import json,sys;print(json.load(sys.stdin)['agent_token'])" 
 pass "enrolled site ${SITE}"
 
 curl -fsS -X POST "$BASE/api/v1/heartbeat" -H "Authorization: Bearer ${ATOK}" -H 'Content-Type: application/json' \
-  -d "{\"site_id\":\"${SITE}\",\"version\":\"0.2.0\",\"metrics\":{\"queue_depth\":1,\"queue_bytes\":1024}}" >/dev/null
+  -d "{\"site_id\":\"${SITE}\",\"version\":\"0.2.1\",\"metrics\":{\"queue_depth\":1,\"queue_bytes\":1024}}" >/dev/null
 pass "heartbeat online"
 
 dev="$(curl -fsS -X POST "$BASE/api/v1/devices/register" -H "Authorization: Bearer ${ATOK}" -H 'Content-Type: application/json' \

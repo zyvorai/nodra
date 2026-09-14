@@ -10,4 +10,4 @@ resources:
   - ../../kubernetes/networkpolicy.yaml
 images:
   - name: ghcr.io/zyvorai/nodra
-    newTag: 0.2.0
+    newTag: 0.2.1

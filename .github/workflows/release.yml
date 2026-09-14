@@ -42,6 +42,8 @@ jobs:
           go build -trimpath -ldflags "$LDFLAGS" -o "dist/pkg/nodra-server$suffix" ./cmd/nodra-server
           go build -trimpath -ldflags "$LDFLAGS" -o "dist/pkg/nodrad$suffix" ./cmd/nodrad
           go build -trimpath -ldflags "$LDFLAGS" -o "dist/pkg/nodractl$suffix" ./cmd/nodractl
+          go build -trimpath -ldflags "$LDFLAGS" -o "dist/pkg/nodra-sim$suffix" ./cmd/nodra-sim
+          go build -trimpath -ldflags "$LDFLAGS" -o "dist/pkg/nodra-relay-bridge$suffix" ./cmd/nodra-relay-bridge
           cp LICENSE NOTICE README.md dist/pkg/
           base="nodra_${VERSION}_${GOOS}_${GOARCH}"
           if [ "$GOOS" = windows ]; then (cd dist/pkg && zip -q "../$base.zip" *); else tar -C dist/pkg -czf "dist/$base.tar.gz" .; fi

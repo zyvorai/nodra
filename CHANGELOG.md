@@ -1,12 +1,16 @@
 # Changelog
 
-## 0.2.1 — Industrial transports
+## 0.2.1 — Industrial transports + production scaffolding
 
 - Add Modbus RTU transport to the existing Modbus connector (TCP remains the default).
 - Add Linux termios serial configuration and Modbus CRC16 validation.
 - Add `j1939-device-agent` connector for Device Agent RX-only CAN SSE streams.
 - Decode 29-bit J1939 PGN/source/destination inside Nodra, not Device Agent.
 - Add deterministic CRC, config, J1939 identifier and SSE connector tests.
+- Align packaging versions (Makefile, Chart, Dockerfile, OpenAPI, k8s tags) to **0.2.1**.
+- Deeper `/readyz` (fleet store ping + delivery/DLQ availability).
+- `make qualify` software matrix + PRODUCTION/QUALIFICATION docs; backup/restore scripts.
+- Release archives include `nodra-sim` and `nodra-relay-bridge`.
 
 ## Unreleased
 

@@ -17,12 +17,18 @@ jobs:
       - run: pip install -r requirements-ci.txt
       - name: Release checks
         run: ./scripts/release-check.sh
+      - name: Software qualification matrix
+        if: matrix.go == '1.27.x'
+        run: NODRA_QUALIFY_FAST=1 make qualify
       - name: Coverage
         if: matrix.go == '1.27.x'
         run: go test -coverprofile=coverage.out ./...
       - uses: actions/upload-artifact@v7
         if: matrix.go == '1.27.x'
         with: {name: coverage, path: coverage.out}
+      - uses: actions/upload-artifact@v7
+        if: matrix.go == '1.27.x'
+        with: {name: qualification-matrix, path: evidence/qualification/software-matrix.json}
   vuln:
     runs-on: ubuntu-latest
     steps:

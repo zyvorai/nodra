@@ -1,6 +1,6 @@
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: Apache-2.0
-VERSION ?= 0.2.0
+VERSION ?= 0.2.1
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS = -s -w -X github.com/zyvorai/nodra/internal/version.Version=$(VERSION) -X github.com/zyvorai/nodra/internal/version.Commit=$(COMMIT) -X github.com/zyvorai/nodra/internal/version.BuildDate=$(BUILD_DATE)
@@ -9,7 +9,7 @@ LDFLAGS = -s -w -X github.com/zyvorai/nodra/internal/version.Version=$(VERSION) 
 PORT ?= $(NODRA_PORT)
 HOST ?= $(NODRA_HOST)
 
-.PHONY: all test race vet fmt build clean release-check smoke smoke-relay-bridge demo-client demo-k8s test-all deploy
+.PHONY: all test race vet fmt build clean release-check smoke smoke-relay-bridge demo-client demo-k8s test-all deploy qualify
 all: test build
 fmt:
 	@test -z "$$(gofmt -l .)" || (echo "Run gofmt on:"; gofmt -l .; exit 1)
@@ -26,6 +26,8 @@ build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/nodractl ./cmd/nodractl
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/nodra-sim ./cmd/nodra-sim
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/nodra-relay-bridge ./cmd/nodra-relay-bridge
+qualify: build
+	python3 scripts/qualify-matrix.py
 smoke:
 	./scripts/smoke.sh
 smoke-relay-bridge:

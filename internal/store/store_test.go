@@ -4,10 +4,12 @@
 package store
 
 import (
-	"github.com/zyvorai/nodra/internal/model"
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/zyvorai/nodra/internal/model"
 )
 
 func TestWALPersistence(t *testing.T) {
@@ -35,6 +37,19 @@ func TestWALPersistence(t *testing.T) {
 		t.Fatal("event missing")
 	}
 }
+
+func TestFileStorePing(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "state.json")
+	s, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.Ping(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTwinPersistence(t *testing.T) {
 	s, _ := Open(filepath.Join(t.TempDir(), "state.json"))
 	defer s.Close()

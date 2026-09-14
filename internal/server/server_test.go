@@ -56,6 +56,25 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server, testClient) {
 	t.Cleanup(ts.Close)
 	return s, ts, testClient{ts.URL, "adm", t}
 }
+
+func TestReadyz(t *testing.T) {
+	_, _, c := newTestServer(t)
+	code, body := c.req(http.MethodGet, "/readyz", nil, "")
+	if code != 200 {
+		t.Fatalf("readyz status=%d body=%s", code, body)
+	}
+	var out map[string]string
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["status"] != "ready" {
+		t.Fatalf("unexpected readyz payload: %v", out)
+	}
+	if out["store"] != "file" {
+		t.Fatalf("expected file store, got %q", out["store"])
+	}
+}
+
 func enrollSite(t *testing.T, c testClient) (string, string) {
 	code, b := c.req("POST", "/api/v1/enroll", map[string]any{"name": "factory", "enrollment_token": "enroll"}, "")
 	if code != 201 {

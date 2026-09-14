@@ -8,11 +8,27 @@ hero:
 
 Stop the single control-plane writer or take a storage snapshot. Back up the Nodra data directory, including `state.snapshot.json`, `state.wal`, `deliveries/`, `deadletters/` and optional `pki/`.
 
+```bash
+./scripts/backup-state.sh /var/lib/nodra /var/backups/nodra-$(date -u +%Y%m%d).tar.gz
+```
+
 Activity / Logs ring is **in-memory only** and is not part of the durable backup set.
 
 ## Recovery
 
 Restore the complete data directory and start the same or newer compatible Nodra version. WAL replay reconstructs live state and pending queues. Re-run `nodra-sim` (or wait for continuous sim) if you need demo activity lines again.
+
+```bash
+# writer stopped; empty target or NODRA_RESTORE_FORCE=1
+./scripts/restore-state.sh /var/backups/nodra-….tar.gz /var/lib/nodra
+curl -fsS http://127.0.0.1:PORT/readyz   # must report store ready
+```
+
+Never dual-mount the same WAL on two live control-plane processes. See [PRODUCTION.md](PRODUCTION.md).
+
+## Readiness
+
+`GET /readyz` pings the fleet store (file WAL open / Postgres `Ping`) and confirms delivery + DLQ queues are available. Prefer it over `/healthz` for load balancer gates.
 
 ## Disk pressure
 
@@ -78,4 +94,7 @@ A slow webhook does not block unrelated routes because delivery is concurrent an
 ./scripts/smoke.sh
 ./scripts/smoke-remote.sh --port 20059
 ./scripts/test-all.sh --port 20059 --skip-deploy
+make qualify   # software matrix → evidence/qualification/software-matrix.json
 ```
+
+See [QUALIFICATION.md](QUALIFICATION.md) and [INTEGRATIONS.md](INTEGRATIONS.md).

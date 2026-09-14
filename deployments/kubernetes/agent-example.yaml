@@ -32,7 +32,7 @@ spec:
       securityContext: {runAsNonRoot: true, fsGroup: 65532, fsGroupChangePolicy: OnRootMismatch, seccompProfile: {type: RuntimeDefault}}
       initContainers:
         - name: init-config
-          image: ghcr.io/zyvorai/nodra:0.2.0
+          image: ghcr.io/zyvorai/nodra:0.2.1
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -48,7 +48,7 @@ spec:
           volumeMounts: [{name: data, mountPath: /data}]
       containers:
         - name: nodrad
-          image: ghcr.io/zyvorai/nodra:0.2.0
+          image: ghcr.io/zyvorai/nodra:0.2.1
           command: ["nodrad", "--config", "/data/nodrad.json"]
           ports: [{name: ingest, containerPort: 9091}, {name: mqtt, containerPort: 1883}]
           resources: {requests: {cpu: 25m, memory: 32Mi}, limits: {cpu: 250m, memory: 128Mi}}

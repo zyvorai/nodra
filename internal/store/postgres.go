@@ -38,6 +38,14 @@ CREATE TABLE IF NOT EXISTS nodra_events (id TEXT PRIMARY KEY, data JSONB NOT NUL
 CREATE TABLE IF NOT EXISTS nodra_seen_events (id TEXT PRIMARY KEY);
 `
 
+// Ping checks that the Postgres connection is still alive.
+func (s *PostgresStore) Ping(ctx context.Context) error {
+	if s == nil || s.db == nil {
+		return errors.New("postgres store is closed")
+	}
+	return s.db.PingContext(ctx)
+}
+
 func OpenPostgres(databaseURL string) (*PostgresStore, error) {
 	if databaseURL == "" {
 		return nil, errors.New("NODRA_DATABASE_URL is required for postgres store")

@@ -15,7 +15,7 @@ spec:
       securityContext: {runAsNonRoot: true, fsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: nodra-sim
-          image: ghcr.io/zyvorai/nodra:0.2.0
+          image: ghcr.io/zyvorai/nodra:0.2.1
           command: ["nodra-sim"]
           args:
             - --server=http://nodra-server:8080

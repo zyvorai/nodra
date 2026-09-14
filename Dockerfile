@@ -3,7 +3,7 @@
 # syntax=docker/dockerfile:1.7
 FROM golang:1.27-alpine AS build
 WORKDIR /src
-ARG VERSION=0.2.0
+ARG VERSION=0.2.1
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
 COPY go.mod ./

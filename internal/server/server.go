@@ -184,7 +184,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ready"}) })
+	mux.HandleFunc("GET /readyz", s.readyz)
 	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		ds := s.deliveries.Stats()
@@ -229,6 +229,32 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /", s.index)
 	return s.securityHeaders(s.requestLog(mux))
 }
+
+// readyz fails closed when the fleet store cannot be pinged or delivery queues are unavailable.
+func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if s.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "reason": "store_nil"})
+		return
+	}
+	if err := s.store.Ping(ctx); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"status": "not_ready", "reason": "store", "error": err.Error()})
+		return
+	}
+	if s.deliveries == nil || s.dlq == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "reason": "queues"})
+		return
+	}
+	_ = s.deliveries.Stats()
+	_ = s.dlq.Stats()
+	driver := s.cfg.StoreDriver
+	if driver == "" {
+		driver = "file"
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready", "store": driver})
+}
+
 func (s *Server) requestLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

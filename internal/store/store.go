@@ -5,6 +5,7 @@ package store
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -433,11 +434,30 @@ func (s *Store) EventsSince(t time.Time) []model.Event {
 	}
 	return out
 }
+
+// Ping reports whether the file WAL store can still serve reads.
+func (s *Store) Ping(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.wal == nil {
+		return errors.New("file store WAL is closed")
+	}
+	if _, err := os.Stat(s.dir); err != nil {
+		return fmt.Errorf("file store data dir: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.wal != nil {
-		return s.wal.Close()
+	if s.wal == nil {
+		return nil
 	}
-	return nil
+	err := s.wal.Close()
+	s.wal = nil
+	return err
 }

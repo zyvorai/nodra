@@ -32,10 +32,14 @@ for the trust-boundary model.
 
 ## Production readiness
 
-**Is this production-ready?** The README is explicit: "v0.2.0 is a serious
-single-control-plane release... The control plane uses an embedded
-append-only WAL and intentionally runs as one writer/replica. Horizontal HA
-is a future storage mode, not a claim in this release." [`ROADMAP.md`](https://github.com/zyvorai/nodra/blob/main/ROADMAP.md)
+**Is this production-ready?** Current release is **v0.2.1**: a serious
+single-control-plane product. Edge sites are offline-first. The control plane
+uses an embedded append-only WAL and intentionally runs as one writer/replica.
+Horizontal HA is a future storage mode, not a claim in this release. Run
+`make qualify` and sign [`docs/QUALIFICATION.md`](QUALIFICATION.md) /
+[`evidence/qualification/ops-checklist.md`](../evidence/qualification/ops-checklist.md)
+before go-live. See [`docs/PRODUCTION.md`](PRODUCTION.md).
+[`ROADMAP.md`](https://github.com/zyvorai/nodra/blob/main/ROADMAP.md)
 lists what's still required before v1.0: a stable API compatibility policy,
 an HA control plane including delivery workers, upgrade/migration
 guarantees, multi-day soak tests under WAN loss and disk pressure, protocol

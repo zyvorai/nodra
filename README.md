@@ -4,7 +4,7 @@
 
 Nodra is an Apache-2.0 edge runtime and control plane from Zyvor. It gives remote sites a local MQTT/HTTP ingress, durable store-and-forward, local routes, device twins, edge application reconciliation, fleet health, replayable dead letters and a clean web control plane.
 
-> **v0.2.0** is a serious single-control-plane release. Edge sites are offline-first. The control plane uses an embedded append-only WAL and intentionally runs as one writer/replica. Horizontal HA is a future storage mode, not a claim in this release.
+> **v0.2.1** is a serious single-control-plane release. Edge sites are offline-first. The control plane uses an embedded append-only WAL and intentionally runs as one writer/replica. Horizontal HA is a future storage mode, not a claim in this release.
 
 ## Why Nodra
 
@@ -310,7 +310,7 @@ Or Helm with the demo profile (control plane + agent + `nodra-sim`):
 helm upgrade --install nodra ./charts/nodra \
   --namespace nodra-demo --create-namespace \
   -f charts/nodra/values-demo.yaml \
-  --set image.repository=ghcr.io/zyvorai/nodra --set image.tag=0.2.0
+  --set image.repository=ghcr.io/zyvorai/nodra --set image.tag=0.2.1
 ```
 
 Sign in: `admin` / `nodra-demo-admin`. Simulation runs the full **A–Z** fleet (26 lettered sites) with live heartbeats, telemetry, twins, and a detailed **Logs** terminal in the console.
@@ -420,6 +420,7 @@ make test
 make race
 make vet
 make smoke
+make qualify
 make test-all PORT=20059 HOST=212.8.248.187   # local + remote when HOST reachable
 ./scripts/release-check.sh
 ```
@@ -427,6 +428,7 @@ make test-all PORT=20059 HOST=212.8.248.187   # local + remote when HOST reachab
 | Target / script | What it covers |
 |---|---|
 | `make smoke` | Local control plane + agent + login + list APIs |
+| `make qualify` | Software matrix → `evidence/qualification/software-matrix.json` |
 | `make demo-client` | Client demo against live URL / `.deploy-last` |
 | `make demo-k8s` | kind + Helm + sim |
 | `make test-all` | Build, local smoke, optional remote deploy/smoke + short sim |
