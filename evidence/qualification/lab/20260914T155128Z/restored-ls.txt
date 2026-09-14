@@ -1,0 +1,7 @@
+total 1900
+drwxr-xr-x 4 root root    4096 Sep 14 16:39 .
+drwxrwxr-x 4 sus  sus     4096 Sep 14 17:51 ..
+drwxr-x--- 2 root root    4096 Sep 14 09:39 deadletters
+drwxr-x--- 2 root root    4096 Sep 14 09:39 deliveries
+-rw------- 1 root root 1424859 Sep 14 16:39 state.snapshot.json
+-rw------- 1 root root  501657 Sep 14 17:51 state.wal

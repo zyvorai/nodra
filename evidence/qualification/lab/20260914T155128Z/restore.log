@@ -1,0 +1,2 @@
+restored /tmp/zyvor-ops/20260914T155128Z/nodra/nodra-backup.tar.gz → /tmp/zyvor-ops/20260914T155128Z/nodra/restored
+start one nodra-server and verify: curl -fsS http://127.0.0.1:PORT/readyz

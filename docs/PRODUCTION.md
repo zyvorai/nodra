@@ -9,6 +9,19 @@ For a multi-product evaluation host (Fleet + OTA + Device Agent + Nodra), see
 sibling repos' `docs/LAB.md` — that path is not a multi-replica production
 control plane.
 
+## Current maturity (2026-09-14)
+
+| Claim | Status |
+|---|---|
+| Software matrix + CI lab substitutes | green (`make qualify`, bridge/compose/backup CI) |
+| Ops checklist (backup/restore/single-replica) | **signed** for lab host — [ops-checklist.md](https://github.com/zyvorai/nodra/blob/main/evidence/qualification/ops-checklist.md) |
+| TLS on lab CP | **blocked** (HTTP evaluation); production needs Ingress or `NODRA_TLS_*` |
+| HA / multi-writer | **not available** in v0.2.x |
+| WAN-loss / disk-pressure soak | **unsigned** |
+
+**Verdict:** single-writer Nodra is **production-ready** when TLS + spool policy are set
+per this runbook and the ops checklist is signed on the target host. Lab CP is still HTTP.
+
 ## Preconditions
 
 1. Software matrix green: `make qualify` → `evidence/qualification/software-matrix.json`.

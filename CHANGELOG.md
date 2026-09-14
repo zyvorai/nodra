@@ -14,6 +14,8 @@
 
 ## Unreleased
 
+- Signed lab ops checklist (backup/restore); document TLS still blocked on lab HTTP.
+
 - GitHub CI lab substitutes: relay-bridge smoke, compose stack, compose
   relay-bridge example, backup/restore drill, suite-ci qualify markers.
 
