@@ -126,10 +126,19 @@ jobs:
             sleep 2
           done
           curl -fsS http://127.0.0.1:18096/healthz
-          curl -fsS -X POST http://127.0.0.1:18096/v1/nodra/delivery \
-            -H 'Content-Type: application/json' \
-            -d '{"event_id":"edge_ci_1","site_id":"site_ci","topic":"factory/line-1/alert","payload":{"ok":true},"delivery_id":"dlv_ci_1","event_time":"2026-09-14T00:00:00Z"}' \
-            | tee /tmp/bridge-out.json | grep -Fq '"accepted":true'
+          # Retry delivery briefly — mock Relay may still be binding.
+          ok=0
+          for i in $(seq 1 20); do
+            if curl -fsS -X POST http://127.0.0.1:18096/v1/nodra/delivery \
+              -H 'Content-Type: application/json' \
+              -d '{"event_id":"edge_ci_1","site_id":"site_ci","topic":"factory/line-1/alert","payload":{"ok":true},"delivery_id":"dlv_ci_1","event_time":"2026-09-14T00:00:00Z"}' \
+              | tee /tmp/bridge-out.json | grep -Fq '"accepted":true'; then
+              ok=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ok" = 1
           docker compose -f examples/relay/docker-compose.bridge.yml down -v
 
   backup-restore:
