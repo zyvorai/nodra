@@ -12,11 +12,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/zyvorai/nodra/internal/model"
 	"github.com/zyvorai/nodra/internal/server"
+	"github.com/zyvorai/nodra/internal/transform"
 )
 
 func TestAgentEnrollPublishFlush(t *testing.T) {
@@ -202,6 +204,51 @@ func TestLocalRouteWorksWhileCloudIsDown(t *testing.T) {
 	a.FlushNow(context.Background())
 	if a.Pending() != 1 {
 		t.Fatalf("cloud spool should remain, got %d", a.Pending())
+	}
+}
+
+func TestLocalRouteFilterAndTransform(t *testing.T) {
+	var bodies []string
+	var topics []string
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(b))
+		topics = append(topics, r.Header.Get("X-Nodra-Topic"))
+		w.WriteHeader(204)
+	}))
+	defer local.Close()
+	cfg := DefaultConfig()
+	cfg.ServerURL = "http://127.0.0.1:1"
+	cfg.SiteID = "s"
+	cfg.AgentToken = "t"
+	cfg.DataDir = t.TempDir()
+	cfg.LocalRoutes = []LocalRoute{{
+		Name: "MES", Topic: "factory/+/temp", TargetURL: local.URL, Method: "POST",
+		Headers:   map[string]string{"X-Nodra-Topic": "will-rewrite"},
+		Filter:    &transform.Filter{Min: map[string]float64{"c": 0}, Max: map[string]float64{"c": 80}},
+		Transform: &transform.Transform{SetFields: map[string]any{"unit": "C"}, TopicRewrite: "mes/{{topic}}", SetHeaders: map[string]string{"X-Nodra-Topic": "mes/factory/line1/temp"}},
+	}}
+	a, err := New(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := a.Handler()
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("POST", "/v1/publish", bytes.NewBufferString(`{"topic":"factory/line1/temp","payload":{"c":31}}`)))
+	if rr.Code != 202 {
+		t.Fatalf("ok %d %s", rr.Code, rr.Body.String())
+	}
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("POST", "/v1/publish", bytes.NewBufferString(`{"topic":"factory/line1/temp","payload":{"c":99}}`)))
+	if rr.Code != 202 {
+		t.Fatalf("hot %d %s", rr.Code, rr.Body.String())
+	}
+	a.flushLocal(context.Background())
+	if len(bodies) != 1 {
+		t.Fatalf("deliveries=%d bodies=%v", len(bodies), bodies)
+	}
+	if !strings.Contains(bodies[0], `"unit":"C"`) {
+		t.Fatalf("body=%s", bodies[0])
 	}
 }
 

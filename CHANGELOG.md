@@ -14,6 +14,11 @@
 
 ## Unreleased
 
+- Local route filter/transform rules (`internal/transform`): per-route `filter`
+  (`exists`/`equals`/`min`/`max`/`in`) drops events locally before delivery;
+  `transform` sets headers, drops/sets JSON fields, wraps the payload, and
+  rewrites the delivered topic — deterministic, data-only, no scripting.
+
 - Docs refresh: QUALIFICATION/PRODUCTION mark abbreviated WAN/disk + HTTPS
   `:18447` signed; multi-hour soak still open. Remove stale “TLS still blocked
   on lab HTTP” wording.

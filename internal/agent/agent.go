@@ -31,6 +31,7 @@ import (
 	"github.com/zyvorai/nodra/internal/pki"
 	"github.com/zyvorai/nodra/internal/queue"
 	"github.com/zyvorai/nodra/internal/router"
+	"github.com/zyvorai/nodra/internal/transform"
 	"github.com/zyvorai/nodra/internal/version"
 	"github.com/zyvorai/nodra/pkg/connector"
 )
@@ -273,6 +274,13 @@ func (a *Agent) ingestWithTime(ctx context.Context, topic string, payload json.R
 		if !router.Match(rt.Topic, topic) {
 			continue
 		}
+		applied, err := transform.Apply(topic, ev.Payload, mergeHeaders(ev.Headers, rt.Headers), rt.Filter, rt.Transform)
+		if err != nil {
+			return "", err
+		}
+		if !applied.Keep {
+			continue
+		}
 		method := strings.ToUpper(rt.Method)
 		if method == "" {
 			method = "POST"
@@ -283,7 +291,7 @@ func (a *Agent) ingestWithTime(ctx context.Context, topic string, payload json.R
 				timeout = max(int(d.Seconds()), 1)
 			}
 		}
-		d := model.Delivery{ID: localDeliveryID(ev.ID, i), EventID: ev.ID, SiteID: a.cfg.SiteID, Topic: topic, TargetURL: rt.TargetURL, Method: method, Payload: ev.Payload, Headers: rt.Headers, TimeoutSecs: timeout, MaxAttempts: 100, NextAttempt: time.Now().UTC(), EventTime: eventTime, CreatedAt: time.Now().UTC()}
+		d := model.Delivery{ID: localDeliveryID(ev.ID, i), EventID: ev.ID, SiteID: a.cfg.SiteID, Topic: applied.Topic, TargetURL: rt.TargetURL, Method: method, Payload: applied.Payload, Headers: applied.Headers, TimeoutSecs: timeout, MaxAttempts: 100, NextAttempt: time.Now().UTC(), EventTime: eventTime, CreatedAt: time.Now().UTC()}
 		if err := a.localDeliveries.Put(d.ID, d); err != nil {
 			return "", err
 		}
@@ -706,6 +714,20 @@ func (a *Agent) reconcileDocker(ctx context.Context, d model.Deployment) (string
 	}
 	return "running", nil
 }
+func mergeHeaders(event, route map[string]string) map[string]string {
+	if len(event) == 0 && len(route) == 0 {
+		return nil
+	}
+	out := map[string]string{}
+	for k, v := range event {
+		out[k] = v
+	}
+	for k, v := range route {
+		out[k] = v
+	}
+	return out
+}
+
 func ctxOrBackground(ctx context.Context) context.Context {
 	if ctx == nil {
 		return context.Background()

@@ -2,7 +2,7 @@
 
 ## Current (main)
 
-Offline WAL, backpressure, local routes, MQTT QoS0/1, transactional cloud ACK, concurrent webhook dispatch, replayable DLQ, original event time, device twins, CSR site certificates, site revocation, Docker reconciliation, Modbus TCP building block + **poller connector**, connector registry, orange embedded dashboard with **console write actions**, chaptered login, activity Logs, A–Z `nodra-sim`, demo Helm/Compose, configurable ports, **viewer/admin RBAC**, optional **Postgres fleet store** (`NODRA_STORE=postgres`), zyvor.dev product/docs pages, **Nodra→Relay Accept bridge** (`nodra-relay-bridge`).
+Offline WAL, backpressure, local routes, MQTT QoS0/1, transactional cloud ACK, concurrent webhook dispatch, replayable DLQ, original event time, device twins, CSR site certificates, site revocation, Docker reconciliation, Modbus TCP building block + **poller connector**, connector registry, orange embedded dashboard with **console write actions**, chaptered login, activity Logs, A–Z `nodra-sim`, demo Helm/Compose, configurable ports, **viewer/admin RBAC**, optional **Postgres fleet store** (`NODRA_STORE=postgres`), zyvor.dev product/docs pages, **Nodra→Relay Accept bridge** (`nodra-relay-bridge`), **local route filter/transform rules** (`internal/transform`).
 
 ## Next
 
@@ -10,7 +10,6 @@ Offline WAL, backpressure, local routes, MQTT QoS0/1, transactional cloud ACK, c
 - OIDC/SSO and multi-tenant orgs
 - first-class OPC-UA adapter; NATS and Zenoh bridges
 - signed staged agent OTA campaigns with canary/rollback
-- richer local transforms/filter rules
 - certificate rotation/expiry automation and CRL distribution
 - durable audit log and fleet policy packs
 - application artifact signatures and health-gated rollback

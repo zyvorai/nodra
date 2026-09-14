@@ -208,13 +208,27 @@ Local routes live in `nodrad.json` and execute at the edge even if the WAN is do
       "topic": "factory/+/telemetry",
       "target_url": "http://127.0.0.1:7070/events",
       "method": "POST",
-      "timeout": "3s"
+      "timeout": "3s",
+      "filter": {
+        "exists": ["c"],
+        "min": {"c": 0},
+        "max": {"c": 80},
+        "equals": {"status": "ok"},
+        "in": {"line": ["1", "2"]}
+      },
+      "transform": {
+        "set_headers": {"x-source": "nodra"},
+        "drop_fields": ["raw"],
+        "set_fields": {"unit": "C"},
+        "wrap_as": "reading",
+        "topic_rewrite": "mes/{{topic}}"
+      }
     }
   ]
 }
 ```
 
-Cloud forwarding and local routing are independent. A local destination failure enters the agent's durable local-delivery WAL and retries with backoff.
+`filter` and `transform` are optional and evaluated per route, deterministically, at the edge — no scripting, just data. A `filter` drops the event locally when any configured predicate fails (`exists`/`equals`/`min`/`max`/`in`); a `transform` can set headers, drop or set JSON fields, wrap the payload under a key, and rewrite the delivered topic (`{{topic}}` substitutes the original topic). Cloud forwarding and local routing are independent. A local destination failure enters the agent's durable local-delivery WAL and retries with backoff.
 
 ## Backpressure and disk protection
 

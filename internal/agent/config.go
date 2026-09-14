@@ -11,15 +11,18 @@ import (
 	"time"
 
 	"github.com/zyvorai/nodra/internal/durable"
+	"github.com/zyvorai/nodra/internal/transform"
 )
 
 type LocalRoute struct {
-	Name      string            `json:"name"`
-	Topic     string            `json:"topic"`
-	TargetURL string            `json:"target_url"`
-	Method    string            `json:"method,omitempty"`
-	Timeout   string            `json:"timeout,omitempty"`
-	Headers   map[string]string `json:"headers,omitempty"`
+	Name      string               `json:"name"`
+	Topic     string               `json:"topic"`
+	TargetURL string               `json:"target_url"`
+	Method    string               `json:"method,omitempty"`
+	Timeout   string               `json:"timeout,omitempty"`
+	Headers   map[string]string    `json:"headers,omitempty"`
+	Filter    *transform.Filter    `json:"filter,omitempty"`
+	Transform *transform.Transform `json:"transform,omitempty"`
 }
 
 // ConnectorSpec configures an optional protocol adapter (e.g. modbus poller).
