@@ -74,3 +74,41 @@ This increment keeps protocol semantics in Nodra while Zyvor Device Agent owns o
     **Raw + decoded duplication**: if `j1939-device-agent` consumes the Device Agent SSE stream, set Device Agent
     `industrial.can_capture.publish_to_nodra = false` when only decoded PGN events are desired.
     Keep it enabled only when both raw CAN archival topics and decoded J1939 topics are intentional.
+
+=== "OPC-UA"
+
+    A dependency-free, hand-rolled UA-TCP (binary) client, following the same
+    dependency-free philosophy as the Modbus TCP building block. v1 is
+    deliberately narrow:
+
+    - **SecurityPolicy `None` only** — no channel encryption or signing.
+    - **Anonymous session only** — no username/password or certificate-based
+      user tokens.
+    - **Read-only** — no Write service.
+    - **Polling only** — no Subscribe/MonitoredItems (event-driven push).
+    - **No endpoint discovery** — no `GetEndpoints`/`FindServers`/`Browse`;
+      the configured `endpoint` URL is dialed directly.
+    - Values must decode as a scalar Boolean/Int16/UInt16/Int32/UInt32/
+      Int64/UInt64/Float/Double/String/DateTime; an array or unsupported
+      Variant type fails that poll cycle.
+
+    ```json
+    {
+      "type": "opcua",
+      "name": "boiler-plc",
+      "config": {
+        "endpoint": "opc.tcp://boiler-plc.local:4840",
+        "node_ids": ["ns=2;i=1001", "ns=2;s=Temperature"],
+        "topic": "factory/boiler/opcua",
+        "interval": "5s",
+        "timeout": "5s"
+      }
+    }
+    ```
+
+    Each poll opens a fresh connection (Hello/Acknowledge, OpenSecureChannel,
+    CreateSession, ActivateSession, Read, Close) rather than holding a
+    session open across polls — the same per-call-dial pattern the Modbus
+    TCP client uses. Security policies beyond `None`, the Write service,
+    Subscribe/MonitoredItems, and endpoint discovery/Browse are tracked as
+    v2 follow-ups in `ROADMAP.md`.

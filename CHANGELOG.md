@@ -14,6 +14,12 @@
 
 ## Unreleased
 
+- OPC-UA connector (`connectors/opcua`): dependency-free UA-TCP binary client
+  and poller. v1 scope is deliberately narrow — SecurityPolicy None,
+  anonymous session, Read service only, polling only, no endpoint
+  discovery/Browse. Basic256Sha256, Write and Subscribe/MonitoredItems are
+  tracked as v2 follow-ups in `ROADMAP.md`.
+
 - Local route filter/transform rules (`internal/transform`): per-route `filter`
   (`exists`/`equals`/`min`/`max`/`in`) drops events locally before delivery;
   `transform` sets headers, drops/sets JSON fields, wraps the payload, and

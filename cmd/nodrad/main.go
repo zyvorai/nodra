@@ -17,6 +17,7 @@ import (
 
 	_ "github.com/zyvorai/nodra/connectors/j1939"  // register Device Agent J1939 connector factory
 	_ "github.com/zyvorai/nodra/connectors/modbus" // register modbus connector factory
+	_ "github.com/zyvorai/nodra/connectors/opcua"  // register OPC-UA connector factory
 	"github.com/zyvorai/nodra/internal/agent"
 )
 
