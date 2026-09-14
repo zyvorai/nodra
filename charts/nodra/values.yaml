@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/zyvorai/nodra
-  tag: "0.2.1"
+  tag: "0.2.2"
   pullPolicy: IfNotPresent
 
 replicaCount: 1 # v0.2 embedded WAL state is single-writer by design.

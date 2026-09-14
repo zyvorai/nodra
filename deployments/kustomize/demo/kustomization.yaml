@@ -10,7 +10,7 @@ resources:
   - ../../kubernetes/simulation.yaml
 images:
   - name: ghcr.io/zyvorai/nodra
-    newTag: 0.2.1
+    newTag: 0.2.2
 patches:
   - target:
       kind: Deployment

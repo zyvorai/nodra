@@ -14,6 +14,12 @@
 
 ## Unreleased
 
+- (none)
+
+## 0.2.2 — 2026-09-14
+
+Production scaffolding follow-ups on top of 0.2.1: OpenAPI coverage, Postgres CI, Docker reconcile tests, console/RBAC/sim/bridge surfaces already on main.
+
 - OpenAPI covers agent/admin mutation routes + ops probes; `scripts/openapi-coverage.py` gates qualify.
 - CI `postgres` job runs `TestPostgresRoundTrip` against Postgres 16.
 - Docker reconcile unit tests via `NODRA_DOCKER_BIN` fake CLI shim.

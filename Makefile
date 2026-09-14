@@ -1,6 +1,6 @@
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: Apache-2.0
-VERSION ?= 0.2.1
+VERSION ?= 0.2.2
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS = -s -w -X github.com/zyvorai/nodra/internal/version.Version=$(VERSION) -X github.com/zyvorai/nodra/internal/version.Commit=$(COMMIT) -X github.com/zyvorai/nodra/internal/version.BuildDate=$(BUILD_DATE)

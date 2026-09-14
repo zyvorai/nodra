@@ -5,8 +5,8 @@ home: https://zyvor.dev
 sources:
   - https://github.com/zyvorai/nodra
 type: application
-version: 0.2.1
-appVersion: "0.2.1"
+version: 0.2.2
+appVersion: "0.2.2"
 keywords: [edge, iot, offline, store-and-forward, fleet, gateway]
 maintainers:
   - name: Zyvor
