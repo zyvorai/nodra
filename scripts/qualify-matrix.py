@@ -82,6 +82,9 @@ def main():
     proc = run(["python3", "-c", "import yaml, pathlib; list(yaml.safe_load_all(pathlib.Path('docs/openapi.yaml').read_text()))"])
     row(results, "openapi_yaml_parse", "pass" if proc.returncode == 0 else "fail", (proc.stdout + proc.stderr)[-200:])
 
+    proc = run(["python3", "scripts/openapi-coverage.py"], timeout=30)
+    row(results, "openapi_route_coverage", "pass" if proc.returncode == 0 else "fail", (proc.stdout + proc.stderr)[-300:])
+
     proc = run(["make", "build"], timeout=180)
     row(results, "build_binaries", "pass" if proc.returncode == 0 else "fail", (proc.stdout + proc.stderr)[-300:])
 
@@ -91,11 +94,16 @@ def main():
         proc = run(["./scripts/smoke.sh"], timeout=300)
         row(results, "local_smoke", "pass" if proc.returncode == 0 else "fail", (proc.stdout + proc.stderr)[-400:])
 
+    if os.environ.get("NODRA_DATABASE_URL"):
+        proc = run(["go", "test", "./internal/store/", "-count=1", "-run", "Postgres"], timeout=120)
+        row(results, "postgres_store_ci", "pass" if proc.returncode == 0 else "fail", (proc.stdout + proc.stderr)[-400:])
+    else:
+        row(results, "postgres_store_ci", "skip", "set NODRA_DATABASE_URL — covered by CI postgres job")
+
     for name, detail in [
         ("backup_restore_drill", "operator-signed — evidence/qualification/ops-checklist.md"),
         ("wan_loss_disk_pressure_soak", "operator-signed multi-hour soak; see docs/QUALIFICATION.md"),
         ("ha_multi_writer", "not claimed in v0.2.x — ROADMAP v1.0"),
-        ("postgres_store_ci", "optional backend; no CI Postgres job yet"),
     ]:
         row(results, name, "skip", detail)
 

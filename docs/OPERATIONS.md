@@ -76,6 +76,10 @@ export NODRA_DATABASE_URL='postgres://user:pass@host:5432/nodra?sslmode=require'
 
 Delivery and DLQ queues remain local WAL on the control-plane pod (single writer). Postgres holds sites/devices/twins/routes/deployments/alerts/events.
 
+CI covers the Postgres path with `go test ./internal/store/ -run Postgres` against a
+Postgres 16 service (`NODRA_DATABASE_URL`). Locally the same test skips unless the
+DSN is set.
+
 ## Upgrades
 
 v0.2 is single-writer. Scale the control-plane Deployment to zero, update the image, then return to one replica, or use the Helm `Recreate` strategy already provided. Edge agents continue local operation and spool cloud-bound events during the interruption.

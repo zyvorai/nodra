@@ -14,6 +14,8 @@
 
 ## Unreleased
 
+- OpenAPI covers agent/admin mutation routes + ops probes; `scripts/openapi-coverage.py` gates qualify.
+- CI `postgres` job runs `TestPostgresRoundTrip` against Postgres 16.
 - Docker reconcile unit tests via `NODRA_DOCKER_BIN` fake CLI shim.
 - Nodra → Zyvor Relay Accept bridge (`nodra-relay-bridge`): map cloud-route webhooks to `POST /v1/events` (direct or relay-pubsub gateway).
 - Console write actions: site revoke, route create/delete, twin desired, deployment create/start-stop/delete, alert resolve, DLQ delete.

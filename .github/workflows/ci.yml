@@ -64,3 +64,27 @@ jobs:
       # cannot validate manifests without a real cluster. kubeconform validates
       # structure against the upstream Kubernetes OpenAPI schemas entirely offline.
       - run: kubeconform -summary -strict /tmp/nodra.yaml /tmp/nodra-demo.yaml /tmp/kustomized.yaml /tmp/kustomized-demo.yaml
+
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nodra
+          POSTGRES_PASSWORD: nodra
+          POSTGRES_DB: nodra
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U nodra -d nodra"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with: {go-version: '1.27.x', cache: false}
+      - name: Postgres fleet store tests
+        env:
+          NODRA_DATABASE_URL: postgres://nodra:nodra@127.0.0.1:5432/nodra?sslmode=disable
+        run: go test ./internal/store/ -count=1 -run Postgres -v

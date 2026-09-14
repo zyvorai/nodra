@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-09-14T10:48:08.340799+00:00",
-  "finished_at": "2026-09-14T10:48:10.774986+00:00",
+  "generated_at": "2026-09-14T12:15:42.656844+00:00",
+  "finished_at": "2026-09-14T12:15:44.684111+00:00",
   "product": "nodra",
   "version": "0.2.1",
   "host": "Darwin",
@@ -32,7 +32,7 @@
     {
       "id": "readyz_store_ping",
       "status": "pass",
-      "detail": "ok  \tgithub.com/zyvorai/nodra/internal/server\t0.222s\n",
+      "detail": "ok  \tgithub.com/zyvorai/nodra/internal/server\t0.218s\n",
       "class": "software"
     },
     {
@@ -42,15 +42,27 @@
       "class": "software"
     },
     {
+      "id": "openapi_route_coverage",
+      "status": "pass",
+      "detail": "openapi coverage ok (30 routes)\n",
+      "class": "software"
+    },
+    {
       "id": "build_binaries",
       "status": "pass",
-      "detail": "sim\nCGO_ENABLED=0 go build -trimpath -ldflags \"-s -w -X github.com/zyvorai/nodra/internal/version.Version=0.2.1 -X github.com/zyvorai/nodra/internal/version.Commit=5b6a62e -X github.com/zyvorai/nodra/internal/version.BuildDate=2026-09-14T10:48:09Z\" -o bin/nodra-relay-bridge ./cmd/nodra-relay-bridge\n",
+      "detail": "sim\nCGO_ENABLED=0 go build -trimpath -ldflags \"-s -w -X github.com/zyvorai/nodra/internal/version.Version=0.2.1 -X github.com/zyvorai/nodra/internal/version.Commit=7692b4e -X github.com/zyvorai/nodra/internal/version.BuildDate=2026-09-14T12:15:43Z\" -o bin/nodra-relay-bridge ./cmd/nodra-relay-bridge\n",
       "class": "software"
     },
     {
       "id": "local_smoke",
       "status": "skip",
       "detail": "NODRA_QUALIFY_FAST=1 \u2014 covered by release-check smoke",
+      "class": "software"
+    },
+    {
+      "id": "postgres_store_ci",
+      "status": "skip",
+      "detail": "set NODRA_DATABASE_URL \u2014 covered by CI postgres job",
       "class": "software"
     },
     {
@@ -69,12 +81,6 @@
       "id": "ha_multi_writer",
       "status": "skip",
       "detail": "not claimed in v0.2.x \u2014 ROADMAP v1.0",
-      "class": "software"
-    },
-    {
-      "id": "postgres_store_ci",
-      "status": "skip",
-      "detail": "optional backend; no CI Postgres job yet",
       "class": "software"
     }
   ],

@@ -16,11 +16,13 @@ soaks, HA claims, and signed backup/restore drills remain operator-recorded in
 | `gofmt` / `go_vet` / `unit_race` | Format, vet, race-enabled tests |
 | `readyz_store_ping` | `/readyz` fails closed when the fleet store cannot be pinged |
 | `openapi_yaml_parse` | `docs/openapi.yaml` parses |
+| `openapi_route_coverage` | Every `internal/server` mux route appears in OpenAPI |
 | `build_binaries` | `nodra-server`, `nodrad`, `nodractl`, `nodra-sim`, `nodra-relay-bridge` |
 | `local_smoke` | `./scripts/smoke.sh` |
+| `postgres_store_ci` | `go test -run Postgres` with `NODRA_DATABASE_URL` (CI job; skip locally without DSN) |
 
-These prove the single-writer control plane and edge smoke path. They **do not**
-prove HA, multi-day soak, or Postgres CI coverage.
+These prove the single-writer control plane, OpenAPI coverage, and (in CI) the
+optional Postgres fleet store. They **do not** prove HA or multi-day soak.
 
 ## Operator / lab rows — signed checklist
 

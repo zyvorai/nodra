@@ -122,10 +122,21 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [name, enrollment_token], properties: {name: {type: string}, enrollment_token: {type: string}, csr_pem: {type: string}}}}}}
       responses: {'201': {description: Site enrolled}, '401': {description: Bad bootstrap token}}
   /events:
+    get:
+      security: [{bearer: []}]
+      summary: List recent ingested events (admin)
+      parameters:
+        - name: minutes
+          in: query
+          schema: {type: integer, minimum: 1}
+        - name: site_id
+          in: query
+          schema: {type: string}
+      responses: {"200": {description: Event list}}
     post:
       security: [{bearer: []}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EventInput'}}}}
-      responses: {'202': {description: Durably accepted}, '503': {description: Delivery queue unavailable}, '507': {description: Persistence failed}}
+      responses: {"202": {description: Durably accepted}, "503": {description: Delivery queue unavailable}, "507": {description: Persistence failed}}
   /overview:
     get:
       security: [{bearer: []}]
@@ -189,3 +200,84 @@ paths:
     get:
       security: [{bearer: []}]
       responses: {'200': {description: Replayable dead letters}}
+  /heartbeat:
+    post:
+      security: [{bearer: []}]
+      summary: Site agent heartbeat
+      responses: {"200": {description: Accepted}, "401": {description: Unauthorized}}
+  /devices/register:
+    post:
+      security: [{bearer: []}]
+      summary: Register or refresh a device under the calling site
+      responses: {"200": {description: Device}, "201": {description: Created}}
+  /agent/deployments:
+    get:
+      security: [{bearer: []}]
+      summary: Deployments assigned to the calling site agent
+      parameters:
+        - name: site_id
+          in: query
+          schema: {type: string}
+      responses: {"200": {description: Deployment list}}
+  /agent/deployments/{id}/status:
+    post:
+      security: [{bearer: []}]
+      summary: Agent reports deployment reconcile status
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: Updated}, "404": {description: Not found}}
+  /agent/twins:
+    get:
+      security: [{bearer: []}]
+      summary: Desired twins for the calling site
+      responses: {"200": {description: Twin list}}
+  /agent/twins/{id}/reported:
+    post:
+      security: [{bearer: []}]
+      summary: Agent reports twin state
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: Updated}}
+  /sites/{id}/revoke:
+    post:
+      security: [{bearer: []}]
+      summary: Revoke a site (admin)
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: Revoked}, "404": {description: Not found}}
+  /routes/{id}:
+    delete:
+      security: [{bearer: []}]
+      summary: Delete a cloud route
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"204": {description: Deleted}, "404": {description: Not found}}
+  /alerts/{id}/resolve:
+    post:
+      security: [{bearer: []}]
+      summary: Resolve an alert
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: Resolved}, "404": {description: Not found}}
+  /deadletters/{id}/replay:
+    post:
+      security: [{bearer: []}]
+      summary: Re-queue a dead letter for delivery
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: Replayed}, "404": {description: Not found}}
+  /deadletters/{id}:
+    delete:
+      security: [{bearer: []}]
+      summary: Drop a dead letter
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"204": {description: Deleted}, "404": {description: Not found}}
+  /healthz:
+    servers: [{url: /}]
+    get:
+      summary: Liveness probe
+      responses: {"200": {description: OK}}
+  /readyz:
+    servers: [{url: /}]
+    get:
+      summary: Readiness (store + delivery/DLQ)
+      responses: {"200": {description: Ready}, "503": {description: Not ready}}
+  /metrics:
+    servers: [{url: /}]
+    get:
+      summary: Prometheus text metrics
+      responses: {"200": {description: Metrics}}

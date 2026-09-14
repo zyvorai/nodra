@@ -658,6 +658,7 @@ func (a *Agent) syncDeployments(ctx context.Context) {
 		}
 	}
 }
+
 // dockerBin resolves the Docker CLI. Override with NODRA_DOCKER_BIN for tests
 // or alternate runtimes (e.g. a PATH shim that logs argv).
 func dockerBin() string {

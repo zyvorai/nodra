@@ -108,4 +108,5 @@ Levels: `info` | `warn` | `error` | `chapter` | `ok`.
 - `GET /agent/twins?site_id=...`
 - `POST /agent/twins/{deviceID}/reported`
 
-See `openapi.yaml` for schemas.
+See [`openapi.yaml`](openapi.yaml) for schemas. Coverage of mux routes is gated by
+`scripts/openapi-coverage.py` in `make qualify`.
