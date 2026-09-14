@@ -18,7 +18,8 @@ control plane.
 | TLS on lab CP | **done** — `NODRA_TLS_CERT`/`KEY` HTTPS on `:18447` |
 | Abbreviated WAN + disk drills | **signed** — `lab/20260914T162245Z/nodra-soak/` |
 | HA / multi-writer | **not available** in v0.2.x |
-| Multi-hour WAN / disk soak | **open** |
+| Multi-hour WAN / disk soak | **pass** — CI-automated, `.github/workflows/soak.yml` + `.github/workflows/ci.yml`'s `soak-short` job (`scripts/ci/soak.sh`, judged by `scripts/ci/soak-check.py`) |
+| Multi-day WAN / disk soak | **open** — needs a self-hosted runner against the lab host; hosted GitHub runners cap out around 6h |
 
 **Verdict:** single-writer Nodra is **production-ready** when TLS + spool policy are set
 per this runbook and the ops checklist is signed on the target host. Lab

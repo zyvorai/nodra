@@ -151,8 +151,32 @@ jobs:
           chmod +x scripts/ci/backup-restore.sh scripts/backup-state.sh scripts/restore-state.sh
           ./scripts/ci/backup-restore.sh
 
+  soak-short:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.13'}
+      - name: Short WAN/disk soak (PR-gated)
+        env:
+          NODRA_SOAK_DURATION: "10m"
+          NODRA_SOAK_WAN_CYCLE: "90s"
+          NODRA_SOAK_WAN_DOWNTIME: "10s"
+          NODRA_SOAK_DISK_CYCLE: "60s"
+          NODRA_SOAK_SAMPLE_INTERVAL: "5s"
+        run: |
+          chmod +x scripts/ci/soak.sh
+          ./scripts/ci/soak.sh evidence/qualification/ci/soak-short
+      - name: Judge soak criteria
+        if: always()
+        run: python3 scripts/ci/soak-check.py evidence/qualification/ci/soak-short/summary.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: {name: soak-short-evidence, path: evidence/qualification/ci/soak-short}
+
   suite-ci:
-    needs: [test, vuln, container, kubernetes, postgres, relay-bridge-smoke, compose-stack, compose-relay-bridge, backup-restore]
+    needs: [test, vuln, container, kubernetes, postgres, relay-bridge-smoke, compose-stack, compose-relay-bridge, backup-restore, soak-short]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -168,6 +192,7 @@ jobs:
           NODRA_CI_RELAY_BRIDGE: "1"
           NODRA_CI_COMPOSE: "1"
           NODRA_CI_COMPOSE_BRIDGE: "1"
+          NODRA_CI_SOAK_SHORT: "1"
         run: make qualify
       - uses: actions/upload-artifact@v7
         with:

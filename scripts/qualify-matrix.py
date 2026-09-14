@@ -114,8 +114,18 @@ def main():
         else:
             row(results, name, "skip", f"set {env_key}=1 after CI job; {detail}")
 
+    for name, env_key, detail in [
+        ("wan_loss_disk_pressure_soak_short", "NODRA_CI_SOAK_SHORT", "scripts/ci/soak.sh (PR-gated short soak)"),
+        ("wan_loss_disk_pressure_soak_long", "NODRA_CI_SOAK_LONG", "scripts/ci/soak.sh (scheduled long soak)"),
+    ]:
+        val = os.environ.get(env_key, "")
+        if val in ("1", "true", "pass", "yes"):
+            row(results, name, "pass", detail)
+        else:
+            row(results, name, "skip", f"set {env_key}=1 after CI job; {detail}")
+
     for name, detail in [
-        ("wan_loss_disk_pressure_soak", "operator-signed multi-hour soak; see docs/QUALIFICATION.md"),
+        ("wan_loss_disk_pressure_soak_multiday", "operator-signed multi-day soak on the lab host; see docs/QUALIFICATION.md"),
         ("ha_multi_writer", "not claimed in v0.2.x — ROADMAP v1.0"),
     ]:
         row(results, name, "skip", detail)

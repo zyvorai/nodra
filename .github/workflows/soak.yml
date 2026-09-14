@@ -1,0 +1,41 @@
+name: Soak
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'soak duration (e.g. 4h)'
+        default: '4h'
+permissions: {contents: read}
+jobs:
+  soak-long:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.13'}
+      - name: Multi-hour WAN/disk soak
+        env:
+          NODRA_SOAK_DURATION: ${{ github.event.inputs.duration || '4h' }}
+          NODRA_SOAK_WAN_CYCLE: "15m"
+          NODRA_SOAK_WAN_DOWNTIME: "20s"
+          NODRA_SOAK_DISK_CYCLE: "10m"
+          NODRA_SOAK_SAMPLE_INTERVAL: "15s"
+        run: |
+          chmod +x scripts/ci/soak.sh
+          ./scripts/ci/soak.sh evidence/qualification/ci/soak-long
+      - name: Hash evidence bundle
+        if: always()
+        run: |
+          find evidence/qualification/ci/soak-long -type f -exec sha256sum {} + \
+            > evidence/qualification/ci/soak-long/digests.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: soak-long-evidence
+          path: evidence/qualification/ci/soak-long
+          retention-days: 90
+      - name: Judge soak criteria
+        run: python3 scripts/ci/soak-check.py evidence/qualification/ci/soak-long/summary.json

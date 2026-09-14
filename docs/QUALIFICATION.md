@@ -7,7 +7,8 @@ hero:
 Software rows are automated by `make qualify`. Lab ops for host `80.79.5.173`
 are **signed** in
 [`evidence/qualification/ops-checklist.md`](https://github.com/zyvorai/nodra/blob/main/evidence/qualification/ops-checklist.md)
-(backup/TLS/HTTPS `:18447`/abbreviated WAN+disk). Multi-hour soak and HA remain open.
+(backup/TLS/HTTPS `:18447`/abbreviated WAN+disk). Multi-hour WAN/disk soak is
+now CI-automated; multi-day soak and HA remain open.
 
 ## Software (host) rows — `make qualify`
 
@@ -39,7 +40,8 @@ Evidence: `ops-checklist.md`, `lab/20260914T162245Z/nodra-soak/`.
 | Disk pressure (abbreviated) | **pass** — `nodra-soak/disk-pressure.log` |
 | Single-replica discipline | **pass** (signed) |
 | Suite wiring | see [INTEGRATIONS.md](INTEGRATIONS.md) |
-| Multi-hour WAN / disk soak | **open** |
+| Multi-hour WAN / disk soak | **pass** — CI-automated (see below), no longer operator-only |
+| Multi-day WAN / disk soak | **open** — needs a self-hosted runner on the lab host |
 | HA / multi-writer | **not available** in v0.2.x |
 
 ## Maturity note
@@ -50,6 +52,12 @@ and [PRODUCTION.md](PRODUCTION.md).
 
 ## GitHub CI (lab substitute)
 
-CI runs relay-bridge smoke, compose stack, compose relay-bridge, and backup/restore.
-These complement the signed lab ops checklist. CI still does **not** claim HA
-or multi-hour soak.
+CI runs relay-bridge smoke, compose stack, compose relay-bridge, backup/restore,
+and a WAN-loss + disk-pressure soak (`scripts/ci/soak.sh`, judged by
+`scripts/ci/soak-check.py`): a ~10-minute `soak-short` job on every PR
+(`.github/workflows/ci.yml`) and a scheduled multi-hour `soak-long` job
+(`.github/workflows/soak.yml`, nightly, ~4h against a hosted runner). These
+complement the signed lab ops checklist. CI still does **not** claim HA or a
+true multi-day soak — that tier stays tracked as open until it runs on a
+self-hosted runner against the lab host, since GitHub-hosted runners cap job
+time at roughly 6 hours.

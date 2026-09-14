@@ -4,7 +4,7 @@
 
 Nodra is an Apache-2.0 edge runtime and control plane from Zyvor. It gives remote sites a local MQTT/HTTP ingress, durable store-and-forward, local routes, device twins, edge application reconciliation, fleet health, replayable dead letters and a clean web control plane.
 
-> **v0.2.2** is a serious single-control-plane release. Edge sites are offline-first. The control plane uses an embedded append-only WAL and intentionally runs as one writer/replica. Horizontal HA is a future storage mode, not a claim in this release. Lab reference host runs HTTPS (`:18447`) with signed abbreviated WAN/disk drills — multi-hour soak remains open.
+> **v0.2.2** is a serious single-control-plane release. Edge sites are offline-first. The control plane uses an embedded append-only WAL and intentionally runs as one writer/replica. Horizontal HA is a future storage mode, not a claim in this release. Lab reference host runs HTTPS (`:18447`) with signed abbreviated WAN/disk drills, plus a CI-gated multi-hour automated soak on every scheduled run (`.github/workflows/soak.yml`) — multi-day continuous soak is tracked separately and still needs a self-hosted runner against the lab host.
 
 ## Why Nodra
 
