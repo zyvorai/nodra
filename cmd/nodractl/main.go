@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -49,6 +51,8 @@ func main() {
 		err = alerts(c, args[1:])
 	case "deadletters", "dlq":
 		err = deadletters(c, args[1:])
+	case "audit":
+		err = audit(c, args[1:])
 	case "version":
 		err = c.print("GET", "/api/v1/version", nil)
 	case "publish":
@@ -79,6 +83,8 @@ Usage:
   nodractl deployments delete DEP_ID
   nodractl alerts list | alerts resolve ALERT_ID
   nodractl dlq list | dlq replay DELIVERY_ID | dlq delete DELIVERY_ID
+  nodractl audit list [--since RFC3339] [--until RFC3339] [--site ID] [--action A] [--actor A] [--limit N] [--cursor C]
+  nodractl audit export --out FILE [--since RFC3339] [--until RFC3339] [--site ID] [--action A] [--actor A]
   nodractl publish --agent URL --topic TOPIC --data JSON [--token LOCAL_TOKEN]
 `)
 }
@@ -193,6 +199,100 @@ func deadletters(c client, args []string) error {
 		return c.print("DELETE", "/api/v1/deadletters/"+args[1], nil)
 	}
 	return fmt.Errorf("unknown dlq command")
+}
+func auditFlags(fs *flag.FlagSet) (since, until, site, action, actor *string) {
+	since = fs.String("since", "", "RFC3339 lower bound")
+	until = fs.String("until", "", "RFC3339 upper bound")
+	site = fs.String("site", "", "filter by site ID")
+	action = fs.String("action", "", "filter by action")
+	actor = fs.String("actor", "", "filter by actor")
+	return
+}
+func auditQuery(since, until, site, action, actor, cursor string, limit int) string {
+	q := url.Values{}
+	if since != "" {
+		q.Set("since", since)
+	}
+	if until != "" {
+		q.Set("until", until)
+	}
+	if site != "" {
+		q.Set("site_id", site)
+	}
+	if action != "" {
+		q.Set("action", action)
+	}
+	if actor != "" {
+		q.Set("actor", actor)
+	}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	if cursor != "" {
+		q.Set("cursor", cursor)
+	}
+	if len(q) == 0 {
+		return ""
+	}
+	return "?" + q.Encode()
+}
+func audit(c client, args []string) error {
+	if len(args) == 0 || args[0] == "list" {
+		fs := flag.NewFlagSet("audit list", flag.ContinueOnError)
+		since, until, site, action, actor := auditFlags(fs)
+		limit := fs.Int("limit", 250, "max entries")
+		cursor := fs.String("cursor", "", "pagination cursor from a previous next_cursor")
+		rest := args
+		if len(args) > 0 {
+			rest = args[1:]
+		}
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		return c.print("GET", "/api/v1/audit"+auditQuery(*since, *until, *site, *action, *actor, *cursor, *limit), nil)
+	}
+	if args[0] == "export" {
+		fs := flag.NewFlagSet("audit export", flag.ContinueOnError)
+		since, until, site, action, actor := auditFlags(fs)
+		out := fs.String("out", "", "output file (required)")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *out == "" {
+			return fmt.Errorf("--out is required")
+		}
+		return c.exportAudit(auditQuery(*since, *until, *site, *action, *actor, "", 0), *out)
+	}
+	return fmt.Errorf("unknown audit command")
+}
+func (c client) exportAudit(query, outPath string) error {
+	req, err := http.NewRequest("GET", c.base+"/api/v1/audit/export"+query, nil)
+	if err != nil {
+		return err
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(b)))
+	}
+	f, err := os.Create(outPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	n, err := io.Copy(f, resp.Body)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("wrote %d bytes to %s\n", n, outPath)
+	return nil
 }
 func publish(args []string) error {
 	fs := flag.NewFlagSet("publish", flag.ContinueOnError)

@@ -18,13 +18,17 @@ telemetry must never be silently discarded even under pressure, set
 `spool_policy=reject` explicitly rather than assuming the default behavior.
 See [`docs/OPERATIONS.md`](OPERATIONS.md#disk-pressure).
 
-## Restored from backup and activity/log history is missing
+## Restored from backup and the live Activity/Logs tail looks empty
 
-Expected — the Activity/Logs ring is explicitly in-memory only and is
-**not** part of the durable backup set. A restore brings back
-`state.snapshot.json`, `state.wal`, `deliveries/`, `deadletters/`, and
-`pki/` if present; recent log lines are not preserved across a restore by
-design.
+Expected — the console's Activity/Logs tail is an in-memory ring (cap 2000)
+and is **not** part of the durable backup set, so it starts empty after any
+restart or restore. The durable audit trail is unaffected: every
+actor-attributable action is written to `audit/` under the data directory
+(or the `nodra_audit_log` Postgres table), **is** captured by
+`backup-state.sh`, and survives a restore — query it with `GET /api/v1/audit`
+or `nodractl audit list`/`audit export`. A restore brings back
+`state.snapshot.json`, `state.wal`, `deliveries/`, `deadletters/`, `audit/`,
+and `pki/` if present.
 
 ## After restoring a backup, demo/activity data looks stale
 

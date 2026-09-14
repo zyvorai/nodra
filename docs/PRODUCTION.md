@@ -56,7 +56,11 @@ Do **not** dual-mount the same WAL directory on two live processes.
 ## Needs attention (known v0.2.x limits)
 
 - No HA / multi-writer delivery plane — failover is restore-from-backup.
-- Activity/Logs ring is in-memory (cap 2000) and is **not** in backups.
+- The console's live Activity/Logs tail is in-memory (cap 2000) and is **not**
+  in backups — but every actor-attributable action it shows is durably
+  written to `audit/` (or Postgres) under the data directory, **is** in
+  backups, and is queryable/exportable via `GET /api/v1/audit` and
+  `nodractl audit export`.
 - MQTT is a documented subset (no QoS 2 / persistent sessions).
 - Compose / Helm demo values are evaluation-only.
 

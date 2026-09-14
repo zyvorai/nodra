@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zyvorai/nodra/internal/audit"
 	"github.com/zyvorai/nodra/internal/auth"
 	"github.com/zyvorai/nodra/internal/model"
 	"github.com/zyvorai/nodra/internal/pki"
@@ -36,28 +37,29 @@ import (
 )
 
 type Config struct {
-	Listen            string
-	DataDir           string
-	AdminToken        string
-	AdminUser         string
-	AdminPassword     string
-	ViewerToken       string
-	ViewerUser        string
-	ViewerPassword    string
-	EnrollmentToken   string
-	PublicRead        bool
-	MaxBodyBytes      int64
-	WorkerInterval    time.Duration
-	WorkerConcurrency int
-	DeliveryMaxItems  int
-	DeliveryMaxBytes  int64
-	PKIEnabled        bool
-	PKIDir            string
-	TLSCertFile       string
-	TLSKeyFile        string
-	ClientCAFile      string
-	StoreDriver       string // file|postgres
-	DatabaseURL       string
+	Listen             string
+	DataDir            string
+	AdminToken         string
+	AdminUser          string
+	AdminPassword      string
+	ViewerToken        string
+	ViewerUser         string
+	ViewerPassword     string
+	EnrollmentToken    string
+	PublicRead         bool
+	MaxBodyBytes       int64
+	WorkerInterval     time.Duration
+	WorkerConcurrency  int
+	DeliveryMaxItems   int
+	DeliveryMaxBytes   int64
+	PKIEnabled         bool
+	PKIDir             string
+	TLSCertFile        string
+	TLSKeyFile         string
+	ClientCAFile       string
+	StoreDriver        string // file|postgres
+	DatabaseURL        string
+	AuditRetentionDays int
 }
 
 type Server struct {
@@ -67,6 +69,7 @@ type Server struct {
 	dlq        *queue.Queue[model.DeadLetter]
 	metrics    *telemetry.Metrics
 	activity   *activityLog
+	audit      audit.Store
 	client     *http.Client
 	http       *http.Server
 	wg         sync.WaitGroup
@@ -96,6 +99,9 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.StoreDriver == "" {
 		cfg.StoreDriver = "file"
+	}
+	if cfg.AuditRetentionDays <= 0 {
+		cfg.AuditRetentionDays = 90
 	}
 	if cfg.MaxBodyBytes == 0 {
 		cfg.MaxBodyBytes = 1 << 20
@@ -127,7 +133,11 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, store: st, deliveries: q, dlq: dlq, metrics: &telemetry.Metrics{}, activity: &activityLog{}, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}}
+	au, err := audit.Open(cfg.StoreDriver, cfg.DataDir, cfg.DatabaseURL, audit.Options{RetentionDays: cfg.AuditRetentionDays})
+	if err != nil {
+		return nil, err
+	}
+	s := &Server{cfg: cfg, store: st, deliveries: q, dlq: dlq, metrics: &telemetry.Metrics{}, activity: &activityLog{}, audit: au, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}}
 	if cfg.PKIEnabled {
 		dir := cfg.PKIDir
 		if dir == "" {
@@ -156,8 +166,9 @@ func (s *Server) Handler() http.Handler { return s.routes() }
 func (s *Server) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
-	s.wg.Add(1)
+	s.wg.Add(2)
 	go s.worker(ctx)
+	go s.auditRetentionLoop(ctx)
 	var err error
 	if s.cfg.TLSCertFile != "" && s.cfg.TLSKeyFile != "" {
 		err = s.http.ListenAndServeTLS(s.cfg.TLSCertFile, s.cfg.TLSKeyFile)
@@ -178,6 +189,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	_ = s.deliveries.Close()
 	_ = s.dlq.Close()
 	_ = s.store.Close()
+	_ = s.audit.Close()
 	return err
 }
 
@@ -225,6 +237,8 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("DELETE /api/v1/deadletters/{id}", s.admin(http.HandlerFunc(s.deadletterDelete)))
 	mux.Handle("GET /api/v1/activity", s.admin(http.HandlerFunc(s.activityList)))
 	mux.Handle("POST /api/v1/activity", s.admin(http.HandlerFunc(s.activityPost)))
+	mux.Handle("GET /api/v1/audit", s.admin(http.HandlerFunc(s.auditList)))
+	mux.Handle("GET /api/v1/audit/export", s.admin(http.HandlerFunc(s.auditExport)))
 	mux.HandleFunc("GET /assets/{name}", s.asset)
 	mux.HandleFunc("GET /", s.index)
 	return s.securityHeaders(s.requestLog(mux))
@@ -312,6 +326,19 @@ func (s *Server) roleForBearer(tok string) string {
 	return ""
 }
 
+// actorForBearer resolves the audit-log actor (the console username) for a
+// request's bearer token, empty if it doesn't match a configured role.
+func (s *Server) actorForBearer(tok string) string {
+	switch s.roleForBearer(tok) {
+	case "admin":
+		return s.cfg.AdminUser
+	case "viewer":
+		return s.cfg.ViewerUser
+	default:
+		return ""
+	}
+}
+
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Username string `json:"username"`
@@ -323,6 +350,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	user := strings.TrimSpace(in.Username)
 	if s.cfg.AdminToken != "" && s.cfg.AdminPassword != "" &&
 		auth.EqualToken(user, s.cfg.AdminUser) && auth.EqualToken(in.Password, s.cfg.AdminPassword) {
+		s.note("ok", "control-plane", s.cfg.AdminUser, "", "", "", "login", "console login", map[string]any{"role": "admin"})
 		writeJSON(w, 200, map[string]any{
 			"token": s.cfg.AdminToken,
 			"user":  map[string]string{"username": s.cfg.AdminUser, "role": "admin"},
@@ -331,6 +359,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.cfg.ViewerToken != "" && s.cfg.ViewerPassword != "" &&
 		auth.EqualToken(user, s.cfg.ViewerUser) && auth.EqualToken(in.Password, s.cfg.ViewerPassword) {
+		s.note("ok", "control-plane", s.cfg.ViewerUser, "", "", "", "login", "console login", map[string]any{"role": "viewer"})
 		writeJSON(w, 200, map[string]any{
 			"token": s.cfg.ViewerToken,
 			"user":  map[string]string{"username": s.cfg.ViewerUser, "role": "viewer"},
@@ -340,6 +369,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.AdminToken == "" && s.cfg.ViewerToken == "" {
 		errorJSON(w, 503, "login is not configured")
 		return
+	}
+	if user != "" {
+		s.note("warn", "control-plane", user, "", "", "", "login", "invalid username or password", nil)
 	}
 	errorJSON(w, 401, "invalid username or password")
 }
@@ -439,7 +471,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	publicSite := site
 	publicSite.TokenHash = ""
 	out["site"] = publicSite
-	s.note("ok", "control-plane", "", site.ID, site.Name, "enroll", "site enrolled and agent token issued", map[string]any{"metadata": in.Metadata})
+	s.note("ok", "control-plane", site.ID, "", site.ID, site.Name, "enroll", "site enrolled and agent token issued", map[string]any{"metadata": in.Metadata})
 	writeJSON(w, 201, out)
 }
 func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
@@ -521,8 +553,9 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	}
 	s.metrics.Events.Add(1)
 	// Keep event auto-logs light — detailed chapter lines come from nodra-sim.
+	// Not durably audited: too high-frequency for a compliance trail.
 	if matched > 0 {
-		s.note("info", "agent", "", in.SiteID, "", "event", "telemetry accepted on "+in.Topic, map[string]any{
+		s.note("info", "agent", "", "", in.SiteID, "", "event", "telemetry accepted on "+in.Topic, map[string]any{
 			"event_id": ev.ID, "matched_routes": matched,
 		})
 	}
@@ -570,7 +603,7 @@ func (s *Server) registerDevice(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.store.Twin(in.ID); !ok {
 		_ = s.store.SetTwin(model.Twin{DeviceID: in.ID, SiteID: in.SiteID, UpdatedAt: time.Now().UTC()})
 	}
-	s.note("ok", "agent", "", in.SiteID, "", "device.register", "device registered: "+in.Name, map[string]any{"device_id": in.ID, "protocol": in.Protocol})
+	s.note("ok", "agent", in.SiteID, "", in.SiteID, "", "device.register", "device registered: "+in.Name, map[string]any{"device_id": in.ID, "protocol": in.Protocol})
 	writeJSON(w, 201, in)
 }
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
@@ -616,6 +649,7 @@ func (s *Server) siteRevoke(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 404, "site not found")
 		return
 	}
+	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", idv, idv, "site.revoke", "site revoked", nil)
 	writeJSON(w, 200, map[string]bool{"revoked": true})
 }
 func (s *Server) routesList(w http.ResponseWriter, r *http.Request) {
@@ -663,13 +697,16 @@ func (s *Server) routeCreate(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 507, err.Error())
 		return
 	}
+	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", in.SiteID, in.Name, "route.create", "route created: "+in.Name, map[string]any{"route_id": in.ID, "topic": in.Topic, "target_url": in.TargetURL})
 	writeJSON(w, 201, in)
 }
 func (s *Server) routeDelete(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.DeleteRoute(r.PathValue("id")); err != nil {
+	idv := r.PathValue("id")
+	if err := s.store.DeleteRoute(idv); err != nil {
 		errorJSON(w, 404, "route not found")
 		return
 	}
+	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", "", idv, "route.delete", "route deleted: "+idv, map[string]any{"route_id": idv})
 	w.WriteHeader(204)
 }
 func (s *Server) devices(w http.ResponseWriter, r *http.Request) {
@@ -768,6 +805,7 @@ func (s *Server) deploymentCreate(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 507, err.Error())
 		return
 	}
+	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", in.SiteID, in.Name, "deployment.create", "deployment created: "+in.Name, map[string]any{"deployment_id": in.ID, "image": in.Image, "version": in.Version})
 	writeJSON(w, 201, in)
 }
 func (s *Server) deploymentPatch(w http.ResponseWriter, r *http.Request) {
@@ -809,23 +847,28 @@ func (s *Server) deploymentPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dep, _ := s.store.Deployment(idv)
+	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", dep.SiteID, dep.Name, "deployment.patch", "deployment updated: "+idv, map[string]any{"deployment_id": idv})
 	writeJSON(w, 200, dep)
 }
 func (s *Server) deploymentDelete(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.DeleteDeployment(r.PathValue("id")); err != nil {
+	idv := r.PathValue("id")
+	if err := s.store.DeleteDeployment(idv); err != nil {
 		errorJSON(w, 404, "deployment not found")
 		return
 	}
+	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", "", idv, "deployment.delete", "deployment deleted: "+idv, map[string]any{"deployment_id": idv})
 	w.WriteHeader(204)
 }
 func (s *Server) alerts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, asJSONList(s.store.Alerts()))
 }
 func (s *Server) alertResolve(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.ResolveAlert(r.PathValue("id")); err != nil {
+	idv := r.PathValue("id")
+	if err := s.store.ResolveAlert(idv); err != nil {
 		errorJSON(w, 404, "alert not found")
 		return
 	}
+	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", "", idv, "alert.resolve", "alert resolved: "+idv, map[string]any{"alert_id": idv})
 	writeJSON(w, 200, map[string]bool{"resolved": true})
 }
 func (s *Server) eventsList(w http.ResponseWriter, r *http.Request) {
@@ -983,7 +1026,7 @@ func (s *Server) processOne(ctx context.Context, d model.Delivery) {
 			return
 		}
 		_ = s.store.AddAlert(model.Alert{ID: id("alert"), SiteID: d.SiteID, Severity: "high", Type: "delivery_failed", Message: fmt.Sprintf("route %s moved to dead letter queue: %s", d.RouteID, err), CreatedAt: time.Now().UTC()})
-		s.note("error", "control-plane", "", d.SiteID, "", "delivery.dlq", "delivery exhausted retries → dead letter", map[string]any{
+		s.note("error", "control-plane", "system", "", d.SiteID, "", "delivery.dlq", "delivery exhausted retries → dead letter", map[string]any{
 			"route_id": d.RouteID, "event_id": d.EventID, "topic": d.Topic, "reason": err.Error(), "attempts": d.Attempts,
 		})
 		return

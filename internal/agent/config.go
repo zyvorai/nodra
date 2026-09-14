@@ -58,10 +58,11 @@ type Config struct {
 	ClientKeyFile      string            `json:"client_key_file,omitempty"`
 	CAFile             string            `json:"ca_file,omitempty"`
 	InsecureSkipVerify bool              `json:"insecure_skip_verify,omitempty"`
+	AuditRetentionDays int               `json:"audit_retention_days,omitempty"`
 }
 
 func DefaultConfig() Config {
-	return Config{ServerURL: "http://127.0.0.1:8080", SiteName: "edge-site", DataDir: "./nodra-agent-data", Listen: "127.0.0.1:9091", MQTTListen: "127.0.0.1:1883", HeartbeatText: "30s", FlushText: "2s", Runner: "none", MaxSpoolBytes: 2 << 30, MaxSpoolEvents: 1000000, SpoolPolicy: "reject"}
+	return Config{ServerURL: "http://127.0.0.1:8080", SiteName: "edge-site", DataDir: "./nodra-agent-data", Listen: "127.0.0.1:9091", MQTTListen: "127.0.0.1:1883", HeartbeatText: "30s", FlushText: "2s", Runner: "none", MaxSpoolBytes: 2 << 30, MaxSpoolEvents: 1000000, SpoolPolicy: "reject", AuditRetentionDays: 30}
 }
 func LoadConfig(path string) (Config, error) {
 	b, err := os.ReadFile(path)
@@ -104,6 +105,9 @@ func (c *Config) normalize() error {
 	}
 	if c.SpoolPolicy == "" {
 		c.SpoolPolicy = "reject"
+	}
+	if c.AuditRetentionDays <= 0 {
+		c.AuditRetentionDays = 30
 	}
 	switch c.SpoolPolicy {
 	case "reject", "drop-oldest", "drop-newest":

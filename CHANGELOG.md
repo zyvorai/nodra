@@ -25,6 +25,16 @@
   `transform` sets headers, drops/sets JSON fields, wraps the payload, and
   rewrites the delivered topic — deterministic, data-only, no scripting.
 
+- Durable, exportable audit log (`internal/audit`): admin console actions
+  (login, site revoke, route/deployment create/patch/delete, alert resolve)
+  and agent-side actions (enroll, local auth denials, device-register) are
+  now written to daily-rotated NDJSON under `<data-dir>/audit/` (or the
+  `nodra_audit_log` Postgres table with `NODRA_STORE=postgres`) — durable and
+  captured by `backup-state.sh`, unlike the in-memory Activity/Logs ring.
+  Query with `GET /api/v1/audit` (control plane) / `GET /v1/audit` (agent),
+  or export the full history as NDJSON via `GET /api/v1/audit/export` and
+  `nodractl audit list|export`.
+
 - Docs refresh: QUALIFICATION/PRODUCTION mark abbreviated WAN/disk + HTTPS
   `:18447` signed; multi-hour soak still open. Remove stale “TLS still blocked
   on lab HTTP” wording.

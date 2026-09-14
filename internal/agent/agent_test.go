@@ -371,3 +371,58 @@ func TestReconcileDockerStopRunning(t *testing.T) {
 		t.Fatalf("missing rm: %s", b)
 	}
 }
+
+func TestLocalAuditTrailRecordsEnrollAndDeniedAccess(t *testing.T) {
+	srv, _ := server.New(server.Config{DataDir: t.TempDir(), AdminToken: "adm", EnrollmentToken: "enroll"})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	cfg := DefaultConfig()
+	cfg.ServerURL = ts.URL
+	cfg.SiteName = "edge-audit"
+	cfg.EnrollmentToken = "enroll"
+	cfg.DataDir = filepath.Join(t.TempDir(), "agent")
+	cfg.LocalToken = "local-secret"
+	a, err := New(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.EnsureEnrolled(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unauthorized local request should be denied and audited.
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/publish", bytes.NewBufferString(`{"topic":"x","payload":1}`))
+	a.Handler().ServeHTTP(rr, req)
+	if rr.Code != 401 {
+		t.Fatalf("expected 401, got %d", rr.Code)
+	}
+
+	// Authorized audit list read.
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest("GET", "/v1/audit?limit=50", nil)
+	req.Header.Set("Authorization", "Bearer local-secret")
+	a.Handler().ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("audit list: %d %s", rr.Code, rr.Body.String())
+	}
+	var out struct {
+		Entries []map[string]any `json:"entries"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal: %v (%s)", err, rr.Body.String())
+	}
+	seen := map[string]map[string]any{}
+	for _, e := range out.Entries {
+		action, _ := e["action"].(string)
+		seen[action] = e
+	}
+	enrollEntry, ok := seen["enroll"]
+	if !ok || enrollEntry["result"] != "ok" {
+		t.Errorf("expected an ok enroll audit entry, got %+v", enrollEntry)
+	}
+	denied, ok := seen["local.publish"]
+	if !ok || denied["result"] != "denied" {
+		t.Errorf("expected a denied local.publish audit entry, got %+v", denied)
+	}
+}

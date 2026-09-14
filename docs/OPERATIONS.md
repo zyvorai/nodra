@@ -6,13 +6,19 @@ hero:
 
 ## Backup
 
-Stop the single control-plane writer or take a storage snapshot. Back up the Nodra data directory, including `state.snapshot.json`, `state.wal`, `deliveries/`, `deadletters/` and optional `pki/`.
+Stop the single control-plane writer or take a storage snapshot. Back up the Nodra data directory, including `state.snapshot.json`, `state.wal`, `deliveries/`, `deadletters/`, `audit/` and optional `pki/`.
 
 ```bash
 ./scripts/backup-state.sh /var/lib/nodra /var/backups/nodra-$(date -u +%Y%m%d).tar.gz
 ```
 
-Activity / Logs ring is **in-memory only** and is not part of the durable backup set.
+The live console's Activity/Logs tail is an **in-memory ring** (cap 2000) and
+is not part of the durable backup set — but every action it shows that has
+an identifiable actor is also durably written to `audit/` (daily-rotated
+NDJSON, or the `nodra_audit_log` Postgres table with `NODRA_STORE=postgres`)
+and **is** captured by `backup-state.sh` since it lives under the data
+directory. Query it live via `GET /api/v1/audit` or export it with
+`nodractl audit export --out FILE`.
 
 ## Recovery
 

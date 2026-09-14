@@ -20,10 +20,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/zyvorai/nodra/internal/audit"
 	"github.com/zyvorai/nodra/internal/auth"
 	"github.com/zyvorai/nodra/internal/durable"
 	"github.com/zyvorai/nodra/internal/model"
@@ -49,6 +51,7 @@ type Agent struct {
 	cancel          context.CancelFunc
 	twinsMu         sync.RWMutex
 	twins           map[string]model.Twin
+	auditLog        *audit.FileLog
 }
 
 func New(cfg Config, configPath string) (*Agent, error) {
@@ -63,7 +66,11 @@ func New(cfg Config, configPath string) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &Agent{cfg: cfg, configPath: configPath, spool: q, localDeliveries: lq, twins: map[string]model.Twin{}}
+	al, err := audit.OpenFile(cfg.DataDir, audit.Options{RetentionDays: cfg.AuditRetentionDays})
+	if err != nil {
+		return nil, err
+	}
+	a := &Agent{cfg: cfg, configPath: configPath, spool: q, localDeliveries: lq, twins: map[string]model.Twin{}, auditLog: al}
 	if err = a.configureClient(); err != nil {
 		return nil, err
 	}
@@ -187,6 +194,7 @@ func (a *Agent) Shutdown(ctx context.Context) error {
 	a.wg.Wait()
 	_ = a.spool.Close()
 	_ = a.localDeliveries.Close()
+	_ = a.auditLog.Close()
 	return err
 }
 func (a *Agent) Pending() int            { return a.spool.Len() }
@@ -200,6 +208,7 @@ func (a *Agent) localRoutes() http.Handler {
 	mux.HandleFunc("POST /v1/devices", a.device)
 	mux.HandleFunc("GET /v1/twins", a.localTwins)
 	mux.HandleFunc("POST /v1/twins/{id}/reported", a.localTwinReported)
+	mux.HandleFunc("GET /v1/audit", a.localAuditList)
 	return mux
 }
 func (a *Agent) localAuth(r *http.Request) bool {
@@ -208,6 +217,47 @@ func (a *Agent) localAuth(r *http.Request) bool {
 	}
 	h := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 	return auth.EqualToken(h, a.cfg.LocalToken)
+}
+
+// auditNote durably records a local admin/agent action. actor is the
+// requester's remote address for local HTTP clients, or "agent" for
+// nodrad-internal actions like enroll — there's no login system at the
+// edge, so a peer address is the closest thing to an identifiable actor.
+func (a *Agent) auditNote(actor, actorType, action, result, message string, detail map[string]any) {
+	if a.auditLog == nil {
+		return
+	}
+	_ = a.auditLog.Append(audit.Entry{
+		Actor: actor, ActorType: actorType, Action: action, SiteID: a.cfg.SiteID,
+		Result: result, Message: message, Detail: detail,
+	})
+}
+
+// unauthorizedLocal writes a 401 and audits the denied local-auth attempt.
+func (a *Agent) unauthorizedLocal(w http.ResponseWriter, r *http.Request, action string) {
+	a.auditNote(r.RemoteAddr, "local_client", action, "denied", "local auth failed", map[string]any{"path": r.URL.Path})
+	writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+}
+
+func (a *Agent) localAuditList(w http.ResponseWriter, r *http.Request) {
+	if !a.localAuth(r) {
+		a.unauthorizedLocal(w, r, "local.audit_list")
+		return
+	}
+	if a.auditLog == nil {
+		writeJSON(w, 200, map[string]any{"entries": []audit.Entry{}, "next_cursor": ""})
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = 250
+	}
+	entries, next, err := a.auditLog.Query(audit.Filter{Limit: limit, Cursor: r.URL.Query().Get("cursor")})
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"entries": entries, "next_cursor": next})
 }
 func (a *Agent) decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
@@ -229,7 +279,7 @@ func localDeliveryID(eventID string, i int) string {
 }
 func (a *Agent) publish(w http.ResponseWriter, r *http.Request) {
 	if !a.localAuth(r) {
-		writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+		a.unauthorizedLocal(w, r, "local.publish")
 		return
 	}
 	var in struct {
@@ -300,7 +350,7 @@ func (a *Agent) ingestWithTime(ctx context.Context, topic string, payload json.R
 }
 func (a *Agent) device(w http.ResponseWriter, r *http.Request) {
 	if !a.localAuth(r) {
-		writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+		a.unauthorizedLocal(w, r, "local.device_register")
 		return
 	}
 	var d model.Device
@@ -311,11 +361,13 @@ func (a *Agent) device(w http.ResponseWriter, r *http.Request) {
 	b, _ := json.Marshal(d)
 	resp, err := a.do(ctxOrBackground(r.Context()), "POST", "/api/v1/devices/register", b)
 	if err != nil {
+		a.auditNote(r.RemoteAddr, "local_client", "device.register", "error", err.Error(), map[string]any{"name": d.Name})
 		writeJSON(w, 502, map[string]string{"error": err.Error()})
 		return
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	a.auditNote(r.RemoteAddr, "local_client", "device.register", "ok", "proxied device registration: "+d.Name, map[string]any{"name": d.Name, "protocol": d.Protocol, "status_code": resp.StatusCode})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(body)
@@ -343,7 +395,9 @@ func (a *Agent) enroll(ctx context.Context) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != 201 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		return fmt.Errorf("server returned %s: %s", resp.Status, strings.TrimSpace(string(b)))
+		enrollErr := fmt.Errorf("server returned %s: %s", resp.Status, strings.TrimSpace(string(b)))
+		a.auditNote("agent", "agent", "enroll", "error", enrollErr.Error(), map[string]any{"server_url": a.cfg.ServerURL})
+		return enrollErr
 	}
 	var out struct {
 		SiteID            string `json:"site_id"`
@@ -384,6 +438,7 @@ func (a *Agent) enroll(ctx context.Context) error {
 			return err
 		}
 	}
+	a.auditNote("agent", "agent", "enroll", "ok", "enrolled with control plane", map[string]any{"server_url": a.cfg.ServerURL, "site_id": a.cfg.SiteID})
 	return nil
 }
 func (a *Agent) heartbeatLoop(ctx context.Context) {
@@ -582,7 +637,7 @@ func (a *Agent) saveTwins() {
 }
 func (a *Agent) localTwins(w http.ResponseWriter, r *http.Request) {
 	if !a.localAuth(r) {
-		writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+		a.unauthorizedLocal(w, r, "local.twins_list")
 		return
 	}
 	a.twinsMu.RLock()
@@ -595,7 +650,7 @@ func (a *Agent) localTwins(w http.ResponseWriter, r *http.Request) {
 }
 func (a *Agent) localTwinReported(w http.ResponseWriter, r *http.Request) {
 	if !a.localAuth(r) {
-		writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+		a.unauthorizedLocal(w, r, "local.twin_report")
 		return
 	}
 	var in struct {
