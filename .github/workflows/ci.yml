@@ -114,18 +114,22 @@ jobs:
       - uses: actions/checkout@v4
       - name: Compose relay-bridge example
         run: |
+          set -euo pipefail
           docker compose -f examples/relay/docker-compose.bridge.yml up --build -d
+          docker compose -f examples/relay/docker-compose.bridge.yml ps
           for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:8095/healthz >/dev/null 2>&1; then
+            if curl -fsS http://127.0.0.1:18096/healthz >/dev/null 2>&1; then
               break
             fi
+            echo "waiting for bridge… ($i)"
+            docker compose -f examples/relay/docker-compose.bridge.yml logs bridge 2>&1 | tail -5 || true
             sleep 2
           done
-          curl -fsS http://127.0.0.1:8095/healthz >/dev/null
-          curl -fsS -X POST http://127.0.0.1:8095/v1/nodra/delivery \
+          curl -fsS http://127.0.0.1:18096/healthz
+          curl -fsS -X POST http://127.0.0.1:18096/v1/nodra/delivery \
             -H 'Content-Type: application/json' \
             -d '{"event_id":"edge_ci_1","site_id":"site_ci","topic":"factory/line-1/alert","payload":{"ok":true},"delivery_id":"dlv_ci_1","event_time":"2026-09-14T00:00:00Z"}' \
-            | grep -Fq '"accepted":true'
+            | tee /tmp/bridge-out.json | grep -Fq '"accepted":true'
           docker compose -f examples/relay/docker-compose.bridge.yml down -v
 
   backup-restore:

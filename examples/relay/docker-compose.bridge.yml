@@ -26,10 +26,10 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
-    entrypoint: ["nodra-relay-bridge"]
+    entrypoint: ["/usr/local/bin/nodra-relay-bridge"]
     command: ["--listen", ":8095"]
     environment:
       RELAY_BASE_URL: http://mock-relay:8080
       RELAY_AUTH_TOKEN: smoke
-    ports: ["8095:8095"]
+    ports: ["18096:8095"]
     depends_on: [mock-relay]
