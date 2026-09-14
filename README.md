@@ -75,7 +75,8 @@ operational issues with their documented fix.
 - **Dead-letter queue**: failed deliveries retain payload/history and can be inspected, replayed or deleted.
 - **Device twins**: desired state in the control plane, reported state from the edge, locally cached by `nodrad`.
 - **Site identity**: optional CSR-based certificate enrollment; the private key is generated and kept on the edge.
-- **Fleet revocation**: revoke a site identity/token centrally.
+- **Fleet revocation**: revoke a site identity/token centrally; a revoked site's rotation/heartbeat calls get a distinguishable `403 site_revoked`.
+- **Certificate rotation + CRL**: `nodrad` self-rotates its identity certificate ahead of expiry; the control plane serves a real X.509 CRL at `GET /api/v1/ca/crl` and raises a `certificate_expiring` alert.
 - **Edge app reconciliation**: Docker desired `running|stopped` state, environment, ports, volumes and command.
 - **Modbus TCP client**: dependency-free function 0x03/0x06 building block for adapters.
 - **Metrics**: Prometheus counters plus delivery queue/DLQ gauges.

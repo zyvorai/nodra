@@ -6,8 +6,11 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -377,5 +380,152 @@ func TestPKIEnrollmentSignsCSR(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "client_certificate") || !strings.Contains(string(b), "ca_certificate") {
 		t.Fatalf("missing certs: %s", b)
+	}
+}
+
+func enrollPKISite(t *testing.T, c testClient, name string) (siteID, agentToken string) {
+	t.Helper()
+	_, csr, err := pki.NewClientCSR(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, b := c.req("POST", "/api/v1/enroll", map[string]any{"name": name, "enrollment_token": "enroll", "csr_pem": string(csr)}, "")
+	if code != 201 {
+		t.Fatalf("enroll %d %s", code, b)
+	}
+	var out struct {
+		SiteID     string `json:"site_id"`
+		AgentToken string `json:"agent_token"`
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.SiteID == "" || out.AgentToken == "" {
+		t.Fatalf("missing credentials: %s", b)
+	}
+	return out.SiteID, out.AgentToken
+}
+
+func TestSiteRevokeCRLAndHeartbeat403(t *testing.T) {
+	s, err := New(Config{DataDir: t.TempDir(), AdminToken: "adm", EnrollmentToken: "enroll", PKIEnabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	c := testClient{ts.URL, "adm", t}
+	siteID, tok := enrollPKISite(t, c, "crl-site")
+
+	// Bad token still gets a generic 401, not the revoked-specific 403.
+	code, _ := c.req("POST", "/api/v1/heartbeat", map[string]any{"site_id": siteID}, "wrong-token")
+	if code != 401 {
+		t.Fatalf("bad-token heartbeat = %d, want 401", code)
+	}
+
+	code, b := c.req("POST", "/api/v1/sites/"+siteID+"/revoke", nil, "adm")
+	if code != 200 {
+		t.Fatalf("revoke %d %s", code, b)
+	}
+
+	// A revoked site's own (otherwise-valid) token now gets 403 site_revoked.
+	code, b = c.req("POST", "/api/v1/heartbeat", map[string]any{"site_id": siteID}, tok)
+	if code != 403 || !strings.Contains(string(b), "site_revoked") {
+		t.Fatalf("revoked heartbeat = %d %s, want 403 site_revoked", code, b)
+	}
+
+	site, ok := s.store.Site(siteID)
+	if !ok {
+		t.Fatal("site missing after revoke")
+	}
+	serial, ok := new(big.Int).SetString(site.CertificateSerial, 16)
+	if !ok {
+		t.Fatalf("bad stored serial %q", site.CertificateSerial)
+	}
+
+	resp, err := http.Get(ts.URL + "/api/v1/ca/crl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	crlBytes, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		t.Fatalf("crl status=%d body=%s", resp.StatusCode, crlBytes)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/pkix-crl" {
+		t.Fatalf("crl content-type=%q", ct)
+	}
+	block, _ := pem.Decode(crlBytes)
+	if block == nil {
+		t.Fatal("invalid CRL PEM")
+	}
+	crl, err := x509.ParseRevocationList(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range crl.RevokedCertificateEntries {
+		if e.SerialNumber.Cmp(serial) == 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("serial %s not present in CRL entries %v", site.CertificateSerial, crl.RevokedCertificateEntries)
+	}
+}
+
+func TestSiteRotateIssuesNewSerial(t *testing.T) {
+	s, err := New(Config{DataDir: t.TempDir(), AdminToken: "adm", EnrollmentToken: "enroll", PKIEnabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	c := testClient{ts.URL, "adm", t}
+	siteID, tok := enrollPKISite(t, c, "rotate-site")
+
+	site, ok := s.store.Site(siteID)
+	if !ok {
+		t.Fatal("site missing after enroll")
+	}
+	oldSerial := site.CertificateSerial
+	if oldSerial == "" {
+		t.Fatal("enrollment did not issue a certificate")
+	}
+
+	_, csr2, err := pki.NewClientCSR(siteID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, b := c.req("POST", "/api/v1/sites/"+siteID+"/rotate", map[string]any{"csr_pem": string(csr2)}, tok)
+	if code != 200 {
+		t.Fatalf("rotate %d %s", code, b)
+	}
+	var out struct {
+		CertificateSerial string `json:"certificate_serial"`
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.CertificateSerial == "" || out.CertificateSerial == oldSerial {
+		t.Fatalf("rotate did not return a fresh serial: old=%s got=%s", oldSerial, out.CertificateSerial)
+	}
+	site, ok = s.store.Site(siteID)
+	if !ok || site.CertificateSerial != out.CertificateSerial {
+		t.Fatalf("store not updated: site=%+v want serial=%s", site, out.CertificateSerial)
+	}
+
+	// A revoked site cannot rotate — the same trust boundary as agentSite
+	// enforces for heartbeat/events.
+	code, b = c.req("POST", "/api/v1/sites/"+siteID+"/revoke", nil, "adm")
+	if code != 200 {
+		t.Fatalf("revoke %d %s", code, b)
+	}
+	_, csr3, err := pki.NewClientCSR(siteID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, b = c.req("POST", "/api/v1/sites/"+siteID+"/rotate", map[string]any{"csr_pem": string(csr3)}, tok)
+	if code != 403 || !strings.Contains(string(b), "site_revoked") {
+		t.Fatalf("rotate after revoke = %d %s, want 403 site_revoked", code, b)
 	}
 }

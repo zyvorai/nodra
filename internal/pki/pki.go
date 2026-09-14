@@ -87,7 +87,13 @@ func parseCA(cp, kp []byte) (*CA, error) {
 	return &CA{Cert: cert, Key: key, CertPEM: cp}, nil
 }
 
-func SignCSR(ca *CA, csrPEM []byte, commonName string, ttl time.Duration) (Signed, error) {
+// SignCSR signs csrPEM against ca, valid for ttl (default 90 days).
+// crlDistributionPoints is optional (variadic so existing call sites compile
+// unchanged) — when given, it's embedded in the issued certificate's
+// CRLDistributionPoints extension so clients that check CRLs directly (not
+// just via the control plane's own revoked-site check) know where to fetch
+// the CRL from.
+func SignCSR(ca *CA, csrPEM []byte, commonName string, ttl time.Duration, crlDistributionPoints ...string) (Signed, error) {
 	b, _ := pem.Decode(csrPEM)
 	if b == nil {
 		return Signed{}, errors.New("invalid CSR PEM")
@@ -108,12 +114,53 @@ func SignCSR(ca *CA, csrPEM []byte, commonName string, ttl time.Duration) (Signe
 	}
 	now := time.Now().UTC()
 	exp := now.Add(ttl)
-	tmpl := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: commonName, Organization: []string{"Zyvor Nodra Edge"}}, NotBefore: now.Add(-5 * time.Minute), NotAfter: exp, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
+	tmpl := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: commonName, Organization: []string{"Zyvor Nodra Edge"}}, NotBefore: now.Add(-5 * time.Minute), NotAfter: exp, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, CRLDistributionPoints: crlDistributionPoints}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca.Cert, csr.PublicKey, ca.Key)
 	if err != nil {
 		return Signed{}, err
 	}
 	return Signed{CertPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), Serial: serial.Text(16), ExpiresAt: exp}, nil
+}
+
+// ShouldRotate reports whether a certificate expiring at expiresAt should be
+// rotated as of now, i.e. now has entered the "before" window ahead of
+// expiry. A zero expiresAt (no certificate yet) never triggers rotation.
+func ShouldRotate(expiresAt, now time.Time, before time.Duration) bool {
+	if expiresAt.IsZero() {
+		return false
+	}
+	return !now.Before(expiresAt.Add(-before))
+}
+
+// RevokedCert is one entry to include in a generated CRL.
+type RevokedCert struct {
+	Serial    *big.Int
+	RevokedAt time.Time
+}
+
+// GenerateCRL issues a new CRL signed by ca listing revoked, valid from
+// thisUpdate until nextUpdate. ca.Cert must carry KeyUsageCRLSign (EnsureCA's
+// CA does).
+func GenerateCRL(ca *CA, revoked []RevokedCert, thisUpdate, nextUpdate time.Time) ([]byte, error) {
+	entries := make([]x509.RevocationListEntry, 0, len(revoked))
+	for _, rc := range revoked {
+		entries = append(entries, x509.RevocationListEntry{SerialNumber: rc.Serial, RevocationTime: rc.RevokedAt})
+	}
+	number, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 64))
+	if err != nil {
+		return nil, err
+	}
+	tmpl := &x509.RevocationList{
+		Number:                    number,
+		ThisUpdate:                thisUpdate,
+		NextUpdate:                nextUpdate,
+		RevokedCertificateEntries: entries,
+	}
+	der, err := x509.CreateRevocationList(rand.Reader, tmpl, ca.Cert, ca.Key)
+	if err != nil {
+		return nil, err
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "X509 CRL", Bytes: der}), nil
 }
 
 func NewClientCSR(commonName string) (keyPEM, csrPEM []byte, err error) {

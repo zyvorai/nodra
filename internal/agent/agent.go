@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/zyvorai/nodra/internal/audit"
@@ -52,6 +53,7 @@ type Agent struct {
 	twinsMu         sync.RWMutex
 	twins           map[string]model.Twin
 	auditLog        *audit.FileLog
+	revoked         atomic.Bool
 }
 
 func New(cfg Config, configPath string) (*Agent, error) {
@@ -125,12 +127,13 @@ func (a *Agent) Run(ctx context.Context) error {
 			return fmt.Errorf("enroll: %w", err)
 		}
 	}
-	a.wg.Add(5)
+	a.wg.Add(6)
 	go a.heartbeatLoop(ctx)
 	go a.flushLoop(ctx)
 	go a.localDeliveryLoop(ctx)
 	go a.deploymentLoop(ctx)
 	go a.twinLoop(ctx)
+	go a.rotationLoop(ctx)
 	if a.mqtt != nil {
 		a.wg.Add(1)
 		go func() {
@@ -202,7 +205,7 @@ func (a *Agent) SpoolStats() queue.Stats { return a.spool.Stats() }
 func (a *Agent) localRoutes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"status": "ok", "site_id": a.cfg.SiteID, "spool": a.spool.Stats(), "local_pending": a.localDeliveries.Len()})
+		writeJSON(w, 200, map[string]any{"status": "ok", "site_id": a.cfg.SiteID, "spool": a.spool.Stats(), "local_pending": a.localDeliveries.Len(), "revoked": a.Revoked()})
 	})
 	mux.HandleFunc("POST /v1/publish", a.publish)
 	mux.HandleFunc("POST /v1/devices", a.device)
@@ -467,6 +470,7 @@ func (a *Agent) heartbeat(ctx context.Context) {
 		slog.Warn("heartbeat failed", "error", err)
 		return
 	}
+	a.checkRevoked(resp)
 	_ = resp.Body.Close()
 }
 func (a *Agent) flushLoop(ctx context.Context) {

@@ -284,6 +284,98 @@ func TestAgentSendsOriginalEventTime(t *testing.T) {
 	}
 }
 
+func TestAgentRotateCertificateSwapsIdentity(t *testing.T) {
+	srv, err := server.New(server.Config{DataDir: t.TempDir(), AdminToken: "adm", EnrollmentToken: "enroll", PKIEnabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	cfg := DefaultConfig()
+	cfg.ServerURL = ts.URL
+	cfg.SiteName = "edge-rotate"
+	cfg.EnrollmentToken = "enroll"
+	cfg.RequestCertificate = true
+	cfg.DataDir = filepath.Join(t.TempDir(), "agent")
+	a, err := New(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.EnsureEnrolled(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	certPath := filepath.Join(cfg.DataDir, "identity.crt")
+	oldCertPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := a.rotateCertificate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	newCertPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(oldCertPEM, newCertPEM) {
+		t.Fatal("identity.crt did not change after rotation")
+	}
+	if a.Revoked() {
+		t.Fatal("rotating a non-revoked site must not set the revoked flag")
+	}
+	// The bearer token is still valid post-rotation (only the cert changed),
+	// so a heartbeat should keep succeeding — proves configureClient's
+	// reload didn't break the client.
+	a.heartbeat(context.Background())
+	if a.Revoked() {
+		t.Fatal("heartbeat after rotation should not report revoked")
+	}
+}
+
+func TestAgentDetectsRevocationOnHeartbeat(t *testing.T) {
+	srv, err := server.New(server.Config{DataDir: t.TempDir(), AdminToken: "adm", EnrollmentToken: "enroll", PKIEnabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	cfg := DefaultConfig()
+	cfg.ServerURL = ts.URL
+	cfg.SiteName = "edge-revoke"
+	cfg.EnrollmentToken = "enroll"
+	cfg.RequestCertificate = true
+	cfg.DataDir = filepath.Join(t.TempDir(), "agent")
+	a, err := New(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.EnsureEnrolled(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if a.Revoked() {
+		t.Fatal("freshly enrolled agent must not start out revoked")
+	}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/sites/"+a.SiteID()+"/revoke", nil)
+	req.Header.Set("Authorization", "Bearer adm")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	a.heartbeat(context.Background())
+	if !a.Revoked() {
+		t.Fatal("agent should have detected revocation from the heartbeat response")
+	}
+
+	// Rotation must refuse to proceed once revoked.
+	if err := a.rotateCertificate(context.Background()); err == nil {
+		t.Fatal("rotateCertificate should fail for a revoked site")
+	}
+}
+
 func writeFakeDocker(t *testing.T, dir string, script string) string {
 	t.Helper()
 	path := filepath.Join(dir, "docker")

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -60,22 +61,32 @@ type Config struct {
 	StoreDriver        string // file|postgres
 	DatabaseURL        string
 	AuditRetentionDays int
+	// PublicBaseURL, when set, is embedded as a CRLDistributionPoint in
+	// issued site certificates (e.g. "https://cp.example.com"). Optional —
+	// revocation is still enforced app-side via agentSite regardless.
+	PublicBaseURL string
+	// CertExpiryWarnBefore controls how far ahead of a site certificate's
+	// expiry a certificate_expiring alert is raised. Default 30 days.
+	CertExpiryWarnBefore time.Duration
 }
 
 type Server struct {
-	cfg        Config
-	store      store.Backend
-	deliveries *queue.Queue[model.Delivery]
-	dlq        *queue.Queue[model.DeadLetter]
-	metrics    *telemetry.Metrics
-	activity   *activityLog
-	audit      audit.Store
-	client     *http.Client
-	http       *http.Server
-	wg         sync.WaitGroup
-	cancel     context.CancelFunc
-	inflight   sync.Map
-	ca         *pki.CA
+	cfg           Config
+	store         store.Backend
+	deliveries    *queue.Queue[model.Delivery]
+	dlq           *queue.Queue[model.DeadLetter]
+	metrics       *telemetry.Metrics
+	activity      *activityLog
+	audit         audit.Store
+	client        *http.Client
+	http          *http.Server
+	wg            sync.WaitGroup
+	cancel        context.CancelFunc
+	inflight      sync.Map
+	ca            *pki.CA
+	crlMu         sync.RWMutex
+	crlPEM        []byte
+	crlNextUpdate time.Time
 }
 
 func New(cfg Config) (*Server, error) {
@@ -102,6 +113,9 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.AuditRetentionDays <= 0 {
 		cfg.AuditRetentionDays = 90
+	}
+	if cfg.CertExpiryWarnBefore <= 0 {
+		cfg.CertExpiryWarnBefore = 30 * 24 * time.Hour
 	}
 	if cfg.MaxBodyBytes == 0 {
 		cfg.MaxBodyBytes = 1 << 20
@@ -166,9 +180,10 @@ func (s *Server) Handler() http.Handler { return s.routes() }
 func (s *Server) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
-	s.wg.Add(2)
+	s.wg.Add(3)
 	go s.worker(ctx)
 	go s.auditRetentionLoop(ctx)
+	go s.certLifecycleLoop(ctx)
 	var err error
 	if s.cfg.TLSCertFile != "" && s.cfg.TLSKeyFile != "" {
 		err = s.http.ListenAndServeTLS(s.cfg.TLSCertFile, s.cfg.TLSKeyFile)
@@ -219,6 +234,8 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET /api/v1/overview", s.admin(http.HandlerFunc(s.overview)))
 	mux.Handle("GET /api/v1/sites", s.admin(http.HandlerFunc(s.sites)))
 	mux.Handle("POST /api/v1/sites/{id}/revoke", s.admin(http.HandlerFunc(s.siteRevoke)))
+	mux.HandleFunc("POST /api/v1/sites/{id}/rotate", s.siteRotate)
+	mux.HandleFunc("GET /api/v1/ca/crl", s.caCRL)
 	mux.Handle("GET /api/v1/routes", s.admin(http.HandlerFunc(s.routesList)))
 	mux.Handle("POST /api/v1/routes", s.admin(http.HandlerFunc(s.routeCreate)))
 	mux.Handle("DELETE /api/v1/routes/{id}", s.admin(http.HandlerFunc(s.routeDelete)))
@@ -452,7 +469,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	site := model.Site{ID: id("site"), Name: in.Name, TokenHash: auth.Hash(tok), Status: "online", CreatedAt: now, LastSeen: now, Metadata: in.Metadata}
 	out := map[string]any{"agent_token": tok}
 	if s.ca != nil && in.CSRPem != "" {
-		signed, er := pki.SignCSR(s.ca, []byte(in.CSRPem), site.ID, 90*24*time.Hour)
+		signed, er := pki.SignCSR(s.ca, []byte(in.CSRPem), site.ID, 90*24*time.Hour, s.crlDistributionPoints()...)
 		if er != nil {
 			errorJSON(w, 400, "invalid certificate request: "+er.Error())
 			return
@@ -484,6 +501,10 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, ok := s.agentSite(r, in.SiteID); !ok {
+		if site, exists := s.store.Site(in.SiteID); exists && site.Revoked {
+			writeJSON(w, 403, map[string]string{"error": "site_revoked"})
+			return
+		}
 		errorJSON(w, 401, "unauthorized agent")
 		return
 	}
@@ -645,12 +666,176 @@ func (s *Server) sites(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) siteRevoke(w http.ResponseWriter, r *http.Request) {
 	idv := r.PathValue("id")
-	if err := s.store.UpdateSite(idv, func(v *model.Site) { v.Revoked = true; v.Status = "revoked" }); err != nil {
+	now := time.Now().UTC()
+	if err := s.store.UpdateSite(idv, func(v *model.Site) { v.Revoked = true; v.Status = "revoked"; v.RevokedAt = now }); err != nil {
 		errorJSON(w, 404, "site not found")
 		return
 	}
+	s.refreshCRL()
 	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", idv, idv, "site.revoke", "site revoked", nil)
 	writeJSON(w, 200, map[string]bool{"revoked": true})
+}
+
+// siteRotate re-signs a fresh CSR for an already-enrolled, non-revoked site
+// — the edge generates and keeps a new keypair; the server never sees the
+// private key, mirroring enroll's trust model.
+func (s *Server) siteRotate(w http.ResponseWriter, r *http.Request) {
+	idv := r.PathValue("id")
+	if s.ca == nil {
+		errorJSON(w, 503, "PKI is not enabled on this control plane")
+		return
+	}
+	site, ok := s.agentSite(r, idv)
+	if !ok {
+		if revokedSite, exists := s.store.Site(idv); exists && revokedSite.Revoked {
+			writeJSON(w, 403, map[string]string{"error": "site_revoked"})
+			return
+		}
+		errorJSON(w, 401, "unauthorized agent")
+		return
+	}
+	var in struct {
+		CSRPem string `json:"csr_pem"`
+	}
+	if !s.decode(w, r, &in) {
+		return
+	}
+	if strings.TrimSpace(in.CSRPem) == "" {
+		errorJSON(w, 400, "csr_pem is required")
+		return
+	}
+	signed, err := pki.SignCSR(s.ca, []byte(in.CSRPem), site.ID, 90*24*time.Hour, s.crlDistributionPoints()...)
+	if err != nil {
+		errorJSON(w, 400, "invalid certificate request: "+err.Error())
+		return
+	}
+	oldSerial := site.CertificateSerial
+	if err := s.store.UpdateSite(idv, func(v *model.Site) {
+		v.CertificateSerial = signed.Serial
+		v.CertificateExpiresAt = signed.ExpiresAt
+	}); err != nil {
+		errorJSON(w, 507, "site persistence failed: "+err.Error())
+		return
+	}
+	// Resolve any open certificate_expiring alert now that the cert has a
+	// fresh expiry — otherwise it lingers until an operator clears it.
+	for _, al := range s.store.Alerts() {
+		if al.SiteID == idv && al.Type == "certificate_expiring" && !al.Resolved {
+			_ = s.store.ResolveAlert(al.ID)
+		}
+	}
+	s.note("ok", "control-plane", idv, "", idv, site.Name, "site.rotate", "certificate rotated", map[string]any{
+		"old_serial": oldSerial, "new_serial": signed.Serial, "expires_at": signed.ExpiresAt,
+	})
+	writeJSON(w, 200, map[string]any{"client_certificate": string(signed.CertPEM), "ca_certificate": string(s.ca.CertPEM), "certificate_serial": signed.Serial, "certificate_expires_at": signed.ExpiresAt})
+}
+
+// caCRL serves the cached CRL. Unauthenticated — a CRL carries only serials
+// and timestamps, the same public trust tier as the CA certificate already
+// returned unauthenticated from /api/v1/enroll.
+func (s *Server) caCRL(w http.ResponseWriter, r *http.Request) {
+	if s.ca == nil {
+		errorJSON(w, 503, "PKI is not enabled on this control plane")
+		return
+	}
+	s.crlMu.RLock()
+	pemBytes := s.crlPEM
+	s.crlMu.RUnlock()
+	if pemBytes == nil {
+		s.refreshCRL()
+		s.crlMu.RLock()
+		pemBytes = s.crlPEM
+		s.crlMu.RUnlock()
+	}
+	w.Header().Set("Content-Type", "application/pkix-crl")
+	_, _ = w.Write(pemBytes)
+}
+
+// crlDistributionPoints returns the CRLDistributionPoints to embed in newly
+// signed certificates, or nil when PublicBaseURL isn't configured.
+func (s *Server) crlDistributionPoints() []string {
+	if s.cfg.PublicBaseURL == "" {
+		return nil
+	}
+	return []string{strings.TrimRight(s.cfg.PublicBaseURL, "/") + "/api/v1/ca/crl"}
+}
+
+// refreshCRL regenerates the cached CRL from every currently-revoked site
+// with an issued certificate. Called synchronously right after a revoke and
+// periodically from certLifecycleLoop so nextUpdate stays fresh even absent
+// new revocations.
+func (s *Server) refreshCRL() {
+	if s.ca == nil {
+		return
+	}
+	var revoked []pki.RevokedCert
+	for _, site := range s.store.Sites() {
+		if !site.Revoked || site.CertificateSerial == "" {
+			continue
+		}
+		serial, ok := new(big.Int).SetString(site.CertificateSerial, 16)
+		if !ok {
+			continue
+		}
+		revokedAt := site.RevokedAt
+		if revokedAt.IsZero() {
+			revokedAt = time.Now().UTC()
+		}
+		revoked = append(revoked, pki.RevokedCert{Serial: serial, RevokedAt: revokedAt})
+	}
+	now := time.Now().UTC()
+	next := now.Add(15 * time.Minute)
+	crlPEM, err := pki.GenerateCRL(s.ca, revoked, now, next)
+	if err != nil {
+		slog.Error("crl generation failed", "error", err)
+		return
+	}
+	s.crlMu.Lock()
+	s.crlPEM = crlPEM
+	s.crlNextUpdate = next
+	s.crlMu.Unlock()
+}
+
+// certLifecycleLoop keeps the cached CRL's nextUpdate fresh and raises
+// certificate_expiring alerts ahead of a site certificate's expiry.
+// Deliberately its own low-frequency goroutine, like auditRetentionLoop.
+func (s *Server) certLifecycleLoop(ctx context.Context) {
+	defer s.wg.Done()
+	scan := func() {
+		if s.ca == nil {
+			return
+		}
+		s.refreshCRL()
+		now := time.Now().UTC()
+		// Dedup: don't re-raise while an unresolved certificate_expiring
+		// alert for the same site is already open.
+		open := map[string]bool{}
+		for _, al := range s.store.Alerts() {
+			if al.Type == "certificate_expiring" && !al.Resolved {
+				open[al.SiteID] = true
+			}
+		}
+		for _, site := range s.store.Sites() {
+			if site.Revoked || site.CertificateExpiresAt.IsZero() || open[site.ID] {
+				continue
+			}
+			if !pki.ShouldRotate(site.CertificateExpiresAt, now, s.cfg.CertExpiryWarnBefore) {
+				continue
+			}
+			_ = s.store.AddAlert(model.Alert{ID: id("alert"), SiteID: site.ID, Severity: "medium", Type: "certificate_expiring", Message: fmt.Sprintf("site %s certificate expires at %s", site.Name, site.CertificateExpiresAt.Format(time.RFC3339)), CreatedAt: now})
+		}
+	}
+	scan()
+	t := time.NewTicker(15 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			scan()
+		}
+	}
 }
 func (s *Server) routesList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, asJSONList(s.store.Routes()))

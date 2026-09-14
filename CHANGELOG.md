@@ -35,6 +35,18 @@
   or export the full history as NDJSON via `GET /api/v1/audit/export` and
   `nodractl audit list|export`.
 
+- Certificate rotation + CRL distribution (`internal/pki`): nodrad now
+  self-rotates its identity certificate ahead of expiry (`cert_rotate_before`,
+  default 30 days) via `POST /api/v1/sites/{id}/rotate` — the edge generates
+  a fresh keypair and CSR, the old identity stays valid until the new one is
+  durably written. The control plane serves a real X.509 CRL at
+  `GET /api/v1/ca/crl` (unauthenticated, same trust tier as the CA cert
+  already returned from `/api/v1/enroll`), regenerated on every revoke and
+  periodically, and raises a `certificate_expiring` alert as a site's
+  certificate approaches expiry. A revoked site gets a distinguishable
+  `403 site_revoked` (vs. a generic 401) from heartbeat and rotate, so nodrad
+  stops trying to rotate a certificate the server will never re-sign.
+
 - Docs refresh: QUALIFICATION/PRODUCTION mark abbreviated WAN/disk + HTTPS
   `:18447` signed; multi-hour soak still open. Remove stale “TLS still blocked
   on lab HTTP” wording.

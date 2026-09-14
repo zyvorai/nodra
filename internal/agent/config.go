@@ -33,36 +33,38 @@ type ConnectorSpec struct {
 }
 
 type Config struct {
-	ServerURL          string            `json:"server_url"`
-	SiteName           string            `json:"site_name"`
-	EnrollmentToken    string            `json:"enrollment_token,omitempty"`
-	SiteID             string            `json:"site_id,omitempty"`
-	AgentToken         string            `json:"agent_token,omitempty"`
-	DataDir            string            `json:"data_dir"`
-	Listen             string            `json:"listen"`
-	MQTTListen         string            `json:"mqtt_listen,omitempty"`
-	LocalToken         string            `json:"local_token,omitempty"`
-	Heartbeat          time.Duration     `json:"-"`
-	HeartbeatText      string            `json:"heartbeat"`
-	Flush              time.Duration     `json:"-"`
-	FlushText          string            `json:"flush_interval"`
-	Metadata           map[string]string `json:"metadata,omitempty"`
-	Runner             string            `json:"runner"`
-	MaxSpoolBytes      int64             `json:"max_spool_bytes"`
-	MaxSpoolEvents     int               `json:"max_spool_events"`
-	SpoolPolicy        string            `json:"spool_policy"`
-	LocalRoutes        []LocalRoute      `json:"local_routes,omitempty"`
-	Connectors         []ConnectorSpec   `json:"connectors,omitempty"`
-	RequestCertificate bool              `json:"request_certificate,omitempty"`
-	ClientCertFile     string            `json:"client_cert_file,omitempty"`
-	ClientKeyFile      string            `json:"client_key_file,omitempty"`
-	CAFile             string            `json:"ca_file,omitempty"`
-	InsecureSkipVerify bool              `json:"insecure_skip_verify,omitempty"`
-	AuditRetentionDays int               `json:"audit_retention_days,omitempty"`
+	ServerURL            string            `json:"server_url"`
+	SiteName             string            `json:"site_name"`
+	EnrollmentToken      string            `json:"enrollment_token,omitempty"`
+	SiteID               string            `json:"site_id,omitempty"`
+	AgentToken           string            `json:"agent_token,omitempty"`
+	DataDir              string            `json:"data_dir"`
+	Listen               string            `json:"listen"`
+	MQTTListen           string            `json:"mqtt_listen,omitempty"`
+	LocalToken           string            `json:"local_token,omitempty"`
+	Heartbeat            time.Duration     `json:"-"`
+	HeartbeatText        string            `json:"heartbeat"`
+	Flush                time.Duration     `json:"-"`
+	FlushText            string            `json:"flush_interval"`
+	Metadata             map[string]string `json:"metadata,omitempty"`
+	Runner               string            `json:"runner"`
+	MaxSpoolBytes        int64             `json:"max_spool_bytes"`
+	MaxSpoolEvents       int               `json:"max_spool_events"`
+	SpoolPolicy          string            `json:"spool_policy"`
+	LocalRoutes          []LocalRoute      `json:"local_routes,omitempty"`
+	Connectors           []ConnectorSpec   `json:"connectors,omitempty"`
+	RequestCertificate   bool              `json:"request_certificate,omitempty"`
+	ClientCertFile       string            `json:"client_cert_file,omitempty"`
+	ClientKeyFile        string            `json:"client_key_file,omitempty"`
+	CAFile               string            `json:"ca_file,omitempty"`
+	InsecureSkipVerify   bool              `json:"insecure_skip_verify,omitempty"`
+	AuditRetentionDays   int               `json:"audit_retention_days,omitempty"`
+	CertRotateBefore     time.Duration     `json:"-"`
+	CertRotateBeforeText string            `json:"cert_rotate_before,omitempty"`
 }
 
 func DefaultConfig() Config {
-	return Config{ServerURL: "http://127.0.0.1:8080", SiteName: "edge-site", DataDir: "./nodra-agent-data", Listen: "127.0.0.1:9091", MQTTListen: "127.0.0.1:1883", HeartbeatText: "30s", FlushText: "2s", Runner: "none", MaxSpoolBytes: 2 << 30, MaxSpoolEvents: 1000000, SpoolPolicy: "reject", AuditRetentionDays: 30}
+	return Config{ServerURL: "http://127.0.0.1:8080", SiteName: "edge-site", DataDir: "./nodra-agent-data", Listen: "127.0.0.1:9091", MQTTListen: "127.0.0.1:1883", HeartbeatText: "30s", FlushText: "2s", Runner: "none", MaxSpoolBytes: 2 << 30, MaxSpoolEvents: 1000000, SpoolPolicy: "reject", AuditRetentionDays: 30, CertRotateBeforeText: "720h"}
 }
 func LoadConfig(path string) (Config, error) {
 	b, err := os.ReadFile(path)
@@ -108,6 +110,13 @@ func (c *Config) normalize() error {
 	}
 	if c.AuditRetentionDays <= 0 {
 		c.AuditRetentionDays = 30
+	}
+	if c.CertRotateBeforeText == "" {
+		c.CertRotateBeforeText = "720h"
+	}
+	c.CertRotateBefore, err = time.ParseDuration(c.CertRotateBeforeText)
+	if err != nil {
+		return errors.New("invalid cert_rotate_before duration")
 	}
 	switch c.SpoolPolicy {
 	case "reject", "drop-oldest", "drop-newest":

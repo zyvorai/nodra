@@ -33,6 +33,7 @@ func main() {
 	tlsCert := flag.String("tls-cert", os.Getenv("NODRA_TLS_CERT"), "TLS server certificate")
 	tlsKey := flag.String("tls-key", os.Getenv("NODRA_TLS_KEY"), "TLS server key")
 	clientCA := flag.String("client-ca", os.Getenv("NODRA_CLIENT_CA"), "optional client CA for mTLS")
+	publicBaseURL := flag.String("public-base-url", os.Getenv("NODRA_PUBLIC_BASE_URL"), "externally-reachable base URL, embedded as a CRLDistributionPoint in issued certs")
 	flag.Parse()
 	if *admin == "" || *enroll == "" {
 		slog.Warn("authentication token missing; management or enrollment APIs will be unavailable")
@@ -43,7 +44,7 @@ func main() {
 		ViewerToken: *viewer, ViewerUser: *viewerUser, ViewerPassword: *viewerPass,
 		EnrollmentToken: *enroll, PublicRead: *public, WorkerConcurrency: *workers,
 		PKIEnabled: *pkiEnabled, TLSCertFile: *tlsCert, TLSKeyFile: *tlsKey, ClientCAFile: *clientCA,
-		StoreDriver: *storeDriver, DatabaseURL: *databaseURL,
+		StoreDriver: *storeDriver, DatabaseURL: *databaseURL, PublicBaseURL: *publicBaseURL,
 	})
 	if err != nil {
 		slog.Error("init failed", "error", err)

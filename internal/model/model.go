@@ -21,6 +21,7 @@ type Site struct {
 	CertificateSerial    string            `json:"certificate_serial,omitempty"`
 	CertificateExpiresAt time.Time         `json:"certificate_expires_at,omitempty"`
 	Revoked              bool              `json:"revoked,omitempty"`
+	RevokedAt            time.Time         `json:"revoked_at,omitempty"`
 }
 
 type Device struct {
