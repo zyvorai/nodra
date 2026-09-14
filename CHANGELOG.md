@@ -14,6 +14,8 @@
 
 ## Unreleased
 
+- Lab production hardening + signed ops/WAN drills (2026-09-14).
+
 - Signed lab ops checklist (backup/restore); document TLS still blocked on lab HTTP.
 
 - GitHub CI lab substitutes: relay-bridge smoke, compose stack, compose

@@ -1,0 +1,3 @@
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda2       915G  484G  385G  56% /
+/dev/sda2       915G  484G  385G  56% /

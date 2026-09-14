@@ -1,0 +1,13 @@
+stamp=2026-09-14T16:23:10Z
+# HELP nodra_events_total Events accepted by Nodra.\n# TYPE nodra_events_total counter\nnodra_events_total 0\n# HELP nodra_deliveries_total Successful route deliveries.\n# TYPE nodra_deliveries_total counter\nnodra_deliveries_total 0\n# HELP nodra_delivery_failures_total Failed route delivery attempts.\n# TYPE nodra_delivery_failures_total counter\nnodra_delivery_failures_total 0\n# HELP nodra_heartbeats_total Agent heartbeats.\n# TYPE nodra_heartbeats_total counter\nnodra_heartbeats_total 0\n# HELP nodra_enrollments_total Edge site enrollments.\n# TYPE nodra_enrollments_total counter\nnodra_enrollments_total 0\n# TYPE nodra_pending_deliveries gauge
+nodra_pending_deliveries 0
+# TYPE nodra_delivery_queue_bytes gauge
+nodra_delivery_queue_bytes 0
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda2       915G  484G  385G  56% /
+/dev/sda2       915G  484G  385G  56% /
+# HELP nodra_events_total Events accepted by Nodra.\n# TYPE nodra_events_total counter\nnodra_events_total 0\n# HELP nodra_deliveries_total Successful route deliveries.\n# TYPE nodra_deliveries_total counter\nnodra_deliveries_total 0\n# HELP nodra_delivery_failures_total Failed route delivery attempts.\n# TYPE nodra_delivery_failures_total counter\nnodra_delivery_failures_total 0\n# HELP nodra_heartbeats_total Agent heartbeats.\n# TYPE nodra_heartbeats_total counter\nnodra_heartbeats_total 0\n# HELP nodra_enrollments_total Edge site enrollments.\n# TYPE nodra_enrollments_total counter\nnodra_enrollments_total 0\n# TYPE nodra_pending_deliveries gauge
+nodra_pending_deliveries 0
+# TYPE nodra_delivery_queue_bytes gauge
+nodra_delivery_queue_bytes 0
+PASS nodra_disk_pressure_abbreviated (host df + metrics snapshot; not multi-hour soak)

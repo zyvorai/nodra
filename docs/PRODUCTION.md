@@ -15,12 +15,12 @@ control plane.
 |---|---|
 | Software matrix + CI lab substitutes | green (`make qualify`, bridge/compose/backup CI) |
 | Ops checklist (backup/restore/single-replica) | **signed** for lab host — [ops-checklist.md](https://github.com/zyvorai/nodra/blob/main/evidence/qualification/ops-checklist.md) |
-| TLS on lab CP | **blocked** (HTTP evaluation); production needs Ingress or `NODRA_TLS_*` |
+| TLS on lab CP | **done** — `NODRA_TLS_*` on `:18447` |
 | HA / multi-writer | **not available** in v0.2.x |
-| WAN-loss / disk-pressure soak | **unsigned** |
+| WAN-loss / disk-pressure soak | **signed** abbreviated drills (not multi-hour) |
 
 **Verdict:** single-writer Nodra is **production-ready** when TLS + spool policy are set
-per this runbook and the ops checklist is signed on the target host. Lab CP is still HTTP.
+per this runbook and the ops checklist is signed on the target host.
 
 ## Preconditions
 
