@@ -4,9 +4,10 @@ hero:
   title: Production qualification matrix — Nodra
 ---
 
-Software rows are automated by `make qualify`. Multi-hour WAN-loss / disk-pressure
-soaks, HA claims, and signed backup/restore drills remain operator-recorded in
-[`evidence/qualification/ops-checklist.md`](https://github.com/zyvorai/nodra/blob/main/evidence/qualification/ops-checklist.md).
+Software rows are automated by `make qualify`. Lab ops for host `80.79.5.173`
+are **signed** in
+[`evidence/qualification/ops-checklist.md`](https://github.com/zyvorai/nodra/blob/main/evidence/qualification/ops-checklist.md)
+(backup/TLS/HTTPS `:18447`/abbreviated WAN+disk). Multi-hour soak and HA remain open.
 
 ## Software (host) rows — `make qualify`
 
@@ -24,24 +25,31 @@ soaks, HA claims, and signed backup/restore drills remain operator-recorded in
 These prove the single-writer control plane, OpenAPI coverage, and (in CI) the
 optional Postgres fleet store. They **do not** prove HA or multi-day soak.
 
-## Operator / lab rows — signed checklist
+## Operator / lab rows — checklist status
 
-| Test | Required outcome |
+Evidence: `ops-checklist.md`, `lab/20260914T162245Z/nodra-soak/`.
+
+| Test | Lab status |
 |---|---|
-| Persistent volume bootstrap | State survives restart; `/readyz` returns `ready` |
-| Backup and restore | `scripts/backup-state.sh` / `restore-state.sh`; restored writer serves sites/routes |
-| TLS termination | Ingress or `--tls-cert`/`--tls-key`; no demo tokens on shared nets |
-| Spool policy | Production chooses `reject` when silent drop is unacceptable |
-| WAN loss | Edge `nodrad` spools; control plane catches up after reconnect |
-| Disk pressure | Queue gauges + configured max; reject/drop policy behaves as documented |
-| Single-replica discipline | No second `nodra-server` against the same WAL volume |
-| Suite wiring | Device Agent MQTT / Fleet inventory boundaries documented in [INTEGRATIONS.md](INTEGRATIONS.md) |
+| Persistent volume bootstrap | **pass** (signed) |
+| Backup and restore | **pass** (signed) |
+| TLS termination (`NODRA_TLS_*` on `:18447`) | **pass** (signed) |
+| Spool policy documented | **pass** (signed) |
+| WAN loss (abbreviated) | **pass** — `nodra-soak/wan-loss.log` |
+| Disk pressure (abbreviated) | **pass** — `nodra-soak/disk-pressure.log` |
+| Single-replica discipline | **pass** (signed) |
+| Suite wiring | see [INTEGRATIONS.md](INTEGRATIONS.md) |
+| Multi-hour WAN / disk soak | **open** |
+| HA / multi-writer | **not available** in v0.2.x |
 
 ## Maturity note
 
 v0.2.x does not provide multi-replica delivery/DLQ HA. Production is one
-control-plane writer with a tested backup. See [ROADMAP.md](https://github.com/zyvorai/nodra/blob/main/ROADMAP.md).
+control-plane writer with a tested backup. See [ROADMAP.md](https://github.com/zyvorai/nodra/blob/main/ROADMAP.md)
+and [PRODUCTION.md](PRODUCTION.md).
 
 ## GitHub CI (lab substitute)
 
-CI runs relay-bridge smoke, compose stack, compose relay-bridge, and backup/restore. Soak/HA rows stay operator-signed.
+CI runs relay-bridge smoke, compose stack, compose relay-bridge, and backup/restore.
+These complement the signed lab ops checklist. CI still does **not** claim HA
+or multi-hour soak.

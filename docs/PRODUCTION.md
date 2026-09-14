@@ -9,18 +9,20 @@ For a multi-product evaluation host (Fleet + OTA + Device Agent + Nodra), see
 sibling repos' `docs/LAB.md` — that path is not a multi-replica production
 control plane.
 
-## Current maturity (2026-09-14)
+## Current maturity (2026-09-15)
 
 | Claim | Status |
 |---|---|
 | Software matrix + CI lab substitutes | green (`make qualify`, bridge/compose/backup CI) |
-| Ops checklist (backup/restore/single-replica) | **signed** for lab host — [ops-checklist.md](https://github.com/zyvorai/nodra/blob/main/evidence/qualification/ops-checklist.md) |
-| TLS on lab CP | **done** — `NODRA_TLS_*` on `:18447` |
+| Ops checklist (backup/restore/single-replica) | **signed** — [ops-checklist.md](https://github.com/zyvorai/nodra/blob/main/evidence/qualification/ops-checklist.md) |
+| TLS on lab CP | **done** — `NODRA_TLS_CERT`/`KEY` HTTPS on `:18447` |
+| Abbreviated WAN + disk drills | **signed** — `lab/20260914T162245Z/nodra-soak/` |
 | HA / multi-writer | **not available** in v0.2.x |
-| WAN-loss / disk-pressure soak | **signed** abbreviated drills (not multi-hour) |
+| Multi-hour WAN / disk soak | **open** |
 
 **Verdict:** single-writer Nodra is **production-ready** when TLS + spool policy are set
-per this runbook and the ops checklist is signed on the target host.
+per this runbook and the ops checklist is signed on the target host. Lab
+reference host already runs HTTPS `:18447`.
 
 ## Preconditions
 

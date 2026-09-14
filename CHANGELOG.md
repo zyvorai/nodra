@@ -14,9 +14,15 @@
 
 ## Unreleased
 
-- Lab production hardening + signed ops/WAN drills (2026-09-14).
+- Docs refresh: QUALIFICATION/PRODUCTION mark abbreviated WAN/disk + HTTPS
+  `:18447` signed; multi-hour soak still open. Remove stale “TLS still blocked
+  on lab HTTP” wording.
 
-- Signed lab ops checklist (backup/restore); document TLS still blocked on lab HTTP.
+- Lab production hardening + signed ops/WAN/disk drills (2026-09-14); TLS
+  unblocked via `NODRA_TLS_*` on lab HTTPS `:18447`.
+
+- Signed lab ops checklist (backup/restore/TLS); abbreviated WAN/disk drills
+  signed (not multi-hour soak).
 
 - GitHub CI lab substitutes: relay-bridge smoke, compose stack, compose
   relay-bridge example, backup/restore drill, suite-ci qualify markers.
