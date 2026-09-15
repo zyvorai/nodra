@@ -211,6 +211,27 @@ func (s *Store) apply(o op) error {
 			}
 		}
 		s.state.Deployments = out
+	case "policy.add":
+		var v model.PolicyPack
+		_ = json.Unmarshal(o.Data, &v)
+		s.state.PolicyPacks = append(s.state.PolicyPacks, v)
+	case "policy.set":
+		var v model.PolicyPack
+		_ = json.Unmarshal(o.Data, &v)
+		for i := range s.state.PolicyPacks {
+			if s.state.PolicyPacks[i].ID == v.ID {
+				s.state.PolicyPacks[i] = v
+				return nil
+			}
+		}
+	case "policy.del":
+		out := s.state.PolicyPacks[:0]
+		for _, v := range s.state.PolicyPacks {
+			if v.ID != o.ID {
+				out = append(out, v)
+			}
+		}
+		s.state.PolicyPacks = out
 	case "alert.add":
 		var v model.Alert
 		_ = json.Unmarshal(o.Data, &v)
@@ -387,6 +408,48 @@ func (s *Store) DeleteDeployment(id string) error {
 		return os.ErrNotExist
 	}
 	return s.mutate(op{Type: "deployment.del", ID: id})
+}
+func (s *Store) AddPolicyPack(v model.PolicyPack) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mutate(op{Type: "policy.add", Data: mustJSON(v)})
+}
+func (s *Store) PolicyPacks() []model.PolicyPack { return s.Snapshot().PolicyPacks }
+func (s *Store) PolicyPack(id string) (model.PolicyPack, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, v := range s.state.PolicyPacks {
+		if v.ID == id {
+			return v, true
+		}
+	}
+	return model.PolicyPack{}, false
+}
+func (s *Store) UpdatePolicyPack(id string, fn func(*model.PolicyPack)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, v := range s.state.PolicyPacks {
+		if v.ID == id {
+			fn(&v)
+			return s.mutate(op{Type: "policy.set", Data: mustJSON(v)})
+		}
+	}
+	return os.ErrNotExist
+}
+func (s *Store) DeletePolicyPack(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	found := false
+	for _, v := range s.state.PolicyPacks {
+		if v.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return os.ErrNotExist
+	}
+	return s.mutate(op{Type: "policy.del", ID: id})
 }
 func (s *Store) AddAlert(v model.Alert) error {
 	s.mu.Lock()

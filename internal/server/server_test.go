@@ -529,3 +529,44 @@ func TestSiteRotateIssuesNewSerial(t *testing.T) {
 		t.Fatalf("rotate after revoke = %d %s, want 403 site_revoked", code, b)
 	}
 }
+
+func TestPolicyPackDeniesDeployment(t *testing.T) {
+	_, _, c := newTestServer(t)
+	site, _ := enrollSite(t, c)
+
+	code, b := c.req("POST", "/api/v1/policy-packs", map[string]any{"name": "fleet", "allowed_images": []string{"ghcr.io/zyvorai/*"}, "enabled": true}, "adm")
+	if code != 201 {
+		t.Fatalf("policy create %d %s", code, b)
+	}
+
+	code, b = c.req("POST", "/api/v1/deployments", map[string]any{"site_id": site, "name": "app", "version": "v1", "image": "docker.io/evil/image:latest"}, "adm")
+	if code != 403 {
+		t.Fatalf("expected 403 for denied image, got %d %s", code, b)
+	}
+
+	code, b = c.req("POST", "/api/v1/deployments", map[string]any{"site_id": site, "name": "app", "version": "v1", "image": "ghcr.io/zyvorai/nodra:v1"}, "adm")
+	if code != 201 {
+		t.Fatalf("expected 201 for allowed image, got %d %s", code, b)
+	}
+}
+
+func TestPolicyPackScopedToSite(t *testing.T) {
+	_, _, c := newTestServer(t)
+	site1, _ := enrollSite(t, c)
+	site2, _ := enrollSite(t, c)
+
+	code, b := c.req("POST", "/api/v1/policy-packs", map[string]any{"name": "site-only", "site_id": site1, "allowed_images": []string{"ghcr.io/zyvorai/*"}, "enabled": true}, "adm")
+	if code != 201 {
+		t.Fatalf("policy create %d %s", code, b)
+	}
+
+	code, b = c.req("POST", "/api/v1/deployments", map[string]any{"site_id": site1, "name": "app", "version": "v1", "image": "docker.io/evil/image:latest"}, "adm")
+	if code != 403 {
+		t.Fatalf("expected 403 for site1 (constrained), got %d %s", code, b)
+	}
+
+	code, b = c.req("POST", "/api/v1/deployments", map[string]any{"site_id": site2, "name": "app", "version": "v1", "image": "docker.io/evil/image:latest"}, "adm")
+	if code != 201 {
+		t.Fatalf("expected 201 for site2 (unconstrained), got %d %s", code, b)
+	}
+}

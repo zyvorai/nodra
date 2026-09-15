@@ -349,7 +349,22 @@ if(depForm)depForm.addEventListener('submit',async e=>{
   }catch(ex){toast(ex.message||'Create failed')}
 });
 
+function consumeOIDCRedirect(){
+  const hash=location.hash;
+  if(!hash.includes('oidc_token='))return;
+  const params=new URLSearchParams(hash.slice(1));
+  const t=params.get('oidc_token');
+  if(t){
+    token=t;
+    role=params.get('role')||'admin';
+    sessionStorage.setItem('nodra_token',token);
+    sessionStorage.setItem('nodra_role',role);
+  }
+  history.replaceState(null,'',location.pathname+location.search);
+}
+
 (async()=>{
+  consumeOIDCRedirect();
   wireLoginChapters();
   const ok=await ensureSession();
   if(!ok)fillLoginContext();

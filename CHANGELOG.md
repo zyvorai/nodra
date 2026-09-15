@@ -14,6 +14,25 @@
 
 ## Unreleased
 
+- Fleet policy packs v1 (`internal/policy`): a named, versioned,
+  fleet-wide-or-per-site `allowed_images` allowlist enforced on deployment
+  create/patch. `*` in a pattern matches across `/` (OCI image refs use it
+  as an ordinary separator, not a path boundary). Multiple applicable packs
+  are ANDed; a pack with no `allowed_images` entries is a no-op; disabled
+  packs are never enforced. `GET|POST /api/v1/policy-packs`,
+  `PATCH|DELETE /api/v1/policy-packs/{id}`, `nodractl policy`. No RBAC-rule
+  or alert-threshold packs — see `docs/POLICY_PACKS.md`.
+
+- OIDC console login (`internal/oidc`): "Sign in with SSO" is a third way
+  to obtain the existing admin/viewer bearer tokens, not a new user
+  directory and not multi-tenant orgs. ID token verification is hand-rolled
+  against stdlib crypto and RS256-only (rejects `alg: none` and any `HS*`
+  algorithm — the classic JWT-confusion mitigation). A configured groups
+  claim maps to the existing two roles; the minted token is the exact same
+  static bearer `login()` already issues for that role. `GET
+  /api/v1/auth/oidc/login` and `/callback`; `oidc.login` is audited
+  (denials too).
+
 - OPC-UA connector (`connectors/opcua`): dependency-free UA-TCP binary
   client and poller. SecurityPolicy None, anonymous session; Read polled by
   the connector, plus Write, GetEndpoints/FindServers and Browse as

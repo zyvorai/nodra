@@ -80,7 +80,7 @@ operational issues with their documented fix.
 - **Edge app reconciliation**: Docker desired `running|stopped` state, environment, ports, volumes and command.
 - **Modbus TCP client**: dependency-free function 0x03/0x06 building block for adapters.
 - **Metrics**: Prometheus counters plus delivery queue/DLQ gauges.
-- **Kryton-style console login** + write-capable fleet console (revoke, routes, twins, apps, DLQ).
+- **Kryton-style console login** + write-capable fleet console (revoke, routes, twins, apps, DLQ). Optional **OIDC "Sign in with SSO"** maps a configured group claim to the existing admin/viewer roles.
 - **Live activity Logs** and A–Z `nodra-sim`.
 - **Connector SDK + Modbus poller**: registry factories; Modbus TCP poller publishes into nodrad ingest.
 - **Viewer/admin RBAC**: optional viewer token; console write actions gated by role.

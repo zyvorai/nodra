@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS nodra_devices (id TEXT PRIMARY KEY, data JSONB NOT NU
 CREATE TABLE IF NOT EXISTS nodra_twins (device_id TEXT PRIMARY KEY, data JSONB NOT NULL);
 CREATE TABLE IF NOT EXISTS nodra_routes (id TEXT PRIMARY KEY, data JSONB NOT NULL);
 CREATE TABLE IF NOT EXISTS nodra_deployments (id TEXT PRIMARY KEY, data JSONB NOT NULL);
+CREATE TABLE IF NOT EXISTS nodra_policy_packs (id TEXT PRIMARY KEY, data JSONB NOT NULL);
 CREATE TABLE IF NOT EXISTS nodra_alerts (id TEXT PRIMARY KEY, data JSONB NOT NULL);
 CREATE TABLE IF NOT EXISTS nodra_events (id TEXT PRIMARY KEY, data JSONB NOT NULL, event_time TIMESTAMPTZ);
 CREATE TABLE IF NOT EXISTS nodra_seen_events (id TEXT PRIMARY KEY);
@@ -139,6 +140,16 @@ func (s *PostgresStore) load() error {
 			return err
 		}
 		s.state.Deployments = append(s.state.Deployments, v)
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := loadJSON(`SELECT data FROM nodra_policy_packs`, func(b []byte) error {
+		var v model.PolicyPack
+		if err := json.Unmarshal(b, &v); err != nil {
+			return err
+		}
+		s.state.PolicyPacks = append(s.state.PolicyPacks, v)
 		return nil
 	}); err != nil {
 		return err
@@ -382,6 +393,62 @@ func (s *PostgresStore) DeleteDeployment(id string) error {
 		}
 	}
 	s.state.Deployments = out
+	return nil
+}
+
+func (s *PostgresStore) AddPolicyPack(v model.PolicyPack) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.upsert("nodra_policy_packs", "id", v.ID, v); err != nil {
+		return err
+	}
+	s.state.PolicyPacks = append(s.state.PolicyPacks, v)
+	return nil
+}
+func (s *PostgresStore) PolicyPacks() []model.PolicyPack { return s.Snapshot().PolicyPacks }
+func (s *PostgresStore) PolicyPack(id string) (model.PolicyPack, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, v := range s.state.PolicyPacks {
+		if v.ID == id {
+			return v, true
+		}
+	}
+	return model.PolicyPack{}, false
+}
+func (s *PostgresStore) UpdatePolicyPack(id string, fn func(*model.PolicyPack)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, v := range s.state.PolicyPacks {
+		if v.ID == id {
+			fn(&v)
+			if err := s.upsert("nodra_policy_packs", "id", v.ID, v); err != nil {
+				return err
+			}
+			s.state.PolicyPacks[i] = v
+			return nil
+		}
+	}
+	return os.ErrNotExist
+}
+func (s *PostgresStore) DeletePolicyPack(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res, err := s.db.Exec(`DELETE FROM nodra_policy_packs WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return os.ErrNotExist
+	}
+	out := s.state.PolicyPacks[:0]
+	for _, v := range s.state.PolicyPacks {
+		if v.ID != id {
+			out = append(out, v)
+		}
+	}
+	s.state.PolicyPacks = out
 	return nil
 }
 

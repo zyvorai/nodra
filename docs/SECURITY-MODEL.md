@@ -19,6 +19,16 @@ The enrollment token is a bootstrap secret. Site bearer tokens are random and on
 
 When PKI enrollment is enabled, the edge generates an ECDSA P-256 private key and CSR. Only the CSR is sent. The control plane signs it; the private key never leaves the site.
 
+## SSO / OIDC login
+
+`NODRA_OIDC_ISSUER_URL` + `NODRA_OIDC_CLIENT_ID` add "Sign in with SSO" as a third way to obtain the console's existing admin/viewer bearer tokens. Scope, stated precisely:
+
+- ID token verification is **RS256 only** — `alg: none` and any `HS*` algorithm are explicitly rejected (the classic JWT algorithm-confusion mitigation). Verification is hand-rolled against stdlib `crypto/rsa`, not a third-party JWT library.
+- A configured groups claim (`NODRA_OIDC_GROUPS_CLAIM`, default `groups`) maps to the SAME two roles admin/viewer already have — `NODRA_OIDC_ADMIN_GROUP` / `NODRA_OIDC_VIEWER_GROUP` decide which. There is no third role and no per-permission granularity beyond what admin/viewer already grant.
+- A successful OIDC login mints the exact same static bearer token `/auth/login` issues for that role — there is no separate OIDC session, no cookie, no token expiry distinct from the admin/viewer token's own lifetime.
+- Explicit non-goals: no per-user account directory (the audit actor is `oidc:<sub>`, not a stored user record), no multi-tenant organizations, no per-org site scoping. Those would need a real user/org data model and are tracked separately in `ROADMAP.md`.
+- The OIDC login `state`/`nonce` pair is held in-memory only (10-minute TTL, single-use) — it does not survive a control-plane restart mid-flow, and is not shared across replicas.
+
 ## Kubernetes
 
 The default manifests enforce Restricted Pod Security, run as UID/GID 65532, drop all capabilities, use RuntimeDefault seccomp, use read-only root filesystems and disable service-account token mounting.

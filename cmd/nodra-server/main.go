@@ -34,6 +34,13 @@ func main() {
 	tlsKey := flag.String("tls-key", os.Getenv("NODRA_TLS_KEY"), "TLS server key")
 	clientCA := flag.String("client-ca", os.Getenv("NODRA_CLIENT_CA"), "optional client CA for mTLS")
 	publicBaseURL := flag.String("public-base-url", os.Getenv("NODRA_PUBLIC_BASE_URL"), "externally-reachable base URL, embedded as a CRLDistributionPoint in issued certs")
+	oidcIssuerURL := flag.String("oidc-issuer-url", os.Getenv("NODRA_OIDC_ISSUER_URL"), "OIDC issuer URL; enables SSO console login when set with --oidc-client-id")
+	oidcClientID := flag.String("oidc-client-id", os.Getenv("NODRA_OIDC_CLIENT_ID"), "OIDC client ID")
+	oidcClientSecret := flag.String("oidc-client-secret", os.Getenv("NODRA_OIDC_CLIENT_SECRET"), "OIDC client secret")
+	oidcRedirectURL := flag.String("oidc-redirect-url", os.Getenv("NODRA_OIDC_REDIRECT_URL"), "OIDC redirect URL registered with the IdP")
+	oidcGroupsClaim := flag.String("oidc-groups-claim", env("NODRA_OIDC_GROUPS_CLAIM", "groups"), "ID token claim carrying the caller's groups")
+	oidcAdminGroup := flag.String("oidc-admin-group", os.Getenv("NODRA_OIDC_ADMIN_GROUP"), "group value granting the admin role via OIDC")
+	oidcViewerGroup := flag.String("oidc-viewer-group", os.Getenv("NODRA_OIDC_VIEWER_GROUP"), "group value granting the viewer role via OIDC")
 	flag.Parse()
 	if *admin == "" || *enroll == "" {
 		slog.Warn("authentication token missing; management or enrollment APIs will be unavailable")
@@ -45,6 +52,9 @@ func main() {
 		EnrollmentToken: *enroll, PublicRead: *public, WorkerConcurrency: *workers,
 		PKIEnabled: *pkiEnabled, TLSCertFile: *tlsCert, TLSKeyFile: *tlsKey, ClientCAFile: *clientCA,
 		StoreDriver: *storeDriver, DatabaseURL: *databaseURL, PublicBaseURL: *publicBaseURL,
+		OIDCIssuerURL: *oidcIssuerURL, OIDCClientID: *oidcClientID, OIDCClientSecret: *oidcClientSecret,
+		OIDCRedirectURL: *oidcRedirectURL, OIDCGroupsClaim: *oidcGroupsClaim,
+		OIDCAdminGroup: *oidcAdminGroup, OIDCViewerGroup: *oidcViewerGroup,
 	})
 	if err != nil {
 		slog.Error("init failed", "error", err)

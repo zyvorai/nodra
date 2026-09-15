@@ -47,6 +47,8 @@ func main() {
 		err = routes(c, args[1:])
 	case "deployments":
 		err = deployments(c, args[1:])
+	case "policy":
+		err = policyPacks(c, args[1:])
 	case "alerts":
 		err = alerts(c, args[1:])
 	case "deadletters", "dlq":
@@ -81,6 +83,9 @@ Usage:
   nodractl deployments create --site SITE_ID --name NAME --version VERSION --image IMAGE [--desired running|stopped]
   nodractl deployments patch DEP_ID [--version V] [--image IMG] [--desired running|stopped]
   nodractl deployments delete DEP_ID
+  nodractl policy list
+  nodractl policy create --name NAME [--site SITE_ID] [--allowed-images "a/*,b/*"] [--enabled=false]
+  nodractl policy delete POLICY_ID
   nodractl alerts list | alerts resolve ALERT_ID
   nodractl dlq list | dlq replay DELIVERY_ID | dlq delete DELIVERY_ID
   nodractl audit list [--since RFC3339] [--until RFC3339] [--site ID] [--action A] [--actor A] [--limit N] [--cursor C]
@@ -178,6 +183,30 @@ func deployments(c client, args []string) error {
 		return c.print("DELETE", "/api/v1/deployments/"+args[1], nil)
 	}
 	return fmt.Errorf("unknown deployments command")
+}
+func policyPacks(c client, args []string) error {
+	if len(args) == 0 || args[0] == "list" {
+		return c.print("GET", "/api/v1/policy-packs", nil)
+	}
+	if args[0] == "create" {
+		fs := flag.NewFlagSet("policy create", flag.ContinueOnError)
+		name := fs.String("name", "", "policy pack name")
+		site := fs.String("site", "", "optional site ID (empty = fleet-wide)")
+		images := fs.String("allowed-images", "", "comma-separated allowed image glob patterns")
+		enabled := fs.Bool("enabled", true, "enable immediately")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		var allowed []string
+		if *images != "" {
+			allowed = strings.Split(*images, ",")
+		}
+		return c.print("POST", "/api/v1/policy-packs", map[string]any{"name": *name, "site_id": *site, "allowed_images": allowed, "enabled": *enabled})
+	}
+	if args[0] == "delete" && len(args) == 2 {
+		return c.print("DELETE", "/api/v1/policy-packs/"+args[1], nil)
+	}
+	return fmt.Errorf("unknown policy command")
 }
 func alerts(c client, args []string) error {
 	if len(args) == 0 || args[0] == "list" {

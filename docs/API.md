@@ -34,6 +34,12 @@ Empty list endpoints return JSON arrays (`[]`), never `null`.
 
 Defaults: `NODRA_ADMIN_USER=admin`, `NODRA_ADMIN_PASSWORD` falls back to `NODRA_ADMIN_TOKEN`.
 
+### OIDC console login
+
+`GET /auth/oidc/login` — redirects to the configured IdP's authorization endpoint. `503` if OIDC isn't configured (`NODRA_OIDC_ISSUER_URL` + `NODRA_OIDC_CLIENT_ID`).
+
+`GET /auth/oidc/callback` — completes the flow: verifies the ID token (RS256 only), resolves the caller's role from `NODRA_OIDC_GROUPS_CLAIM` against `NODRA_OIDC_ADMIN_GROUP`/`NODRA_OIDC_VIEWER_GROUP`, and redirects to `/#oidc_token=<token>&role=<role>` with the SAME static admin/viewer bearer `/auth/login` already issues. `403` if no configured group matched. This is a third way to obtain the existing two roles — not a user directory, not multi-tenant orgs.
+
 ## Edge ingress
 
 `POST /events`
@@ -62,8 +68,10 @@ A 202 means matching deliveries and the event were durably committed. 503/507 me
 - `GET|POST /routes`
 - `DELETE /routes/{id}`
 - `GET|POST /deployments`
-- `PATCH /deployments/{id}` — update `version`, `image`, and/or `desired_state` (`running|stopped`)
+- `PATCH /deployments/{id}` — update `version`, `image`, and/or `desired_state` (`running|stopped`); an `image` change is checked against policy packs first
 - `DELETE /deployments/{id}`
+- `GET|POST /policy-packs` — fleet policy packs (v1: `allowed_images` allowlist only)
+- `PATCH|DELETE /policy-packs/{id}`
 - `GET /alerts`
 - `POST /alerts/{id}/resolve`
 - `GET /events?minutes=60`

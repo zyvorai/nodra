@@ -122,6 +122,20 @@ type Alert struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// PolicyPack is a named, versioned constraint on which deployment images are
+// allowed. Global when SiteID is empty, else scoped to one site. v1 only
+// constrains images (AllowedImages) — no RBAC-rule or alert-threshold packs.
+type PolicyPack struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Version       int       `json:"version"`
+	SiteID        string    `json:"site_id,omitempty"`
+	Enabled       bool      `json:"enabled"`
+	AllowedImages []string  `json:"allowed_images,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
 type State struct {
 	Sites       []Site       `json:"sites"`
 	Devices     []Device     `json:"devices"`
@@ -131,4 +145,5 @@ type State struct {
 	Alerts      []Alert      `json:"alerts"`
 	Events      []Event      `json:"events"`
 	SeenEvents  []string     `json:"seen_event_ids,omitempty"`
+	PolicyPacks []PolicyPack `json:"policy_packs,omitempty"`
 }

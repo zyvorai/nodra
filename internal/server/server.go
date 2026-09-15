@@ -28,7 +28,9 @@ import (
 	"github.com/zyvorai/nodra/internal/audit"
 	"github.com/zyvorai/nodra/internal/auth"
 	"github.com/zyvorai/nodra/internal/model"
+	"github.com/zyvorai/nodra/internal/oidc"
 	"github.com/zyvorai/nodra/internal/pki"
+	"github.com/zyvorai/nodra/internal/policy"
 	"github.com/zyvorai/nodra/internal/queue"
 	"github.com/zyvorai/nodra/internal/router"
 	"github.com/zyvorai/nodra/internal/store"
@@ -68,6 +70,18 @@ type Config struct {
 	// CertExpiryWarnBefore controls how far ahead of a site certificate's
 	// expiry a certificate_expiring alert is raised. Default 30 days.
 	CertExpiryWarnBefore time.Duration
+	// OIDC console login: a third way to obtain the existing admin/viewer
+	// bearer tokens via a configured IdP, not a user directory and not
+	// multi-tenant orgs. Enabled when OIDCIssuerURL and OIDCClientID are
+	// both set.
+	OIDCEnabled      bool
+	OIDCIssuerURL    string
+	OIDCClientID     string
+	OIDCClientSecret string
+	OIDCRedirectURL  string
+	OIDCGroupsClaim  string
+	OIDCAdminGroup   string
+	OIDCViewerGroup  string
 }
 
 type Server struct {
@@ -87,6 +101,19 @@ type Server struct {
 	crlMu         sync.RWMutex
 	crlPEM        []byte
 	crlNextUpdate time.Time
+	oidc          oidc.Config
+	oidcDiscMu    sync.Mutex
+	oidcDisc      *oidc.Discovery
+	oidcJWKS      *oidc.JWKSet
+	oidcStatesMu  sync.Mutex
+	oidcStates    map[string]oidcState
+}
+
+// oidcState is one in-flight OIDC login attempt's server-side state,
+// single-use (deleted on lookup) and short-lived.
+type oidcState struct {
+	Nonce     string
+	ExpiresAt time.Time
 }
 
 func New(cfg Config) (*Server, error) {
@@ -116,6 +143,9 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.CertExpiryWarnBefore <= 0 {
 		cfg.CertExpiryWarnBefore = 30 * 24 * time.Hour
+	}
+	if cfg.OIDCIssuerURL != "" && cfg.OIDCClientID != "" {
+		cfg.OIDCEnabled = true
 	}
 	if cfg.MaxBodyBytes == 0 {
 		cfg.MaxBodyBytes = 1 << 20
@@ -151,7 +181,12 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, store: st, deliveries: q, dlq: dlq, metrics: &telemetry.Metrics{}, activity: &activityLog{}, audit: au, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}}
+	s := &Server{cfg: cfg, store: st, deliveries: q, dlq: dlq, metrics: &telemetry.Metrics{}, activity: &activityLog{}, audit: au, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}, oidcStates: map[string]oidcState{}}
+	s.oidc = oidc.Config{
+		IssuerURL: cfg.OIDCIssuerURL, ClientID: cfg.OIDCClientID, ClientSecret: cfg.OIDCClientSecret,
+		RedirectURL: cfg.OIDCRedirectURL, GroupsClaim: cfg.OIDCGroupsClaim,
+		AdminGroup: cfg.OIDCAdminGroup, ViewerGroup: cfg.OIDCViewerGroup,
+	}
 	if cfg.PKIEnabled {
 		dir := cfg.PKIDir
 		if dir == "" {
@@ -223,6 +258,8 @@ func (s *Server) routes() http.Handler {
 	})
 	mux.HandleFunc("POST /api/v1/auth/login", s.login)
 	mux.HandleFunc("GET /api/v1/auth/me", s.authMe)
+	mux.HandleFunc("GET /api/v1/auth/oidc/login", s.oidcLogin)
+	mux.HandleFunc("GET /api/v1/auth/oidc/callback", s.oidcCallback)
 	mux.HandleFunc("POST /api/v1/enroll", s.enroll)
 	mux.HandleFunc("POST /api/v1/heartbeat", s.heartbeat)
 	mux.HandleFunc("POST /api/v1/events", s.events)
@@ -246,6 +283,10 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("POST /api/v1/deployments", s.admin(http.HandlerFunc(s.deploymentCreate)))
 	mux.Handle("PATCH /api/v1/deployments/{id}", s.admin(http.HandlerFunc(s.deploymentPatch)))
 	mux.Handle("DELETE /api/v1/deployments/{id}", s.admin(http.HandlerFunc(s.deploymentDelete)))
+	mux.Handle("GET /api/v1/policy-packs", s.admin(http.HandlerFunc(s.policyPacks)))
+	mux.Handle("POST /api/v1/policy-packs", s.admin(http.HandlerFunc(s.policyPackCreate)))
+	mux.Handle("PATCH /api/v1/policy-packs/{id}", s.admin(http.HandlerFunc(s.policyPackPatch)))
+	mux.Handle("DELETE /api/v1/policy-packs/{id}", s.admin(http.HandlerFunc(s.policyPackDelete)))
 	mux.Handle("GET /api/v1/alerts", s.admin(http.HandlerFunc(s.alerts)))
 	mux.Handle("POST /api/v1/alerts/{id}/resolve", s.admin(http.HandlerFunc(s.alertResolve)))
 	mux.Handle("GET /api/v1/events", s.admin(http.HandlerFunc(s.eventsList)))
@@ -407,6 +448,111 @@ func (s *Server) authMe(w http.ResponseWriter, r *http.Request) {
 		"authenticated": true,
 		"user":          map[string]string{"username": user, "role": role},
 	})
+}
+
+// oidcDiscover lazily resolves and caches the provider's discovery
+// document and JWKS on first use.
+func (s *Server) oidcDiscover(ctx context.Context) (*oidc.Discovery, *oidc.JWKSet, error) {
+	s.oidcDiscMu.Lock()
+	defer s.oidcDiscMu.Unlock()
+	if s.oidcDisc != nil && s.oidcJWKS != nil {
+		return s.oidcDisc, s.oidcJWKS, nil
+	}
+	disc, err := oidc.Discover(ctx, s.client, s.oidc.IssuerURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	jwks, err := oidc.FetchJWKS(ctx, s.client, disc.JWKSURI)
+	if err != nil {
+		return nil, nil, err
+	}
+	s.oidcDisc, s.oidcJWKS = disc, jwks
+	return disc, jwks, nil
+}
+
+// oidcLogin redirects the browser to the configured IdP's authorization
+// endpoint, starting an OIDC login for the console's existing admin/viewer
+// roles (not a user directory, not multi-tenant orgs).
+func (s *Server) oidcLogin(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.OIDCEnabled {
+		errorJSON(w, 503, "oidc login is not configured")
+		return
+	}
+	disc, _, err := s.oidcDiscover(r.Context())
+	if err != nil {
+		errorJSON(w, 502, "oidc discovery failed: "+err.Error())
+		return
+	}
+	state, err := auth.NewToken(16)
+	if err != nil {
+		errorJSON(w, 500, "state generation failed")
+		return
+	}
+	nonce, err := auth.NewToken(16)
+	if err != nil {
+		errorJSON(w, 500, "nonce generation failed")
+		return
+	}
+	s.oidcStatesMu.Lock()
+	s.oidcStates[state] = oidcState{Nonce: nonce, ExpiresAt: time.Now().Add(10 * time.Minute)}
+	s.oidcStatesMu.Unlock()
+	http.Redirect(w, r, oidc.BuildAuthURL(disc, s.oidc, state, nonce), http.StatusFound)
+}
+
+// oidcCallback completes the login: exchanges the code, verifies the ID
+// token, resolves the caller's role via the configured groups claim, and
+// mints the SAME static bearer token login() already issues for that role
+// — OIDC is a third way to obtain the existing two roles, not a new
+// identity/session mechanism. The token travels back to the SPA via the
+// URL fragment (never a logged query string), matching this codebase's
+// lack of any cookie/session middleware.
+func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.OIDCEnabled {
+		errorJSON(w, 503, "oidc login is not configured")
+		return
+	}
+	q := r.URL.Query()
+	code, stateParam := q.Get("code"), q.Get("state")
+	if code == "" || stateParam == "" {
+		errorJSON(w, 400, "missing code or state")
+		return
+	}
+	s.oidcStatesMu.Lock()
+	st, ok := s.oidcStates[stateParam]
+	delete(s.oidcStates, stateParam)
+	s.oidcStatesMu.Unlock()
+	if !ok || time.Now().After(st.ExpiresAt) {
+		errorJSON(w, 400, "invalid or expired oidc state")
+		return
+	}
+	disc, jwks, err := s.oidcDiscover(r.Context())
+	if err != nil {
+		errorJSON(w, 502, "oidc discovery failed: "+err.Error())
+		return
+	}
+	idToken, err := oidc.ExchangeCode(r.Context(), s.client, disc, s.oidc, code)
+	if err != nil {
+		errorJSON(w, 502, "oidc code exchange failed: "+err.Error())
+		return
+	}
+	claims, err := oidc.VerifyIDToken(idToken, jwks, disc.Issuer, s.oidc.ClientID, st.Nonce, time.Now())
+	if err != nil {
+		errorJSON(w, 401, "oidc token verification failed: "+err.Error())
+		return
+	}
+	role := oidc.RoleForClaims(claims, s.oidc)
+	if role == "" {
+		s.note("warn", "control-plane", "oidc:"+claims.String("sub"), "", "", "", "oidc.login", "oidc login denied: no matching admin/viewer group", nil)
+		errorJSON(w, 403, "oidc login denied: no matching admin or viewer group")
+		return
+	}
+	tok := s.cfg.ViewerToken
+	if role == "admin" {
+		tok = s.cfg.AdminToken
+	}
+	s.note("ok", "control-plane", "oidc:"+claims.String("sub"), "", "", "", "oidc.login", "console login via OIDC", map[string]any{"role": role, "email": claims.String("email")})
+	dest := "/#oidc_token=" + url.QueryEscape(tok) + "&role=" + url.QueryEscape(role)
+	http.Redirect(w, r, dest, http.StatusFound)
 }
 
 func bearer(r *http.Request) string {
@@ -977,6 +1123,11 @@ func (s *Server) deploymentCreate(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 404, "site not found")
 		return
 	}
+	if ok, deniedBy := policy.Allowed(s.store.PolicyPacks(), in.SiteID, in.Image); !ok {
+		s.note("warn", "control-plane", s.actorForBearer(bearer(r)), "", in.SiteID, in.Name, "policy.deny", "image denied by policy pack "+deniedBy, map[string]any{"image": in.Image, "policy": deniedBy})
+		errorJSON(w, 403, fmt.Sprintf("image %q denied by policy pack %q", in.Image, deniedBy))
+		return
+	}
 	now := time.Now().UTC()
 	in.ID = id("dep")
 	in.Status = "queued"
@@ -1015,6 +1166,18 @@ func (s *Server) deploymentPatch(w http.ResponseWriter, r *http.Request) {
 		}
 		*in.DesiredState = ds
 	}
+	if in.Image != nil && *in.Image != "" {
+		existing, ok := s.store.Deployment(idv)
+		if !ok {
+			errorJSON(w, 404, "deployment not found")
+			return
+		}
+		if ok, deniedBy := policy.Allowed(s.store.PolicyPacks(), existing.SiteID, *in.Image); !ok {
+			s.note("warn", "control-plane", s.actorForBearer(bearer(r)), "", existing.SiteID, existing.Name, "policy.deny", "image denied by policy pack "+deniedBy, map[string]any{"image": *in.Image, "policy": deniedBy})
+			errorJSON(w, 403, fmt.Sprintf("image %q denied by policy pack %q", *in.Image, deniedBy))
+			return
+		}
+	}
 	if err := s.store.UpdateDeployment(idv, func(d *model.Deployment) {
 		if in.Version != nil && *in.Version != "" {
 			d.Version = *in.Version
@@ -1042,6 +1205,69 @@ func (s *Server) deploymentDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", "", idv, "deployment.delete", "deployment deleted: "+idv, map[string]any{"deployment_id": idv})
+	w.WriteHeader(204)
+}
+func (s *Server) policyPacks(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, asJSONList(s.store.PolicyPacks()))
+}
+func (s *Server) policyPackCreate(w http.ResponseWriter, r *http.Request) {
+	var in model.PolicyPack
+	if !s.decode(w, r, &in) {
+		return
+	}
+	if in.Name == "" {
+		errorJSON(w, 400, "name is required")
+		return
+	}
+	now := time.Now().UTC()
+	in.ID = id("policy")
+	in.Version = 1
+	in.CreatedAt = now
+	in.UpdatedAt = now
+	if err := s.store.AddPolicyPack(in); err != nil {
+		errorJSON(w, 507, err.Error())
+		return
+	}
+	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", in.SiteID, in.Name, "policy.create", "policy pack created: "+in.Name, map[string]any{"policy_id": in.ID, "allowed_images": in.AllowedImages})
+	writeJSON(w, 201, in)
+}
+func (s *Server) policyPackPatch(w http.ResponseWriter, r *http.Request) {
+	idv := r.PathValue("id")
+	var in struct {
+		Name          *string  `json:"name"`
+		Enabled       *bool    `json:"enabled"`
+		AllowedImages []string `json:"allowed_images"`
+	}
+	if !s.decode(w, r, &in) {
+		return
+	}
+	if err := s.store.UpdatePolicyPack(idv, func(p *model.PolicyPack) {
+		if in.Name != nil && *in.Name != "" {
+			p.Name = *in.Name
+		}
+		if in.Enabled != nil {
+			p.Enabled = *in.Enabled
+		}
+		if in.AllowedImages != nil {
+			p.AllowedImages = in.AllowedImages
+		}
+		p.Version++
+		p.UpdatedAt = time.Now().UTC()
+	}); err != nil {
+		errorJSON(w, 404, "policy pack not found")
+		return
+	}
+	pack, _ := s.store.PolicyPack(idv)
+	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", pack.SiteID, pack.Name, "policy.patch", "policy pack updated: "+idv, map[string]any{"policy_id": idv, "allowed_images": pack.AllowedImages})
+	writeJSON(w, 200, pack)
+}
+func (s *Server) policyPackDelete(w http.ResponseWriter, r *http.Request) {
+	idv := r.PathValue("id")
+	if err := s.store.DeletePolicyPack(idv); err != nil {
+		errorJSON(w, 404, "policy pack not found")
+		return
+	}
+	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", "", idv, "policy.delete", "policy pack deleted: "+idv, map[string]any{"policy_id": idv})
 	w.WriteHeader(204)
 }
 func (s *Server) alerts(w http.ResponseWriter, r *http.Request) {

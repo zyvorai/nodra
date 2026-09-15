@@ -33,6 +33,11 @@ type Backend interface {
 	Deployment(id string) (model.Deployment, bool)
 	UpdateDeployment(id string, fn func(*model.Deployment)) error
 	DeleteDeployment(id string) error
+	AddPolicyPack(v model.PolicyPack) error
+	PolicyPacks() []model.PolicyPack
+	PolicyPack(id string) (model.PolicyPack, bool)
+	UpdatePolicyPack(id string, fn func(*model.PolicyPack)) error
+	DeletePolicyPack(id string) error
 	AddAlert(v model.Alert) error
 	Alerts() []model.Alert
 	ResolveAlert(id string) error
