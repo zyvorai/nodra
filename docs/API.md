@@ -113,6 +113,7 @@ Levels: `info` | `warn` | `error` | `chapter` | `ok`.
 - `POST /devices/register`
 - `GET /agent/deployments?site_id=...`
 - `POST /agent/deployments/{id}/status`
+- `POST /agent/deployments/{id}/rollback` — revert to the deployment's `last_good_image`/`last_good_version` (binary Docker-health-gated by the agent, not a canary rollout); returns `{"rolled_back": false}` when there's no known-good target
 - `GET /agent/twins?site_id=...`
 - `POST /agent/twins/{deviceID}/reported`
 

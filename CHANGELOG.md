@@ -33,6 +33,21 @@
   /api/v1/auth/oidc/login` and `/callback`; `oidc.login` is audited
   (denials too).
 
+- Cosign-verify-before-pull + health-gated deployment rollback: the agent
+  shells out to an externally-installed `cosign` binary (`NODRA_COSIGN_BIN`
+  override, mirroring `NODRA_DOCKER_BIN`) before every `docker pull`, gated
+  by `signature_mode` (`enforce`/`warn`/`skip`, default `warn` so existing
+  unsigned deployments keep working). If a deployment can't reach `running`
+  past `deploy_health_grace` (default `60s`) — tracked from first observed
+  attempt, not just from a later break, so a deploy that never comes up
+  still eventually rolls back — the agent calls the new
+  `POST /api/v1/agent/deployments/{id}/rollback`, which reverts to the last
+  image/version that was `running` before the change, raises a
+  `deployment_rollback` alert, and audits `deployment.rollback`. Binary
+  Docker-state health only, not an app-level health check; a single-
+  deployment revert, not a staged/canary campaign — that remains on
+  `ROADMAP.md`'s Next list.
+
 - OPC-UA connector (`connectors/opcua`): dependency-free UA-TCP binary
   client and poller. SecurityPolicy None, anonymous session; Read polled by
   the connector, plus Write, GetEndpoints/FindServers and Browse as

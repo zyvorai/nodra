@@ -570,3 +570,65 @@ func TestPolicyPackScopedToSite(t *testing.T) {
 		t.Fatalf("expected 201 for site2 (unconstrained), got %d %s", code, b)
 	}
 }
+
+func TestDeploymentRollbackOnUnhealthy(t *testing.T) {
+	_, _, c := newTestServer(t)
+	site, tok := enrollSite(t, c)
+
+	code, b := c.req("POST", "/api/v1/deployments", map[string]any{"site_id": site, "name": "app", "version": "v1", "image": "example/app:v1"}, "adm")
+	if code != 201 {
+		t.Fatalf("deploy create %d %s", code, b)
+	}
+	var dep map[string]any
+	_ = json.Unmarshal(b, &dep)
+	id := dep["id"].(string)
+
+	// The agent reports v1 as healthy/running before the next patch, so
+	// deploymentPatch has a known-good target to snapshot.
+	code, b = c.req("POST", "/api/v1/agent/deployments/"+id+"/status", map[string]any{"site_id": site, "status": "ok", "actual_state": "running"}, tok)
+	if code != 200 {
+		t.Fatalf("status %d %s", code, b)
+	}
+
+	code, b = c.req("PATCH", "/api/v1/deployments/"+id, map[string]any{"image": "example/app:v2-bad"}, "adm")
+	if code != 200 {
+		t.Fatalf("patch %d %s", code, b)
+	}
+
+	code, b = c.req("POST", "/api/v1/agent/deployments/"+id+"/rollback", map[string]any{"site_id": site, "reason": "unhealthy past grace period"}, tok)
+	if code != 200 {
+		t.Fatalf("rollback %d %s", code, b)
+	}
+	var rb struct {
+		RolledBack bool `json:"rolled_back"`
+	}
+	if err := json.Unmarshal(b, &rb); err != nil || !rb.RolledBack {
+		t.Fatalf("rolled_back=%v err=%v body=%s", rb.RolledBack, err, b)
+	}
+
+	code, b = c.req("GET", "/api/v1/agent/deployments?site_id="+site, nil, tok)
+	if code != 200 {
+		t.Fatal(code)
+	}
+	var deps []map[string]any
+	_ = json.Unmarshal(b, &deps)
+	if len(deps) != 1 || deps[0]["image"] != "example/app:v1" {
+		t.Fatalf("expected image reverted to v1, got %s", b)
+	}
+	if deps[0]["last_good_image"] != nil && deps[0]["last_good_image"] != "" {
+		t.Fatalf("last_good_image should be cleared after rollback: %s", b)
+	}
+
+	_, b = c.req("GET", "/api/v1/alerts", nil, "adm")
+	if !strings.Contains(string(b), "deployment_rollback") {
+		t.Fatalf("expected a deployment_rollback alert, got: %s", b)
+	}
+
+	code, b = c.req(http.MethodGet, "/api/v1/audit?limit=100", nil, "adm")
+	if code != 200 {
+		t.Fatalf("audit list: %d %s", code, b)
+	}
+	if !strings.Contains(string(b), "deployment.rollback") {
+		t.Fatalf("expected a deployment.rollback audit entry, got: %s", b)
+	}
+}

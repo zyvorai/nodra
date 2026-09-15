@@ -29,6 +29,20 @@ When PKI enrollment is enabled, the edge generates an ECDSA P-256 private key an
 - Explicit non-goals: no per-user account directory (the audit actor is `oidc:<sub>`, not a stored user record), no multi-tenant organizations, no per-org site scoping. Those would need a real user/org data model and are tracked separately in `ROADMAP.md`.
 - The OIDC login `state`/`nonce` pair is held in-memory only (10-minute TTL, single-use) — it does not survive a control-plane restart mid-flow, and is not shared across replicas.
 
+## Docker image signature verification (cosign)
+
+`nodrad` can shell out to an externally-installed `cosign` CLI before every `docker pull`, gated by `signature_mode` (agent default) or a per-deployment override:
+
+- `enforce` refuses to pull an image that fails `cosign verify` — the deployment is marked `failed` and never runs.
+- `warn` (the default, so existing unsigned deployments keep working unchanged) logs the failure, audits it, and pulls anyway.
+- `skip` disables verification entirely.
+
+What this actually guarantees: nodrad trusts whatever `cosign` binary and version happen to be on the agent host's `PATH` — the same trust model this project already has for `docker` itself, not a new kind of dependency. `cosign_certificate_identity_regexp`/`cosign_certificate_oidc_issuer` are passed straight through to `cosign verify --certificate-identity-regexp`/`--certificate-oidc-issuer`; nodrad does not parse, cache, or independently validate the signature/attestation itself. A compromised or absent `cosign` binary defeats this control entirely — it is a deployment-time gate on the agent host, not a control-plane-enforced invariant.
+
+## Health-gated deployment rollback
+
+After a `docker pull`/`run`, if a deployment stays unable to reach the `running` state past a configurable grace period (`deploy_health_grace`, default 60s), nodrad asks the control plane to revert it to the last image/version that was observed `running` before the change (`POST /agent/deployments/{id}/rollback`). This is binary health only — Docker's own running/not-running state via `docker inspect` — not a real application-level health check (no such contract exists yet), and not a staged or canary rollout; a rollback is an all-or-nothing revert of one deployment, audited (`deployment.rollback`) and raised as a `deployment_rollback` alert.
+
 ## Kubernetes
 
 The default manifests enforce Restricted Pod Security, run as UID/GID 65532, drop all capabilities, use RuntimeDefault seccomp, use read-only root filesystems and disable service-account token mounting.

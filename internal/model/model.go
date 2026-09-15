@@ -110,6 +110,16 @@ type Deployment struct {
 	Command      []string          `json:"command,omitempty"`
 	CreatedAt    time.Time         `json:"created_at"`
 	UpdatedAt    time.Time         `json:"updated_at"`
+	// LastGoodImage/LastGoodVersion snapshot the previously-running
+	// image/version whenever a healthy deployment is patched to a new one,
+	// so a health-gated rollback has a known-good target. Cleared once
+	// consumed by a rollback so the same stale target can't be reused twice.
+	LastGoodImage   string `json:"last_good_image,omitempty"`
+	LastGoodVersion string `json:"last_good_version,omitempty"`
+	// SignatureMode overrides the agent's default cosign verification mode
+	// for this deployment: ""(=agent default)|"enforce"|"warn"|"skip".
+	SignatureMode string    `json:"signature_mode,omitempty"`
+	DeployedAt    time.Time `json:"deployed_at,omitempty"`
 }
 
 type Alert struct {

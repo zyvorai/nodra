@@ -311,6 +311,8 @@ nodractl --token "$NODRA_ADMIN_TOKEN" deployments create \
 
 Run the agent with `runner: "docker"`. It continuously compares desired state to the local container and converges it. Docker socket access is therefore **opt-in** and is not present in the default Kubernetes agent manifest.
 
+Before every `docker pull`, the agent optionally verifies the image's signature via an externally-installed `cosign` binary, controlled by `signature_mode` (`enforce`/`warn`/`skip`, default `warn` so existing unsigned images keep working) plus `cosign_certificate_identity_regexp`/`cosign_certificate_oidc_issuer`. If a deployment stays unable to reach `running` past `deploy_health_grace` (default `60s`), the agent asks the control plane to roll it back to the last image/version that was healthy — binary Docker-state health, not an app-level check, and not a canary/staged rollout. See `docs/SECURITY-MODEL.md`.
+
 ## Kubernetes
 
 ### User demo (recommended)

@@ -266,6 +266,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/devices/register", s.registerDevice)
 	mux.HandleFunc("GET /api/v1/agent/deployments", s.agentDeployments)
 	mux.HandleFunc("POST /api/v1/agent/deployments/{id}/status", s.agentDeploymentStatus)
+	mux.HandleFunc("POST /api/v1/agent/deployments/{id}/rollback", s.agentDeploymentRollback)
 	mux.HandleFunc("GET /api/v1/agent/twins", s.agentTwins)
 	mux.HandleFunc("POST /api/v1/agent/twins/{id}/reported", s.agentTwinReported)
 	mux.Handle("GET /api/v1/overview", s.admin(http.HandlerFunc(s.overview)))
@@ -1137,6 +1138,7 @@ func (s *Server) deploymentCreate(w http.ResponseWriter, r *http.Request) {
 	in.ActualState = "unknown"
 	in.CreatedAt = now
 	in.UpdatedAt = now
+	in.DeployedAt = now
 	if err := s.store.AddDeployment(in); err != nil {
 		errorJSON(w, 507, err.Error())
 		return
@@ -1179,6 +1181,13 @@ func (s *Server) deploymentPatch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.store.UpdateDeployment(idv, func(d *model.Deployment) {
+		changingImage := in.Image != nil && *in.Image != "" && *in.Image != d.Image
+		changingVersion := in.Version != nil && *in.Version != "" && *in.Version != d.Version
+		if (changingImage || changingVersion) && d.ActualState == "running" {
+			// Snapshot the currently-running, healthy target so a later
+			// health-gated rollback has somewhere known-good to revert to.
+			d.LastGoodImage, d.LastGoodVersion = d.Image, d.Version
+		}
 		if in.Version != nil && *in.Version != "" {
 			d.Version = *in.Version
 		}
@@ -1188,6 +1197,9 @@ func (s *Server) deploymentPatch(w http.ResponseWriter, r *http.Request) {
 		if in.DesiredState != nil {
 			d.DesiredState = *in.DesiredState
 			d.Status = "queued"
+		}
+		if changingImage || changingVersion {
+			d.DeployedAt = time.Now().UTC()
 		}
 		d.UpdatedAt = time.Now().UTC()
 	}); err != nil {
@@ -1341,6 +1353,58 @@ func (s *Server) agentDeploymentStatus(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.AddAlert(model.Alert{ID: id("alert"), SiteID: in.SiteID, Severity: "high", Type: "deployment_failed", Message: in.Message, CreatedAt: time.Now().UTC()})
 	}
 	writeJSON(w, 200, map[string]bool{"updated": true})
+}
+
+// agentDeploymentRollback reverts a deployment to its last known-good
+// image/version — the health-gating counterpart to reconcileDocker's
+// cosign-verify-before-pull on the agent side. Binary health only (the
+// deployment stayed Running past the agent's configured grace period), not
+// real app-level health checks, and not a staged/canary campaign.
+func (s *Server) agentDeploymentRollback(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		SiteID string `json:"site_id"`
+		Reason string `json:"reason"`
+	}
+	if !s.decode(w, r, &in) {
+		return
+	}
+	if _, ok := s.agentSite(r, in.SiteID); !ok {
+		errorJSON(w, 401, "unauthorized agent")
+		return
+	}
+	idv := r.PathValue("id")
+	dep, exists := s.store.Deployment(idv)
+	if !exists {
+		errorJSON(w, 404, "deployment not found")
+		return
+	}
+	if dep.SiteID != in.SiteID {
+		errorJSON(w, 403, "deployment belongs to another site")
+		return
+	}
+	if dep.LastGoodImage == "" {
+		_ = s.store.AddAlert(model.Alert{ID: id("alert"), SiteID: in.SiteID, Severity: "high", Type: "deployment_rollback", Message: "deployment " + dep.Name + " is unhealthy but has no known-good version to roll back to: " + in.Reason, CreatedAt: time.Now().UTC()})
+		s.note("warn", "agent", in.SiteID, "", in.SiteID, dep.Name, "deployment.rollback", "no known-good version to roll back to", map[string]any{"deployment_id": idv, "reason": in.Reason})
+		writeJSON(w, 200, map[string]bool{"rolled_back": false})
+		return
+	}
+	fromImage, toImage := dep.Image, dep.LastGoodImage
+	if err := s.store.UpdateDeployment(idv, func(d *model.Deployment) {
+		d.Image = d.LastGoodImage
+		d.Version = d.LastGoodVersion
+		d.LastGoodImage = ""
+		d.LastGoodVersion = ""
+		d.DesiredState = "running"
+		d.Status = "queued"
+		d.DeployedAt = time.Now().UTC()
+		d.UpdatedAt = time.Now().UTC()
+	}); err != nil {
+		errorJSON(w, 404, "deployment not found")
+		return
+	}
+	_ = s.store.AddAlert(model.Alert{ID: id("alert"), SiteID: in.SiteID, Severity: "high", Type: "deployment_rollback", Message: fmt.Sprintf("deployment %s rolled back from %s to %s: %s", dep.Name, fromImage, toImage, in.Reason), CreatedAt: time.Now().UTC()})
+	s.note("warn", "agent", in.SiteID, "", in.SiteID, dep.Name, "deployment.rollback", "deployment rolled back", map[string]any{"deployment_id": idv, "from_image": fromImage, "to_image": toImage, "reason": in.Reason})
+	writeJSON(w, 200, map[string]bool{"rolled_back": true})
 }
 
 func (s *Server) deadletters(w http.ResponseWriter, r *http.Request) {

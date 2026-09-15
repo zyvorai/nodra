@@ -518,3 +518,93 @@ func TestLocalAuditTrailRecordsEnrollAndDeniedAccess(t *testing.T) {
 		t.Errorf("expected a denied local.publish audit entry, got %+v", denied)
 	}
 }
+
+func writeFakeCosign(t *testing.T, dir string, script string) string {
+	t.Helper()
+	path := filepath.Join(dir, "cosign")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestReconcileDockerEnforceRefusesUnverifiedImage(t *testing.T) {
+	dir := t.TempDir()
+	dockerLog := filepath.Join(dir, "docker.log")
+	dockerBinPath := writeFakeDocker(t, dir, "#!/bin/sh\necho \"$@\" >>\""+dockerLog+"\"\nif [ \"$1\" = inspect ]; then echo false; exit 0; fi\nexit 0\n")
+	t.Setenv("NODRA_DOCKER_BIN", dockerBinPath)
+	cosignBinPath := writeFakeCosign(t, dir, "#!/bin/sh\necho unverified >&2\nexit 1\n")
+	t.Setenv("NODRA_COSIGN_BIN", cosignBinPath)
+	cfg := DefaultConfig()
+	cfg.DataDir = t.TempDir()
+	cfg.SignatureMode = "enforce"
+	a, err := New(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := a.reconcileDocker(context.Background(), model.Deployment{
+		ID: "dep_enf", Image: "busybox:latest", DesiredState: "running",
+	})
+	if err == nil {
+		t.Fatal("expected enforce mode to refuse an unverified image")
+	}
+	if state != "stopped" {
+		t.Fatalf("state=%s", state)
+	}
+	b, _ := os.ReadFile(dockerLog)
+	if bytes.Contains(b, []byte("pull")) {
+		t.Fatalf("enforce mode should not have pulled: %s", b)
+	}
+}
+
+func TestReconcileDockerWarnPullsDespiteUnverifiedImage(t *testing.T) {
+	dir := t.TempDir()
+	dockerLog := filepath.Join(dir, "docker.log")
+	dockerBinPath := writeFakeDocker(t, dir, "#!/bin/sh\necho \"$@\" >>\""+dockerLog+"\"\nif [ \"$1\" = inspect ]; then echo false; exit 0; fi\nexit 0\n")
+	t.Setenv("NODRA_DOCKER_BIN", dockerBinPath)
+	cosignBinPath := writeFakeCosign(t, dir, "#!/bin/sh\necho unverified >&2\nexit 1\n")
+	t.Setenv("NODRA_COSIGN_BIN", cosignBinPath)
+	cfg := DefaultConfig()
+	cfg.DataDir = t.TempDir()
+	cfg.SignatureMode = "warn"
+	a, err := New(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := a.reconcileDocker(context.Background(), model.Deployment{
+		ID: "dep_warn", Image: "busybox:latest", DesiredState: "running",
+	})
+	if err != nil || state != "running" {
+		t.Fatalf("warn mode should still pull/run: state=%s err=%v", state, err)
+	}
+	b, _ := os.ReadFile(dockerLog)
+	if !bytes.Contains(b, []byte("pull")) {
+		t.Fatalf("warn mode should have pulled: %s", b)
+	}
+}
+
+func TestReconcileDockerVerifiedImagePulls(t *testing.T) {
+	dir := t.TempDir()
+	dockerLog := filepath.Join(dir, "docker.log")
+	dockerBinPath := writeFakeDocker(t, dir, "#!/bin/sh\necho \"$@\" >>\""+dockerLog+"\"\nif [ \"$1\" = inspect ]; then echo false; exit 0; fi\nexit 0\n")
+	t.Setenv("NODRA_DOCKER_BIN", dockerBinPath)
+	cosignBinPath := writeFakeCosign(t, dir, "#!/bin/sh\nexit 0\n")
+	t.Setenv("NODRA_COSIGN_BIN", cosignBinPath)
+	cfg := DefaultConfig()
+	cfg.DataDir = t.TempDir()
+	cfg.SignatureMode = "enforce"
+	a, err := New(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := a.reconcileDocker(context.Background(), model.Deployment{
+		ID: "dep_ok", Image: "busybox:latest", DesiredState: "running",
+	})
+	if err != nil || state != "running" {
+		t.Fatalf("state=%s err=%v", state, err)
+	}
+	b, _ := os.ReadFile(dockerLog)
+	if !bytes.Contains(b, []byte("pull")) {
+		t.Fatalf("expected a pull after successful verification: %s", b)
+	}
+}

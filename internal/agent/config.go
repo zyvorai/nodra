@@ -61,10 +61,19 @@ type Config struct {
 	AuditRetentionDays   int               `json:"audit_retention_days,omitempty"`
 	CertRotateBefore     time.Duration     `json:"-"`
 	CertRotateBeforeText string            `json:"cert_rotate_before,omitempty"`
+	// SignatureMode is the default cosign verification mode applied before
+	// docker pull: "enforce" refuses an unverifiable image, "warn" logs and
+	// continues (the default, so existing unsigned deployments keep
+	// working), "skip" disables verification entirely.
+	SignatureMode            string        `json:"signature_mode,omitempty"`
+	CosignCertIdentityRegexp string        `json:"cosign_certificate_identity_regexp,omitempty"`
+	CosignCertOIDCIssuer     string        `json:"cosign_certificate_oidc_issuer,omitempty"`
+	DeployHealthGrace        time.Duration `json:"-"`
+	DeployHealthGraceText    string        `json:"deploy_health_grace,omitempty"`
 }
 
 func DefaultConfig() Config {
-	return Config{ServerURL: "http://127.0.0.1:8080", SiteName: "edge-site", DataDir: "./nodra-agent-data", Listen: "127.0.0.1:9091", MQTTListen: "127.0.0.1:1883", HeartbeatText: "30s", FlushText: "2s", Runner: "none", MaxSpoolBytes: 2 << 30, MaxSpoolEvents: 1000000, SpoolPolicy: "reject", AuditRetentionDays: 30, CertRotateBeforeText: "720h"}
+	return Config{ServerURL: "http://127.0.0.1:8080", SiteName: "edge-site", DataDir: "./nodra-agent-data", Listen: "127.0.0.1:9091", MQTTListen: "127.0.0.1:1883", HeartbeatText: "30s", FlushText: "2s", Runner: "none", MaxSpoolBytes: 2 << 30, MaxSpoolEvents: 1000000, SpoolPolicy: "reject", AuditRetentionDays: 30, CertRotateBeforeText: "720h", SignatureMode: "warn", DeployHealthGraceText: "60s"}
 }
 func LoadConfig(path string) (Config, error) {
 	b, err := os.ReadFile(path)
@@ -117,6 +126,21 @@ func (c *Config) normalize() error {
 	c.CertRotateBefore, err = time.ParseDuration(c.CertRotateBeforeText)
 	if err != nil {
 		return errors.New("invalid cert_rotate_before duration")
+	}
+	if c.SignatureMode == "" {
+		c.SignatureMode = "warn"
+	}
+	switch c.SignatureMode {
+	case "enforce", "warn", "skip":
+	default:
+		return errors.New("signature_mode must be enforce, warn or skip")
+	}
+	if c.DeployHealthGraceText == "" {
+		c.DeployHealthGraceText = "60s"
+	}
+	c.DeployHealthGrace, err = time.ParseDuration(c.DeployHealthGraceText)
+	if err != nil {
+		return errors.New("invalid deploy_health_grace duration")
 	}
 	switch c.SpoolPolicy {
 	case "reject", "drop-oldest", "drop-newest":

@@ -54,6 +54,19 @@ type Agent struct {
 	twins           map[string]model.Twin
 	auditLog        *audit.FileLog
 	revoked         atomic.Bool
+	healthMu        sync.Mutex
+	health          map[string]agentHealth
+}
+
+// agentHealth tracks one deployment's current (image, version) and when it
+// was first observed — whether that first observation succeeded or failed.
+// Tracking "first observed" rather than "first became healthy" means a
+// deployment that never comes up cleanly still ages past its grace period
+// and triggers rollback, not just one that broke after being healthy.
+type agentHealth struct {
+	image, version string
+	firstSeenAt    time.Time
+	rollbackSent   bool
 }
 
 func New(cfg Config, configPath string) (*Agent, error) {
@@ -72,7 +85,7 @@ func New(cfg Config, configPath string) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &Agent{cfg: cfg, configPath: configPath, spool: q, localDeliveries: lq, twins: map[string]model.Twin{}, auditLog: al}
+	a := &Agent{cfg: cfg, configPath: configPath, spool: q, localDeliveries: lq, twins: map[string]model.Twin{}, auditLog: al, health: map[string]agentHealth{}}
 	if err = a.configureClient(); err != nil {
 		return nil, err
 	}
@@ -723,7 +736,43 @@ func (a *Agent) syncDeployments(ctx context.Context) {
 		if er == nil {
 			_ = r.Body.Close()
 		}
+		if d.DesiredState != "stopped" {
+			a.checkDeploymentHealth(ctx, d, err, msg)
+		}
 	}
+}
+
+// checkDeploymentHealth tracks how long a deployment's current (image,
+// version) has been observed and, once a reconcile failure persists past
+// DeployHealthGrace, asks the control plane to roll it back to its last
+// known-good target. Binary health only (docker's own running/not-running
+// state via reconcileDocker), not a real app-level health check.
+func (a *Agent) checkDeploymentHealth(ctx context.Context, d model.Deployment, reconcileErr error, msg string) {
+	a.healthMu.Lock()
+	h, tracked := a.health[d.ID]
+	if !tracked || h.image != d.Image || h.version != d.Version {
+		h = agentHealth{image: d.Image, version: d.Version, firstSeenAt: time.Now()}
+		a.health[d.ID] = h
+	}
+	past := reconcileErr != nil && time.Since(h.firstSeenAt) >= a.cfg.DeployHealthGrace && !h.rollbackSent
+	if past {
+		h.rollbackSent = true
+		a.health[d.ID] = h
+	}
+	a.healthMu.Unlock()
+	if !past {
+		return
+	}
+	reason := fmt.Sprintf("unhealthy past %s grace period: %s", a.cfg.DeployHealthGrace, msg)
+	b, _ := json.Marshal(map[string]string{"site_id": a.cfg.SiteID, "reason": reason})
+	resp, err := a.do(ctx, "POST", "/api/v1/agent/deployments/"+d.ID+"/rollback", b)
+	if err != nil {
+		a.auditNote("agent", "agent", "deployment.rollback", "error", err.Error(), map[string]any{"deployment_id": d.ID})
+		slog.Warn("deployment rollback request failed", "deployment", d.ID, "error", err)
+		return
+	}
+	defer resp.Body.Close()
+	a.auditNote("agent", "agent", "deployment.rollback", "ok", reason, map[string]any{"deployment_id": d.ID, "image": d.Image, "version": d.Version})
 }
 
 // dockerBin resolves the Docker CLI. Override with NODRA_DOCKER_BIN for tests
@@ -733,6 +782,41 @@ func dockerBin() string {
 		return v
 	}
 	return "docker"
+}
+
+// cosignBin resolves the cosign CLI, mirroring dockerBin's override pattern.
+// cosign is already a first-class part of this project's release toolchain
+// (installed via sigstore/cosign-installer in CI); requiring it on a
+// deployment host is a natural extension of that, not a new kind of
+// dependency, and avoids vendoring sigstore's much larger Go dependency
+// tree into nodrad itself.
+func cosignBin() string {
+	if v := strings.TrimSpace(os.Getenv("NODRA_COSIGN_BIN")); v != "" {
+		return v
+	}
+	return "cosign"
+}
+
+// verifyImageSignature shells out to `cosign verify` before a docker pull.
+// mode "skip" disables this entirely; "enforce"/"warn" both run the check,
+// differing only in what the caller does with a failure.
+func (a *Agent) verifyImageSignature(ctx context.Context, image, mode string) error {
+	if mode == "skip" {
+		return nil
+	}
+	args := []string{"verify"}
+	if a.cfg.CosignCertIdentityRegexp != "" {
+		args = append(args, "--certificate-identity-regexp", a.cfg.CosignCertIdentityRegexp)
+	}
+	if a.cfg.CosignCertOIDCIssuer != "" {
+		args = append(args, "--certificate-oidc-issuer", a.cfg.CosignCertOIDCIssuer)
+	}
+	args = append(args, image)
+	out, err := exec.CommandContext(ctx, cosignBin(), args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("cosign verify %s: %v: %s", image, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func (a *Agent) reconcileDocker(ctx context.Context, d model.Deployment) (string, error) {
@@ -751,6 +835,21 @@ func (a *Agent) reconcileDocker(ctx context.Context, d model.Deployment) (string
 	}
 	if isRunning {
 		return "running", nil
+	}
+	mode := d.SignatureMode
+	if mode == "" {
+		mode = a.cfg.SignatureMode
+	}
+	if sigErr := a.verifyImageSignature(ctx, d.Image, mode); sigErr != nil {
+		result := "warn"
+		if mode == "enforce" {
+			result = "error"
+		}
+		a.auditNote("system", "agent", "image.signature", result, sigErr.Error(), map[string]any{"image": d.Image, "mode": mode})
+		if mode == "enforce" {
+			return "stopped", fmt.Errorf("refusing unsigned/unverifiable image: %w", sigErr)
+		}
+		slog.Warn("cosign verification failed; continuing per signature_mode", "image", d.Image, "mode", mode, "error", sigErr)
 	}
 	if out, err := exec.CommandContext(ctx, bin, "pull", d.Image).CombinedOutput(); err != nil {
 		return "stopped", fmt.Errorf("docker pull: %v: %s", err, strings.TrimSpace(string(out)))
