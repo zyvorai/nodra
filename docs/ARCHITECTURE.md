@@ -37,11 +37,11 @@ Queue limits are enforced before a put. `reject` is the default because silent d
 
 ### Control plane state
 
-Fleet metadata uses `state.wal` plus periodic `state.snapshot.json` by default (`NODRA_STORE=file`). Optional `NODRA_STORE=postgres` persists the same fleet entities in PostgreSQL via `store.Backend` while delivery/DLQ queues remain local WAL on the single writer.
+Fleet metadata uses `state.wal` plus periodic `state.snapshot.json` by default (`NODRA_STORE=file`). Optional `NODRA_STORE=postgres` persists the same fleet entities in PostgreSQL via `store.Backend`.
 
 Heartbeats therefore append small records instead of rewriting the complete state document.
 
-Cloud delivery and DLQ also use durable WAL queues (local to the control-plane writer).
+Cloud delivery and DLQ use durable WAL queues local to the control-plane writer in file mode. With `NODRA_STORE=postgres`, delivery/DLQ instead use `internal/queue.PostgresQueue` — readable and shared by every replica pointed at the same database — but only one replica actively *processes* deliveries at a time: `worker()` gates itself behind a non-blocking `pg_try_advisory_lock` (`internal/leader.PostgresLock`) before each tick. If that replica dies or its connection drops, Postgres releases the lock and another replica's next check wins it automatically. This is **single-active-writer with automatic failover**, not multi-writer conflict-resolved HA — there is a brief window around handover where two replicas could both be mid-`processDeliveries`, mitigated by delivery IDs being deterministic so a receiver can dedupe. File mode is unaffected: it stays exactly as before, single-process by construction, no coordination needed (`leader.AlwaysLeader`).
 
 ### Activity log
 
@@ -69,7 +69,7 @@ Every accepted event can match local routes before/cloud-independent of synchron
 
 ## MQTT boundary
 
-The embedded broker is an edge-ingress broker, not a full general-purpose MQTT platform. v0.2 supports MQTT 3.1.1 CONNECT, SUBSCRIBE, QoS 0/1 PUBLISH, PUBACK, PINGREQ and DISCONNECT. Persistent sessions and QoS 2 are deliberately not claimed.
+The embedded broker is an edge-ingress broker, not a full general-purpose MQTT platform. v0.2 supports MQTT 3.1.1 CONNECT, SUBSCRIBE, QoS 0/1 PUBLISH, PUBACK, PINGREQ and DISCONNECT. Persistent sessions (`CleanSession=0`) are now supported for QoS 0/1 subscribers via `Broker.EnableSessions`: a durable per-`ClientID` queue captures messages matched while no live connection holds the session, replayed (with `DUP` set) on reconnect, and `CleanSession=1` discards that state. One honesty gap: subscription lists are in-memory only and don't survive a broker/process restart — the durable message queue itself does (it's a WAL, replayed on next open), but a client must re-subscribe after a restart before new messages resume being captured for it. QoS 2 remains deliberately unsupported.
 
 ## Device twins
 
@@ -89,4 +89,4 @@ With `runner=docker`, each reconciliation loop checks actual container state aga
 
 ## Scale boundary
 
-v0.2 supports many edge agents but one control-plane writer for delivery/DLQ. Postgres fleet state survives restarts and can sit on a managed HA database, but delivery workers are not yet multi-replica. A future HA mode will externalize queues as well.
+v0.2 supports many edge agents. In file mode (`NODRA_STORE=file`, the default) there is exactly one control-plane writer — no coordination, no failover. With `NODRA_STORE=postgres`, delivery/DLQ state is now externalized to Postgres and multiple replicas can run against the same database, but only one is ever the *active* delivery worker at a time (advisory-lock-based leadership, automatic failover on process/connection loss — see "Control plane state" above). This is not true multi-writer HA: there's no conflict resolution for concurrent writers, only single-active-writer failover. True multi-writer HA remains a v1.0 criterion, not yet met.

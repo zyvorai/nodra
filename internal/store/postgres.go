@@ -19,7 +19,10 @@ import (
 )
 
 // PostgresStore persists fleet state in PostgreSQL (write-through + in-memory index).
-// Delivery/DLQ queues remain local WAL; this backend is for control-plane fleet metadata.
+// This backend is for control-plane fleet metadata; delivery/DLQ queues have
+// their own, separate Postgres-backed option — internal/queue.PostgresQueue,
+// wired up in internal/server when NODRA_STORE=postgres — since they're
+// unbounded/high-churn rather than bounded fleet state.
 type PostgresStore struct {
 	mu    sync.RWMutex
 	db    *sql.DB

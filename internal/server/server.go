@@ -23,10 +23,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/zyvorai/nodra/internal/audit"
 	"github.com/zyvorai/nodra/internal/auth"
+	"github.com/zyvorai/nodra/internal/leader"
 	"github.com/zyvorai/nodra/internal/model"
 	"github.com/zyvorai/nodra/internal/oidc"
 	"github.com/zyvorai/nodra/internal/pki"
@@ -38,6 +40,12 @@ import (
 	"github.com/zyvorai/nodra/internal/version"
 	webassets "github.com/zyvorai/nodra/web"
 )
+
+// deliveryWorkerLockKey is the fixed pg_try_advisory_lock key used to elect
+// which replica's worker() actively processes deliveries when
+// NODRA_STORE=postgres. Arbitrary but stable — changing it would let two
+// old/new-binary replicas both believe they're leader during a rollout.
+const deliveryWorkerLockKey int64 = 0x6e6f647261645f31 // "nodrad_1"
 
 type Config struct {
 	Listen             string
@@ -87,8 +95,10 @@ type Config struct {
 type Server struct {
 	cfg           Config
 	store         store.Backend
-	deliveries    *queue.Queue[model.Delivery]
-	dlq           *queue.Queue[model.DeadLetter]
+	deliveries    queue.QueueLike[model.Delivery]
+	dlq           queue.QueueLike[model.DeadLetter]
+	leader        leader.Elector
+	isLeader      atomic.Bool
 	metrics       *telemetry.Metrics
 	activity      *activityLog
 	audit         audit.Store
@@ -169,19 +179,43 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	q, err := queue.OpenWithOptions[model.Delivery](filepath.Join(cfg.DataDir, "deliveries"), queue.Options{MaxItems: cfg.DeliveryMaxItems, MaxBytes: cfg.DeliveryMaxBytes, Policy: "reject"})
-	if err != nil {
-		return nil, err
-	}
-	dlq, err := queue.OpenWithOptions[model.DeadLetter](filepath.Join(cfg.DataDir, "deadletters"), queue.Options{MaxItems: cfg.DeliveryMaxItems, MaxBytes: cfg.DeliveryMaxBytes, Policy: "reject"})
-	if err != nil {
-		return nil, err
+	var q queue.QueueLike[model.Delivery]
+	var dlq queue.QueueLike[model.DeadLetter]
+	var lead leader.Elector
+	deliveryOpts := queue.Options{MaxItems: cfg.DeliveryMaxItems, MaxBytes: cfg.DeliveryMaxBytes, Policy: "reject"}
+	if cfg.StoreDriver == "postgres" && cfg.DatabaseURL != "" {
+		// Postgres-backed delivery/DLQ: readable from any replica, but only
+		// one replica actively processes them at a time via deliveryWorkerLockKey
+		// below — single-active-writer with automatic failover, not
+		// multi-writer conflict-resolved HA. See docs/ARCHITECTURE.md.
+		q, err = queue.OpenPostgres[model.Delivery](cfg.DatabaseURL, "nodra_deliveries", deliveryOpts)
+		if err != nil {
+			return nil, err
+		}
+		dlq, err = queue.OpenPostgres[model.DeadLetter](cfg.DatabaseURL, "nodra_deadletters", deliveryOpts)
+		if err != nil {
+			return nil, err
+		}
+		lead, err = leader.NewPostgresLock(cfg.DatabaseURL, deliveryWorkerLockKey)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		q, err = queue.OpenWithOptions[model.Delivery](filepath.Join(cfg.DataDir, "deliveries"), deliveryOpts)
+		if err != nil {
+			return nil, err
+		}
+		dlq, err = queue.OpenWithOptions[model.DeadLetter](filepath.Join(cfg.DataDir, "deadletters"), deliveryOpts)
+		if err != nil {
+			return nil, err
+		}
+		lead = leader.AlwaysLeader{}
 	}
 	au, err := audit.Open(cfg.StoreDriver, cfg.DataDir, cfg.DatabaseURL, audit.Options{RetentionDays: cfg.AuditRetentionDays})
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, store: st, deliveries: q, dlq: dlq, metrics: &telemetry.Metrics{}, activity: &activityLog{}, audit: au, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}, oidcStates: map[string]oidcState{}}
+	s := &Server{cfg: cfg, store: st, deliveries: q, dlq: dlq, leader: lead, metrics: &telemetry.Metrics{}, activity: &activityLog{}, audit: au, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}, oidcStates: map[string]oidcState{}}
 	s.oidc = oidc.Config{
 		IssuerURL: cfg.OIDCIssuerURL, ClientID: cfg.OIDCClientID, ClientSecret: cfg.OIDCClientSecret,
 		RedirectURL: cfg.OIDCRedirectURL, GroupsClaim: cfg.OIDCGroupsClaim,
@@ -240,6 +274,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	_ = s.dlq.Close()
 	_ = s.store.Close()
 	_ = s.audit.Close()
+	_ = s.leader.Close()
 	return err
 }
 
@@ -251,7 +286,11 @@ func (s *Server) routes() http.Handler {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		ds := s.deliveries.Stats()
 		qs := s.dlq.Stats()
-		_, _ = io.WriteString(w, s.metrics.Prometheus()+fmt.Sprintf("# TYPE nodra_pending_deliveries gauge\nnodra_pending_deliveries %d\n# TYPE nodra_delivery_queue_bytes gauge\nnodra_delivery_queue_bytes %d\n# TYPE nodra_dead_letters gauge\nnodra_dead_letters %d\n", ds.Items, ds.Bytes, qs.Items))
+		leaderGauge := 0
+		if s.isLeader.Load() {
+			leaderGauge = 1
+		}
+		_, _ = io.WriteString(w, s.metrics.Prometheus()+fmt.Sprintf("# TYPE nodra_pending_deliveries gauge\nnodra_pending_deliveries %d\n# TYPE nodra_delivery_queue_bytes gauge\nnodra_delivery_queue_bytes %d\n# TYPE nodra_dead_letters gauge\nnodra_dead_letters %d\n# TYPE nodra_delivery_leader gauge\nnodra_delivery_leader %d\n", ds.Items, ds.Bytes, qs.Items, leaderGauge))
 	})
 	mux.HandleFunc("GET /api/v1/version", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"name": "nodra", "version": version.Version, "commit": version.Commit, "build_date": version.BuildDate})
@@ -1453,7 +1492,24 @@ func (s *Server) worker(ctx context.Context) {
 		}
 	}
 }
+
+// tryLead reports whether this replica may process deliveries right now,
+// updating isLeader for /metrics. Non-blocking: on any error it treats this
+// tick as not-leader rather than stalling the worker loop.
+func (s *Server) tryLead(ctx context.Context) bool {
+	held, err := s.leader.TryAcquire(ctx)
+	if err != nil {
+		slog.Warn("delivery leadership check failed", "error", err)
+		held = false
+	}
+	s.isLeader.Store(held)
+	return held
+}
+
 func (s *Server) processDeliveries(ctx context.Context) {
+	if !s.tryLead(ctx) {
+		return
+	}
 	items, err := s.deliveries.List()
 	if err != nil {
 		return

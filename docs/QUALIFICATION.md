@@ -38,11 +38,12 @@ Evidence: `ops-checklist.md`, `lab/20260914T162245Z/nodra-soak/`.
 | Spool policy documented | **pass** (signed) |
 | WAN loss (abbreviated) | **pass** — `nodra-soak/wan-loss.log` |
 | Disk pressure (abbreviated) | **pass** — `nodra-soak/disk-pressure.log` |
-| Single-replica discipline | **pass** (signed) |
+| Single-replica discipline (file mode) | **pass** (signed) — `NODRA_STORE=file` remains single-process by construction |
+| Single-active-writer failover (postgres mode) | **pass** — `internal/queue.PostgresQueue` + `internal/leader.PostgresLock`; `go test ./internal/queue/... ./internal/leader/...` (Postgres-gated) |
 | Suite wiring | see [INTEGRATIONS.md](INTEGRATIONS.md) |
 | Multi-hour WAN / disk soak | **pass** — CI-automated (see below), no longer operator-only |
 | Multi-day WAN / disk soak | **open** — needs a self-hosted runner on the lab host |
-| HA / multi-writer | **not available** in v0.2.x |
+| HA / multi-writer (conflict-resolved) | **not available** in v0.2.x — single-active-writer-with-failover is not the same as multi-writer HA |
 
 ## Maturity note
 

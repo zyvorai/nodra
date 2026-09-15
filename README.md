@@ -84,7 +84,7 @@ operational issues with their documented fix.
 - **Live activity Logs** and A–Z `nodra-sim`.
 - **Connector SDK + Modbus poller**: registry factories; Modbus TCP poller publishes into nodrad ingest.
 - **Viewer/admin RBAC**: optional viewer token; console write actions gated by role.
-- **Optional Postgres fleet store**: `NODRA_STORE=postgres` for sites/routes/twins/apps (delivery/DLQ remain local WAL).
+- **Optional Postgres fleet store**: `NODRA_STORE=postgres` for sites/routes/twins/apps; delivery/DLQ are also Postgres-backed in this mode, with single-active-writer failover across replicas (not multi-writer HA — see `docs/ARCHITECTURE.md`).
 - **Configurable ports**: `--port` / `NODRA_PORT` / Compose / Helm NodePort / smoke ports share one convention.
 - **Apple-inspired Zyvor UX**: embedded, no CDN, no external fonts, orange Zyvor accent.
 - **Kubernetes-ready**: raw manifests, Kustomize, Helm, Restricted Pod Security defaults, no service-account token.

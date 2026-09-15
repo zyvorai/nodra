@@ -88,6 +88,10 @@ jobs:
         env:
           NODRA_DATABASE_URL: postgres://nodra:nodra@127.0.0.1:5432/nodra?sslmode=disable
         run: go test ./internal/store/ -count=1 -run Postgres -v
+      - name: Postgres delivery/DLQ + leader-lock tests
+        env:
+          NODRA_DATABASE_URL: postgres://nodra:nodra@127.0.0.1:5432/nodra?sslmode=disable
+        run: go test ./internal/queue/... ./internal/leader/... -count=1 -run Postgres -v
 
   relay-bridge-smoke:
     runs-on: ubuntu-latest

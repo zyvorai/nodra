@@ -97,8 +97,11 @@ def main():
     if os.environ.get("NODRA_DATABASE_URL"):
         proc = run(["go", "test", "./internal/store/", "-count=1", "-run", "Postgres"], timeout=120)
         row(results, "postgres_store_ci", "pass" if proc.returncode == 0 else "fail", (proc.stdout + proc.stderr)[-400:])
+        proc = run(["go", "test", "./internal/queue/...", "./internal/leader/...", "-count=1", "-run", "Postgres"], timeout=120)
+        row(results, "postgres_delivery_leader_ci", "pass" if proc.returncode == 0 else "fail", (proc.stdout + proc.stderr)[-400:])
     else:
         row(results, "postgres_store_ci", "skip", "set NODRA_DATABASE_URL — covered by CI postgres job")
+        row(results, "postgres_delivery_leader_ci", "skip", "set NODRA_DATABASE_URL — covered by CI postgres job")
 
     for name, env_key, detail in [
         ("backup_restore_drill", "NODRA_CI_BACKUP", "scripts/ci/backup-restore.sh + CI backup-restore"),

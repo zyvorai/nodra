@@ -48,6 +48,16 @@
   deployment revert, not a staged/canary campaign — that remains on
   `ROADMAP.md`'s Next list.
 
+- Single-active-writer delivery/DLQ failover on Postgres
+  (`internal/queue.PostgresQueue`, `internal/leader`): with
+  `NODRA_STORE=postgres`, delivery/DLQ are now readable from any replica
+  pointed at the same database, but only one replica actively processes
+  them at a time via a non-blocking `pg_try_advisory_lock` check —
+  automatic failover on process/connection loss, **not** multi-writer
+  conflict-resolved HA. File mode (`NODRA_STORE=file`, the default) is
+  completely unaffected — still single-process by construction, no
+  coordination needed. `nodra_delivery_leader` gauge on `/metrics`.
+
 - OPC-UA connector (`connectors/opcua`): dependency-free UA-TCP binary
   client and poller. SecurityPolicy None, anonymous session; Read polled by
   the connector, plus Write, GetEndpoints/FindServers and Browse as
