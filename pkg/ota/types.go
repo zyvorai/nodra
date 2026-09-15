@@ -73,11 +73,30 @@ type Manifest struct {
 
 // Policy contains per-device execution policy. Fleet owns fleet-wide batching,
 // canaries and rollout orchestration.
+//
+// HealthTimeout is a Go duration string on the wire (for example "5m", "90s").
+// An empty value means no timeout was specified.
 type Policy struct {
-	RebootRequired    bool          `json:"reboot_required"`
-	HealthTimeout     time.Duration `json:"health_timeout"`
-	RollbackOnFailure bool          `json:"rollback_on_failure"`
-	RequireABSlots    bool          `json:"require_ab_slots"`
+	RebootRequired    bool   `json:"reboot_required"`
+	HealthTimeout     string `json:"health_timeout,omitempty"`
+	RollbackOnFailure bool   `json:"rollback_on_failure"`
+	RequireABSlots    bool   `json:"require_ab_slots"`
+}
+
+// HealthTimeoutDuration parses HealthTimeout. Empty means zero duration.
+func (p Policy) HealthTimeoutDuration() (time.Duration, error) {
+	v := strings.TrimSpace(p.HealthTimeout)
+	if v == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, fmt.Errorf("ota: invalid health_timeout %q: %w", p.HealthTimeout, err)
+	}
+	if d < 0 {
+		return 0, errors.New("ota: health_timeout cannot be negative")
+	}
+	return d, nil
 }
 
 // Request is the desired OTA state delivered to a device.
@@ -127,8 +146,8 @@ func (r Request) Validate() error {
 	if err := r.Manifest.Validate(); err != nil {
 		return err
 	}
-	if r.Policy.HealthTimeout < 0 {
-		return errors.New("ota: health_timeout cannot be negative")
+	if _, err := r.Policy.HealthTimeoutDuration(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -159,6 +178,29 @@ func (m Manifest) Validate() error {
 	return nil
 }
 
+// Validate performs transport-level checks on a reported status update.
+func (s Status) Validate() error {
+	if strings.TrimSpace(s.UpdateID) == "" {
+		return errors.New("ota: update_id is required")
+	}
+	if strings.TrimSpace(s.DeviceID) == "" {
+		return errors.New("ota: device_id is required")
+	}
+	if !validState(s.State) {
+		return fmt.Errorf("ota: unsupported state %q", s.State)
+	}
+	if s.ProgressPercent < 0 || s.ProgressPercent > 100 {
+		return errors.New("ota: progress_percent must be between 0 and 100")
+	}
+	if err := validSlot(s.ActiveSlot); err != nil {
+		return fmt.Errorf("ota: active_slot: %w", err)
+	}
+	if err := validSlot(s.TargetSlot); err != nil {
+		return fmt.Errorf("ota: target_slot: %w", err)
+	}
+	return nil
+}
+
 func validArtifactType(t ArtifactType) bool {
 	switch t {
 	case ArtifactFirmware, ArtifactBSP, ArtifactKernel, ArtifactDeviceTree,
@@ -167,6 +209,27 @@ func validArtifactType(t ArtifactType) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func validState(s State) bool {
+	switch s {
+	case StatePending, StateDownloading, StateDownloaded, StateVerifying,
+		StateStaged, StateActivating, StateRebooting, StateHealthCheck,
+		StateCommitted, StateFailed, StateRollbackPending, StateRolledBack,
+		StateCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func validSlot(s Slot) error {
+	switch s {
+	case "", SlotA, SlotB:
+		return nil
+	default:
+		return fmt.Errorf("unsupported slot %q", s)
 	}
 }
 
