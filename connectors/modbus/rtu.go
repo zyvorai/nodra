@@ -10,11 +10,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"syscall"
 	"time"
-	"unsafe"
+
+	"github.com/zyvorai/nodra/internal/serialport"
 )
 
 // RTUClient is a dependency-free Modbus RTU client for Linux serial ports.
@@ -88,22 +86,18 @@ func (c *RTUClient) roundTrip(ctx context.Context, request []byte, expected int)
 	if c.Device == "" {
 		return nil, errors.New("RTU device is required")
 	}
-	file, err := os.OpenFile(c.Device, os.O_RDWR|syscall.O_NOCTTY, 0)
+	port, err := serialport.Open(c.Device, serialport.Config{
+		Baud: c.Baud, DataBits: c.DataBits, Parity: c.Parity, StopBits: c.StopBits,
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
-	if err = configureSerial(file.Fd(), c); err != nil {
-		return nil, err
-	}
-	if err = syscall.SetNonblock(int(file.Fd()), true); err != nil {
-		return nil, err
-	}
+	defer port.Close()
 	deadline := time.Now().Add(c.timeout())
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
-	if err = writeAll(ctx, file, request, deadline); err != nil {
+	if err = writeAll(ctx, port, request, deadline); err != nil {
 		return nil, err
 	}
 
@@ -116,23 +110,22 @@ func (c *RTUClient) roundTrip(ctx context.Context, request []byte, expected int)
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("Modbus RTU timeout after %s", c.timeout())
 		}
-		n, readErr := file.Read(buf[:min(len(buf), expected-len(response))])
+		// port.Read already treats EAGAIN/EWOULDBLOCK and the spurious 0-byte
+		// io.EOF a VMIN=0/VTIME=0 termios line produces when nothing is
+		// buffered yet (normal non-canonical "nothing available right now"
+		// behavior for a character device, not an actual end-of-file) as
+		// (0, nil) rather than an error - see internal/serialport.Port.Read.
+		// Treating that condition as fatal here made any live slave response
+		// that wasn't already queued before the very first read() attempt
+		// fail with a spurious "EOF" - i.e. effectively all of them.
+		n, readErr := port.Read(buf[:min(len(buf), expected-len(response))])
 		if n > 0 {
 			response = append(response, buf[:n]...)
 			if len(response) >= 3 && response[1]&0x80 != 0 {
 				expected = 5 // unit + exception-function + code + CRC
 			}
 		}
-		// A termios line configured with VMIN=0/VTIME=0 (set in configureSerial)
-		// returns a 0-byte read - which Go's os.File surfaces as io.EOF - the
-		// moment no data happens to be buffered yet. That is normal non-canonical
-		// "nothing available right now" behavior for a character device, not an
-		// actual end-of-file condition, so it must be treated the same as
-		// EAGAIN/EWOULDBLOCK: keep polling until data arrives or the deadline
-		// above fires. Treating it as fatal here made any live slave response
-		// that wasn't already queued before the very first read() attempt fail
-		// with a spurious "EOF" - i.e. effectively all of them.
-		if readErr != nil && !errors.Is(readErr, syscall.EAGAIN) && !errors.Is(readErr, syscall.EWOULDBLOCK) && !errors.Is(readErr, io.EOF) {
+		if readErr != nil {
 			return nil, readErr
 		}
 		if n == 0 {
@@ -145,7 +138,7 @@ func (c *RTUClient) roundTrip(ctx context.Context, request []byte, expected int)
 	return response, nil
 }
 
-func writeAll(ctx context.Context, file *os.File, data []byte, deadline time.Time) error {
+func writeAll(ctx context.Context, port *serialport.Port, data []byte, deadline time.Time) error {
 	for len(data) > 0 {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -153,11 +146,11 @@ func writeAll(ctx context.Context, file *os.File, data []byte, deadline time.Tim
 		if time.Now().After(deadline) {
 			return errors.New("Modbus RTU write timeout")
 		}
-		n, err := file.Write(data)
+		n, err := port.Write(data)
 		if n > 0 {
 			data = data[n:]
 		}
-		if err != nil && !errors.Is(err, syscall.EAGAIN) && !errors.Is(err, syscall.EWOULDBLOCK) {
+		if err != nil {
 			return err
 		}
 		if n == 0 {
@@ -172,74 +165,6 @@ func (c *RTUClient) timeout() time.Duration {
 		return 3 * time.Second
 	}
 	return c.Timeout
-}
-
-func configureSerial(fd uintptr, c *RTUClient) error {
-	var term syscall.Termios
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, uintptr(syscall.TCGETS), uintptr(unsafe.Pointer(&term)))
-	if errno != 0 {
-		return errno
-	}
-	term.Iflag = 0
-	term.Oflag = 0
-	term.Lflag = 0
-	term.Cflag |= syscall.CREAD | syscall.CLOCAL
-	term.Cflag &^= syscall.CSIZE | syscall.PARENB | syscall.PARODD | syscall.CSTOPB
-
-	switch c.DataBits {
-	case 0, 8:
-		term.Cflag |= syscall.CS8
-	case 7:
-		term.Cflag |= syscall.CS7
-	default:
-		return fmt.Errorf("unsupported Modbus RTU data bits %d", c.DataBits)
-	}
-	switch c.Parity {
-	case "", "none", "N", "n":
-	case "even", "E", "e":
-		term.Cflag |= syscall.PARENB
-	case "odd", "O", "o":
-		term.Cflag |= syscall.PARENB | syscall.PARODD
-	default:
-		return fmt.Errorf("unsupported Modbus RTU parity %q", c.Parity)
-	}
-	if c.StopBits == 2 {
-		term.Cflag |= syscall.CSTOPB
-	} else if c.StopBits != 0 && c.StopBits != 1 {
-		return fmt.Errorf("unsupported Modbus RTU stop bits %d", c.StopBits)
-	}
-
-	speed, err := baudConstant(c.Baud)
-	if err != nil {
-		return err
-	}
-	term.Cflag &^= 0x100f // Linux asm-generic CBAUD mask
-	term.Cflag |= speed
-	term.Ispeed = speed
-	term.Ospeed = speed
-	term.Cc[syscall.VMIN] = 0
-	term.Cc[syscall.VTIME] = 0
-	_, _, errno = syscall.Syscall(syscall.SYS_IOCTL, fd, uintptr(syscall.TCSETS), uintptr(unsafe.Pointer(&term)))
-	if errno != 0 {
-		return errno
-	}
-	return nil
-}
-
-func baudConstant(baud int) (uint32, error) {
-	if baud == 0 {
-		baud = 9600
-	}
-	values := map[int]uint32{
-		1200: syscall.B1200, 2400: syscall.B2400, 4800: syscall.B4800,
-		9600: syscall.B9600, 19200: syscall.B19200, 38400: syscall.B38400,
-		57600: syscall.B57600, 115200: syscall.B115200, 230400: syscall.B230400,
-	}
-	value, ok := values[baud]
-	if !ok {
-		return 0, fmt.Errorf("unsupported Modbus RTU baud %d", baud)
-	}
-	return value, nil
 }
 
 func appendCRC(frame []byte) []byte {

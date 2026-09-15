@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zyvorai/nodra/internal/serialport"
 	"github.com/zyvorai/nodra/pkg/connector"
 )
 
@@ -108,7 +109,7 @@ func NewPoller(name string, raw json.RawMessage) (connector.Connector, error) {
 		if cfg.StopBits == 0 {
 			cfg.StopBits = 1
 		}
-		if _, err := baudConstant(cfg.Baud); err != nil {
+		if _, err := serialport.BaudConstant(cfg.Baud); err != nil {
 			return nil, err
 		}
 		cli = &RTUClient{

@@ -19,6 +19,7 @@ import (
 	_ "github.com/zyvorai/nodra/connectors/modbus" // register modbus connector factory
 	_ "github.com/zyvorai/nodra/connectors/nats"   // register NATS bridge connector factory
 	_ "github.com/zyvorai/nodra/connectors/opcua"  // register OPC-UA connector factory
+	_ "github.com/zyvorai/nodra/connectors/serial" // register generic serial connector factory
 	"github.com/zyvorai/nodra/internal/agent"
 )
 

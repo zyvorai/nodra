@@ -31,6 +31,17 @@
   implemented — its binary wire format has no small hand-rollable path;
   see `docs/NATS_BRIDGE.md`.
 
+- Generic serial/USB connector (`connectors/serial`): a protocol-agnostic
+  passthrough poller — opens a serial device and publishes each delimited
+  (default `\n`) or idle-gap-framed chunk of bytes as a Nodra event, with no
+  application-protocol decoding. Linux-only, same build-tag-stub pattern as
+  Modbus RTU. Termios configuration (baud/parity/stop-bits ioctls, the
+  non-blocking EAGAIN/EWOULDBLOCK/spurious-EOF-tolerant read loop) was
+  extracted out of `connectors/modbus/rtu.go` into a new shared
+  `internal/serialport` package — **a refactor, not a behavior change**;
+  `connectors/modbus`'s existing RTU unit/integration tests
+  (`rtu_test.go`/`rtu_integration_test.go`) were re-verified against it.
+
 - Local route filter/transform rules (`internal/transform`): per-route `filter`
   (`exists`/`equals`/`min`/`max`/`in`) drops events locally before delivery;
   `transform` sets headers, drops/sets JSON fields, wraps the payload, and

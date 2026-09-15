@@ -34,10 +34,6 @@ func (c *RTUClient) WriteSingleRegister(context.Context, uint16, uint16) error {
 	return unsupportedErr()
 }
 
-func baudConstant(int) (uint32, error) {
-	return 0, unsupportedErr()
-}
-
 func unsupportedErr() error {
 	return fmt.Errorf("modbus RTU transport requires Linux (running on %s)", runtime.GOOS)
 }

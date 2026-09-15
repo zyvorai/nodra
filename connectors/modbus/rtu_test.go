@@ -23,11 +23,6 @@ func TestCRCRejectsMutation(t *testing.T) {
 	}
 }
 
-func TestBaudValidation(t *testing.T) {
-	if _, err := baudConstant(115200); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := baudConstant(12345); err == nil {
-		t.Fatal("unsupported baud unexpectedly accepted")
-	}
-}
+// Baud validation now lives in internal/serialport (see
+// internal/serialport/serialport_test.go's TestBaudValidation) since it's
+// shared by every serial-based connector, not just Modbus RTU.
