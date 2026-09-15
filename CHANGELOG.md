@@ -23,8 +23,17 @@
 - Zyvor OTA integration contract (`pkg/ota`): additive Manifest/Request/Status/
   Capability types and A/B lifecycle state machine with transport-level
   validation. `policy.health_timeout` is a Go duration string on the wire
-  (e.g. `"5m"`), not nanoseconds. Docs: `docs/OTA_INTEGRATION.md`. Contract
-  only — durable delivery / twin / API wiring remains follow-up work.
+  (e.g. `"5m"`), not nanoseconds. Docs: `docs/OTA_INTEGRATION.md`.
+
+- Zyvor OTA wiring: an OTA request/status now rides the existing Device Twin
+  desired/reported mechanism under a reserved `"ota"` key — the same durable
+  storage and nodrad-polling delivery every other twin already has, not a
+  new path. `POST/GET /api/v1/devices/{id}/ota` (admin), `POST /api/v1/agent/
+  devices/{id}/ota/status` (agent — `400` on an invalid status, `409` on an
+  illegal `pkg/ota` lifecycle transition, `ota_failed`/`ota_rolled-back`
+  alerts on a terminal bad state), and nodrad-local `POST /v1/devices/{id}/
+  ota/status` forwarding to it. Single-device request/status only — staged
+  multi-site canary campaigns remain future work on `ROADMAP.md`.
 
 - Fleet policy packs v1 (`internal/policy`): a named, versioned,
   fleet-wide-or-per-site `allowed_images` allowlist enforced on deployment

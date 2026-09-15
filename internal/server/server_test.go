@@ -20,6 +20,7 @@ import (
 
 	"github.com/zyvorai/nodra/internal/model"
 	"github.com/zyvorai/nodra/internal/pki"
+	"github.com/zyvorai/nodra/pkg/ota"
 )
 
 type testClient struct {
@@ -359,6 +360,82 @@ func TestDeviceTwinDesiredReported(t *testing.T) {
 	code, b = c.req("POST", "/api/v1/agent/twins/plc-1/reported", map[string]any{"site_id": site, "reported": map[string]any{"speed": 1198}}, tok)
 	if code != 200 || !strings.Contains(string(b), "1198") {
 		t.Fatalf("%d %s", code, b)
+	}
+}
+
+func TestOTADeviceUpdateLifecycle(t *testing.T) {
+	_, _, c := newTestServer(t)
+	site, tok := enrollSite(t, c)
+	code, b := c.req("POST", "/api/v1/devices/register", map[string]any{"id": "gw-1", "site_id": site, "name": "Gateway", "protocol": "modbus"}, tok)
+	if code != 201 {
+		t.Fatalf("register %d %s", code, b)
+	}
+
+	req := ota.Request{
+		UpdateID: "upd-1", DeviceID: "gw-1", SiteID: site,
+		Manifest: ota.Manifest{
+			ArtifactID: "gw-fw", Version: "2.0.0", Type: ota.ArtifactFirmware,
+			Architecture: "arm64", SizeBytes: 1024,
+			SHA256:    strings.Repeat("a", 64),
+			Signature: "sig",
+		},
+		Policy: ota.Policy{RebootRequired: true, RollbackOnFailure: true},
+	}
+	code, b = c.req("POST", "/api/v1/devices/gw-1/ota", req, "adm")
+	if code != 200 {
+		t.Fatalf("ota request %d %s", code, b)
+	}
+
+	// Invalid manifest (missing sha256) must be rejected at the transport level.
+	bad := req
+	bad.Manifest.SHA256 = ""
+	code, _ = c.req("POST", "/api/v1/devices/gw-1/ota", bad, "adm")
+	if code != 400 {
+		t.Fatalf("expected 400 for invalid manifest, got %d", code)
+	}
+
+	code, b = c.req("GET", "/api/v1/devices/gw-1/ota", nil, "adm")
+	if code != 200 || !strings.Contains(string(b), "upd-1") {
+		t.Fatalf("ota get %d %s", code, b)
+	}
+
+	// pending -> downloading is a legal first-ever report and a legal transition.
+	code, b = c.req("POST", "/api/v1/agent/devices/gw-1/ota/status", map[string]any{
+		"site_id": site, "status": ota.Status{UpdateID: "upd-1", DeviceID: "gw-1", State: ota.StatePending},
+	}, tok)
+	if code != 200 {
+		t.Fatalf("status pending %d %s", code, b)
+	}
+	code, b = c.req("POST", "/api/v1/agent/devices/gw-1/ota/status", map[string]any{
+		"site_id": site, "status": ota.Status{UpdateID: "upd-1", DeviceID: "gw-1", State: ota.StateDownloading, ProgressPercent: 10},
+	}, tok)
+	if code != 200 {
+		t.Fatalf("status downloading %d %s", code, b)
+	}
+
+	// downloading -> committed is not a legal transition per pkg/ota's state machine.
+	code, b = c.req("POST", "/api/v1/agent/devices/gw-1/ota/status", map[string]any{
+		"site_id": site, "status": ota.Status{UpdateID: "upd-1", DeviceID: "gw-1", State: ota.StateCommitted},
+	}, tok)
+	if code != 409 {
+		t.Fatalf("expected 409 for illegal transition, got %d %s", code, b)
+	}
+
+	// A failed status is accepted (downloading -> failed is legal) and raises an alert.
+	code, b = c.req("POST", "/api/v1/agent/devices/gw-1/ota/status", map[string]any{
+		"site_id": site, "status": ota.Status{UpdateID: "upd-1", DeviceID: "gw-1", State: ota.StateFailed, LastError: "checksum mismatch"},
+	}, tok)
+	if code != 200 {
+		t.Fatalf("status failed %d %s", code, b)
+	}
+	_, b = c.req("GET", "/api/v1/alerts", nil, "adm")
+	if !strings.Contains(string(b), "ota_failed") || !strings.Contains(string(b), "checksum mismatch") {
+		t.Fatalf("expected ota_failed alert, got: %s", b)
+	}
+
+	code, b = c.req("GET", "/api/v1/devices/gw-1/ota", nil, "adm")
+	if code != 200 || !strings.Contains(string(b), `"failed"`) {
+		t.Fatalf("expected reported state failed, got %d %s", code, b)
 	}
 }
 

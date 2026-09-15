@@ -215,6 +215,22 @@ paths:
       security: [{bearer: []}]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {'200': {description: Desired twin updated}}
+  /devices/{id}/ota:
+    post:
+      security: [{bearer: []}]
+      summary: Set a device's desired OTA state (pkg/ota.Request)
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: Twin with the OTA request stored under desired.ota}
+        '400': {description: Invalid OTA request}
+        '404': {description: Device not found}
+    get:
+      security: [{bearer: []}]
+      summary: Read a device's current OTA request/status
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: Current OTA request/status extracted from the device's twin}
+        '404': {description: Device not found}
   /deployments:
     get:
       security: [{bearer: []}]
@@ -305,6 +321,27 @@ paths:
       summary: Agent reports twin state
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: Updated}}
+  /agent/devices/{id}/ota/status:
+    post:
+      security: [{bearer: []}]
+      summary: Agent reports OTA status (pkg/ota.Status), validated against the lifecycle state machine
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id, status]
+              properties:
+                site_id: {type: string}
+                status: {type: object}
+      responses:
+        '200': {description: Updated}
+        '400': {description: Invalid status}
+        '401': {description: Unauthorized agent}
+        '404': {description: Device not found}
+        '409': {description: Illegal state-machine transition}
   /sites/{id}/revoke:
     post:
       security: [{bearer: []}]

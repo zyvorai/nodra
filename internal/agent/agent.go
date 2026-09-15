@@ -224,6 +224,7 @@ func (a *Agent) localRoutes() http.Handler {
 	mux.HandleFunc("POST /v1/devices", a.device)
 	mux.HandleFunc("GET /v1/twins", a.localTwins)
 	mux.HandleFunc("POST /v1/twins/{id}/reported", a.localTwinReported)
+	mux.HandleFunc("POST /v1/devices/{id}/ota/status", a.localOTAStatus)
 	mux.HandleFunc("GET /v1/audit", a.localAuditList)
 	return mux
 }

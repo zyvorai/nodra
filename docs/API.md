@@ -68,6 +68,8 @@ A 202 means matching deliveries and the event were durably committed. 503/507 me
 - `GET /devices`
 - `GET /twins`
 - `PUT /twins/{deviceID}/desired`
+- `POST /devices/{id}/ota` — set desired OTA state (`pkg/ota.Request`, validated)
+- `GET /devices/{id}/ota` — read a device's current OTA request/status
 - `GET|POST /routes`
 - `DELETE /routes/{id}`
 - `GET|POST /deployments`
@@ -119,6 +121,7 @@ Levels: `info` | `warn` | `error` | `chapter` | `ok`.
 - `POST /agent/deployments/{id}/rollback` — revert to the deployment's `last_good_image`/`last_good_version` (binary Docker-health-gated by the agent, not a canary rollout); returns `{"rolled_back": false}` when there's no known-good target
 - `GET /agent/twins?site_id=...`
 - `POST /agent/twins/{deviceID}/reported`
+- `POST /agent/devices/{id}/ota/status` — report OTA status (`pkg/ota.Status`); `400` on an invalid status, `409` on an illegal state-machine transition
 
 See [`openapi.yaml`](openapi.yaml) for schemas. Coverage of mux routes is gated by
 `scripts/openapi-coverage.py` in `make qualify`.

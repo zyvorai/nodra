@@ -10,6 +10,17 @@ Nodra integrates with, but does not replace, the Zyvor OTA agent.
 
 This separation prevents hardware- and bootloader-specific update code from becoming part of Nodra's core protocol/runtime path.
 
+## Wire protocol
+
+OTA requests and status are carried through the same generic desired/reported Device Twin mechanism Nodra already has (`GET/PUT /api/v1/twins`), under a reserved `"ota"` key — not a separate delivery path. That gets OTA the same durable storage, nodrad polling delivery, and admin/agent auth every other twin already has, for free:
+
+- `POST /api/v1/devices/{id}/ota` (admin) — set a device's desired OTA state. Body is a `pkg/ota.Request`; rejected with `400` if `Request.Validate()` fails (missing `update_id`, an invalid `Manifest`, etc.). Stored as `Twin.Desired["ota"]`.
+- `GET /api/v1/devices/{id}/ota` (admin) — convenience read of the device's current OTA `request`/`status`, extracted from its twin (everything here is also visible via the generic `GET /api/v1/twins`).
+- `POST /api/v1/agent/devices/{id}/ota/status` (agent, site-authenticated) — report OTA status. Body is `{"site_id", "status": pkg/ota.Status}`. Rejected with `400` if `Status.Validate()` fails, or `409` if the transition from the previously-reported state is illegal per `pkg/ota.ValidateTransition` (idempotent replay of the *same* state is always allowed). Stored as `Twin.Reported["ota"]`; a terminal `failed` or `rolled-back` status raises an `ota_failed`/`ota_rolled-back` alert.
+- `POST /v1/devices/{id}/ota/status` (nodrad-local, for the OTA agent running on the same host) — validates transport-level fields and forwards to the control-plane endpoint above.
+
+nodrad itself never interprets an OTA status beyond validating and forwarding it — staging, activation, health verification and rollback stay the OTA agent's job.
+
 ## Artifact contract
 
 `pkg/ota.Manifest` supports these artifact classes:

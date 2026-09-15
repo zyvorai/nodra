@@ -19,6 +19,7 @@ import (
 	"github.com/zyvorai/nodra/internal/model"
 	"github.com/zyvorai/nodra/internal/server"
 	"github.com/zyvorai/nodra/internal/transform"
+	"github.com/zyvorai/nodra/pkg/ota"
 )
 
 func TestAgentEnrollPublishFlush(t *testing.T) {
@@ -606,5 +607,72 @@ func TestReconcileDockerVerifiedImagePulls(t *testing.T) {
 	b, _ := os.ReadFile(dockerLog)
 	if !bytes.Contains(b, []byte("pull")) {
 		t.Fatalf("expected a pull after successful verification: %s", b)
+	}
+}
+
+func TestLocalOTAStatusForwardsAndValidates(t *testing.T) {
+	srv, _ := server.New(server.Config{DataDir: t.TempDir(), AdminToken: "adm", EnrollmentToken: "enroll"})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	cfg := DefaultConfig()
+	cfg.ServerURL = ts.URL
+	cfg.SiteName = "edge-ota"
+	cfg.EnrollmentToken = "enroll"
+	cfg.DataDir = filepath.Join(t.TempDir(), "agent")
+	cfg.LocalToken = "local"
+	a, err := New(cfg, filepath.Join(t.TempDir(), "nodrad.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.EnsureEnrolled(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	regReq, _ := http.NewRequest("POST", ts.URL+"/api/v1/devices/register", bytes.NewBufferString(`{"id":"gw-1","site_id":"`+a.SiteID()+`","name":"Gateway","protocol":"modbus"}`))
+	regReq.Header.Set("Authorization", "Bearer "+a.cfg.AgentToken)
+	regReq.Header.Set("Content-Type", "application/json")
+	regResp, err := http.DefaultClient.Do(regReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	regResp.Body.Close()
+	if regResp.StatusCode != 201 {
+		t.Fatalf("device register status=%d", regResp.StatusCode)
+	}
+
+	statusBody, _ := json.Marshal(map[string]any{"status": ota.Status{
+		UpdateID: "upd-1", DeviceID: "gw-1", State: ota.StatePending,
+	}})
+	req := httptest.NewRequest("POST", "/v1/devices/gw-1/ota/status", bytes.NewReader(statusBody))
+	req.Header.Set("Authorization", "Bearer local")
+	rr := httptest.NewRecorder()
+	a.Handler().ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("local ota status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// An invalid status (unknown state) must be rejected locally, without
+	// ever reaching the control plane.
+	badBody, _ := json.Marshal(map[string]any{"status": map[string]any{
+		"update_id": "upd-1", "device_id": "gw-1", "state": "not-a-real-state",
+	}})
+	req2 := httptest.NewRequest("POST", "/v1/devices/gw-1/ota/status", bytes.NewReader(badBody))
+	req2.Header.Set("Authorization", "Bearer local")
+	rr2 := httptest.NewRecorder()
+	a.Handler().ServeHTTP(rr2, req2)
+	if rr2.Code != 400 {
+		t.Fatalf("expected 400 for invalid state, got %d body=%s", rr2.Code, rr2.Body.String())
+	}
+
+	getReq, _ := http.NewRequest("GET", ts.URL+"/api/v1/devices/gw-1/ota", nil)
+	getReq.Header.Set("Authorization", "Bearer adm")
+	getResp, err := http.DefaultClient.Do(getReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer getResp.Body.Close()
+	gb, _ := io.ReadAll(getResp.Body)
+	if getResp.StatusCode != 200 || !bytes.Contains(gb, []byte(`"pending"`)) {
+		t.Fatalf("expected control plane to have the forwarded status, got %d %s", getResp.StatusCode, gb)
 	}
 }
