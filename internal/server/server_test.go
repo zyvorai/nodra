@@ -390,6 +390,211 @@ func TestMultiTenantOrgScoping(t *testing.T) {
 		t.Fatalf("acme viewer revoking: want 403, got %d", code)
 	}
 }
+
+// TestMultiTenantDataIsolation extends TestMultiTenantOrgScoping (which
+// covers sites) to every other entity that got org-filtering: devices,
+// twins, routes, deployments, policy packs, and alerts — both listing and
+// single-entity mutation must respect org boundaries. Audit/deliveries/DLQ
+// listing use the exact same callerCanSeeSite/callerCanMutateSite helpers
+// proven here, so they aren't separately re-tested.
+func TestMultiTenantDataIsolation(t *testing.T) {
+	_, _, c := newTestServer(t)
+
+	code, b := c.req("POST", "/api/v1/orgs", map[string]any{"name": "acme"}, "adm")
+	if code != 201 {
+		t.Fatalf("org create %d %s", code, b)
+	}
+	var acmeOrg struct {
+		AdminToken      string `json:"admin_token"`
+		EnrollmentToken string `json:"enrollment_token"`
+	}
+	_ = json.Unmarshal(b, &acmeOrg)
+	code, b = c.req("POST", "/api/v1/orgs", map[string]any{"name": "globex"}, "adm")
+	if code != 201 {
+		t.Fatalf("org create %d %s", code, b)
+	}
+	var globex struct {
+		AdminToken      string `json:"admin_token"`
+		EnrollmentToken string `json:"enrollment_token"`
+	}
+	_ = json.Unmarshal(b, &globex)
+
+	code, b = c.req("POST", "/api/v1/enroll", map[string]any{"name": "acme-site", "enrollment_token": acmeOrg.EnrollmentToken}, "")
+	if code != 201 {
+		t.Fatalf("acme enroll %d %s", code, b)
+	}
+	var acmeSite struct {
+		SiteID     string `json:"site_id"`
+		AgentToken string `json:"agent_token"`
+	}
+	_ = json.Unmarshal(b, &acmeSite)
+
+	code, b = c.req("POST", "/api/v1/enroll", map[string]any{"name": "globex-site", "enrollment_token": globex.EnrollmentToken}, "")
+	if code != 201 {
+		t.Fatalf("globex enroll %d %s", code, b)
+	}
+	// Device registration is agent-authenticated (the site's own token),
+	// not admin-token authenticated, so it's naturally already scoped.
+	code, b = c.req("POST", "/api/v1/devices/register", map[string]any{"site_id": acmeSite.SiteID, "name": "PLC-1", "protocol": "modbus"}, acmeSite.AgentToken)
+	if code != 201 {
+		t.Fatalf("device register %d %s", code, b)
+	}
+	var dev struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(b, &dev)
+
+	acmeAdmin, globexAdmin := acmeOrg.AdminToken, globex.AdminToken
+
+	// --- devices: globex must not see or touch acme's device ---
+	code, b = c.req("GET", "/api/v1/devices", nil, globexAdmin)
+	if code != 200 || strings.Contains(string(b), dev.ID) {
+		t.Fatalf("globex should not see acme's device: %d %s", code, b)
+	}
+	code, b = c.req("GET", "/api/v1/devices", nil, acmeAdmin)
+	if code != 200 || !strings.Contains(string(b), dev.ID) {
+		t.Fatalf("acme should see its own device: %d %s", code, b)
+	}
+	code, _ = c.req("PUT", "/api/v1/twins/"+dev.ID+"/desired", map[string]any{"desired": map[string]any{"x": 1}}, globexAdmin)
+	if code != 404 {
+		t.Fatalf("globex setting acme's twin desired: want 404, got %d", code)
+	}
+	code, _ = c.req("PUT", "/api/v1/twins/"+dev.ID+"/desired", map[string]any{"desired": map[string]any{"x": 1}}, acmeAdmin)
+	if code != 200 {
+		t.Fatalf("acme setting its own twin desired: want 200, got %d", code)
+	}
+
+	// --- routes: globex creating a route on acme's site is rejected ---
+	code, _ = c.req("POST", "/api/v1/routes", map[string]any{"name": "r", "site_id": acmeSite.SiteID, "topic": "#", "target_url": "http://127.0.0.1:9/x", "method": "POST"}, globexAdmin)
+	if code != 403 {
+		t.Fatalf("globex creating a route on acme's site: want 403, got %d", code)
+	}
+	// A fleet-wide route (no site_id) from an org-scoped token is rejected too.
+	code, _ = c.req("POST", "/api/v1/routes", map[string]any{"name": "r", "topic": "#", "target_url": "http://127.0.0.1:9/x", "method": "POST"}, globexAdmin)
+	if code != 403 {
+		t.Fatalf("globex creating a fleet-wide route: want 403, got %d", code)
+	}
+	code, b = c.req("POST", "/api/v1/routes", map[string]any{"name": "r", "site_id": acmeSite.SiteID, "topic": "#", "target_url": "http://127.0.0.1:9/x", "method": "POST"}, acmeAdmin)
+	if code != 201 {
+		t.Fatalf("acme creating a route on its own site: want 201, got %d %s", code, b)
+	}
+	var acmeRoute struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(b, &acmeRoute)
+	code, b = c.req("GET", "/api/v1/routes", nil, globexAdmin)
+	if code != 200 || strings.Contains(string(b), acmeRoute.ID) {
+		t.Fatalf("globex should not see acme's route: %d %s", code, b)
+	}
+	code, _ = c.req("DELETE", "/api/v1/routes/"+acmeRoute.ID, nil, globexAdmin)
+	if code != 404 {
+		t.Fatalf("globex deleting acme's route: want 404, got %d", code)
+	}
+	code, _ = c.req("DELETE", "/api/v1/routes/"+acmeRoute.ID, nil, acmeAdmin)
+	if code != 204 {
+		t.Fatalf("acme deleting its own route: want 204, got %d", code)
+	}
+
+	// --- deployments ---
+	code, _ = c.req("POST", "/api/v1/deployments", map[string]any{"site_id": acmeSite.SiteID, "name": "vision", "version": "1.0", "image": "example/vision:1.0"}, globexAdmin)
+	if code != 403 {
+		t.Fatalf("globex deploying to acme's site: want 403, got %d", code)
+	}
+	code, b = c.req("POST", "/api/v1/deployments", map[string]any{"site_id": acmeSite.SiteID, "name": "vision", "version": "1.0", "image": "example/vision:1.0"}, acmeAdmin)
+	if code != 201 {
+		t.Fatalf("acme deploying to its own site: want 201, got %d %s", code, b)
+	}
+	var dep struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(b, &dep)
+	code, b = c.req("GET", "/api/v1/deployments", nil, globexAdmin)
+	if code != 200 || strings.Contains(string(b), dep.ID) {
+		t.Fatalf("globex should not see acme's deployment: %d %s", code, b)
+	}
+	code, _ = c.req("PATCH", "/api/v1/deployments/"+dep.ID, map[string]any{"version": "1.1"}, globexAdmin)
+	if code != 404 {
+		t.Fatalf("globex patching acme's deployment: want 404, got %d", code)
+	}
+	code, _ = c.req("DELETE", "/api/v1/deployments/"+dep.ID, nil, globexAdmin)
+	if code != 404 {
+		t.Fatalf("globex deleting acme's deployment: want 404, got %d", code)
+	}
+	code, _ = c.req("PATCH", "/api/v1/deployments/"+dep.ID, map[string]any{"version": "1.1"}, acmeAdmin)
+	if code != 200 {
+		t.Fatalf("acme patching its own deployment: want 200, got %d", code)
+	}
+
+	// --- policy packs ---
+	code, _ = c.req("POST", "/api/v1/policy-packs", map[string]any{"name": "acme-pack", "site_id": acmeSite.SiteID, "enabled": true, "allowed_images": []string{"example/*"}}, globexAdmin)
+	if code != 403 {
+		t.Fatalf("globex creating a policy pack on acme's site: want 403, got %d", code)
+	}
+	code, b = c.req("POST", "/api/v1/policy-packs", map[string]any{"name": "acme-pack", "site_id": acmeSite.SiteID, "enabled": true, "allowed_images": []string{"example/*"}}, acmeAdmin)
+	if code != 201 {
+		t.Fatalf("acme creating a policy pack on its own site: want 201, got %d %s", code, b)
+	}
+	var pack struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(b, &pack)
+	code, b = c.req("GET", "/api/v1/policy-packs", nil, globexAdmin)
+	if code != 200 || strings.Contains(string(b), pack.ID) {
+		t.Fatalf("globex should not see acme's policy pack: %d %s", code, b)
+	}
+	code, _ = c.req("DELETE", "/api/v1/policy-packs/"+pack.ID, nil, globexAdmin)
+	if code != 404 {
+		t.Fatalf("globex deleting acme's policy pack: want 404, got %d", code)
+	}
+	code, _ = c.req("DELETE", "/api/v1/policy-packs/"+pack.ID, nil, acmeAdmin)
+	if code != 204 {
+		t.Fatalf("acme deleting its own policy pack: want 204, got %d", code)
+	}
+
+	// --- alerts: trigger one on acme's site (deployment_failed via agent status) ---
+	code, _ = c.req("POST", "/api/v1/agent/deployments/"+dep.ID+"/status", map[string]any{"site_id": acmeSite.SiteID, "status": "failed", "message": "docker unavailable"}, acmeSite.AgentToken)
+	if code != 200 {
+		t.Fatalf("agent deployment status: %d", code)
+	}
+	code, b = c.req("GET", "/api/v1/alerts", nil, globexAdmin)
+	if code != 200 || strings.Contains(string(b), "deployment_failed") {
+		t.Fatalf("globex should not see acme's alert: %d %s", code, b)
+	}
+	code, b = c.req("GET", "/api/v1/alerts", nil, acmeAdmin)
+	if code != 200 || !strings.Contains(string(b), "deployment_failed") {
+		t.Fatalf("acme should see its own alert: %d %s", code, b)
+	}
+	var alerts []map[string]any
+	_ = json.Unmarshal(b, &alerts)
+	var alertID string
+	for _, a := range alerts {
+		if a["type"] == "deployment_failed" {
+			alertID = a["id"].(string)
+		}
+	}
+	if alertID == "" {
+		t.Fatal("no deployment_failed alert found")
+	}
+	code, _ = c.req("POST", "/api/v1/alerts/"+alertID+"/resolve", nil, globexAdmin)
+	if code != 404 {
+		t.Fatalf("globex resolving acme's alert: want 404, got %d", code)
+	}
+	code, _ = c.req("POST", "/api/v1/alerts/"+alertID+"/resolve", nil, acmeAdmin)
+	if code != 200 {
+		t.Fatalf("acme resolving its own alert: want 200, got %d", code)
+	}
+
+	// --- overview counts reflect only the caller's own org ---
+	code, b = c.req("GET", "/api/v1/overview", nil, acmeAdmin)
+	if code != 200 {
+		t.Fatal(code)
+	}
+	var ov map[string]any
+	_ = json.Unmarshal(b, &ov)
+	if ov["sites"].(float64) != 1 {
+		t.Fatalf("acme overview should count exactly its own 1 site, got %v", ov["sites"])
+	}
+}
 func TestDeviceAndDeploymentLifecycle(t *testing.T) {
 	_, _, c := newTestServer(t)
 	site, tok := enrollSite(t, c)

@@ -87,28 +87,40 @@
   no coordination needed. `nodra_delivery_leader` on `/metrics` now reads 1
   for every actively-processing replica rather than exactly one leader.
 
-- Multi-tenant orgs, v1 partial (`model.Org`): `POST /api/v1/orgs`
+- Multi-tenant orgs (`model.Org`): `POST /api/v1/orgs`
   (global-admin-token only) creates a named org and mints its own
   enrollment/admin/viewer bearer tokens, returned in plaintext exactly
   once — only their SHA-256 hashes are persisted, the same pattern as a
   site's agent token. Enrolling with an org's enrollment token (instead of
   the global one) sets the new site's `org_id`; from then on that org's
   admin/viewer tokens resolve to the same `"admin"`/`"viewer"` role a
-  global token would. The isolation boundary is intentionally narrow:
-  `GET /api/v1/sites` filters to the caller's own org (a global token stays
-  unfiltered), and `POST /api/v1/sites/{id}/revoke` rejects a target site
-  outside the caller's org as `404`. Every other admin endpoint — devices,
-  twins, routes, deployments, alerts, policy-packs, audit, deliveries/DLQ —
-  is **not** org-filtered in v1: an org's token can read and mutate the
-  entire fleet's data through any of those, identically to the global
-  token. `GET|POST /api/v1/orgs`, `GET|DELETE /api/v1/orgs/{id}` are
-  themselves restricted to the global admin token — an org's own admin
-  token cannot create, list, or delete orgs. Deleting an org does not
-  delete or reassign its sites; they keep their `org_id` and simply become
-  invisible to any org-scoped token from then on. See
-  `docs/ARCHITECTURE.md`'s "Multi-tenant orgs" section and `docs/API.md`'s
-  "Multi-tenant orgs (v1, partial)" section for the exact scope. Full data
-  isolation across every other entity remains on `ROADMAP.md`'s Next list.
+  global token would, but scoped by two new helpers,
+  `Server.callerCanSeeSite`/`callerCanMutateSite`, applied consistently
+  across every admin-gated list and single-entity handler: sites, devices,
+  twins, routes, deployments, policy packs, alerts, events, activity,
+  audit, and dead letters. A fleet-wide resource (empty `site_id` — a
+  global route or policy pack) stays visible to every org (it still
+  applies to their sites) but is mutable only by the global admin token; a
+  single-entity mutation targeting another org's resource is rejected as
+  `404` (not `403`, so a guessed ID can't even confirm the target exists);
+  a *create* naming another org's `site_id` (or no `site_id` at all, from
+  an org-scoped token) is rejected as `403`. `overview`'s per-entity counts
+  are org-scoped too, except `pending_deliveries`/`delivery_queue_bytes`/
+  `dead_letters`, which come from `queue.Stats()` and have no per-site
+  breakdown, so they stay fleet-wide totals. `auditList`/`auditExport`
+  org-filter by post-processing each fetched page rather than the
+  underlying query, so an org-scoped caller's page can come back thinner
+  than its limit even though more history exists — `next_cursor` still
+  pages forward correctly. `GET|POST /api/v1/orgs`, `GET|DELETE
+  /api/v1/orgs/{id}` are themselves restricted to the global admin token —
+  an org's own admin token cannot create, list, or delete orgs. Deleting
+  an org does not delete or reassign its sites; they keep their `org_id`
+  and simply become invisible to any org-scoped token from then on.
+  Agent-authenticated endpoints (heartbeat, enroll, event ingestion, every
+  `/agent/*` route) were never in scope — a site's own agent token already
+  scopes it to itself. See `docs/ARCHITECTURE.md`'s "Multi-tenant orgs"
+  section and `docs/API.md`'s "Multi-tenant orgs" section for the exact,
+  still-not-absolute scope.
 
 - MQTT persistent sessions for QoS0/1 (`internal/mqtt`): `CONNECT`'s
   `CleanSession` flag and `ClientID` are now actually parsed (previously

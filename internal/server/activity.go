@@ -110,7 +110,14 @@ func (s *Server) activityList(w http.ResponseWriter, r *http.Request) {
 	if limit > 1000 {
 		limit = 1000
 	}
-	writeJSON(w, 200, asJSONList(s.activity.list(limit)))
+	v := s.activity.list(limit)
+	out := v[:0]
+	for _, e := range v {
+		if s.callerCanSeeSite(r, e.SiteID) {
+			out = append(out, e)
+		}
+	}
+	writeJSON(w, 200, asJSONList(out))
 }
 
 func (s *Server) activityPost(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +170,12 @@ func auditFilterFromQuery(r *http.Request) audit.Filter {
 // auditList is a small/interactive query over the durable audit trail —
 // unlike activityList, it returns a next_cursor since audit history is
 // unbounded and can't be handed back as one bare array.
+//
+// Org filtering here is a post-filter over each fetched page (audit.Filter
+// has no notion of "any site in this org"), so an org-scoped caller's page
+// can come back with fewer than f.Limit entries even though more exist
+// further in — next_cursor still lets them page forward, this only affects
+// how full a single page looks, not what they can eventually see.
 func (s *Server) auditList(w http.ResponseWriter, r *http.Request) {
 	if s.audit == nil {
 		writeJSON(w, 200, map[string]any{"entries": []audit.Entry{}, "next_cursor": ""})
@@ -172,12 +185,22 @@ func (s *Server) auditList(w http.ResponseWriter, r *http.Request) {
 	if f.Limit <= 0 {
 		f.Limit = 250
 	}
+	if f.SiteID != "" && !s.callerCanSeeSite(r, f.SiteID) {
+		writeJSON(w, 200, map[string]any{"entries": []audit.Entry{}, "next_cursor": ""})
+		return
+	}
 	entries, next, err := s.audit.Query(f)
 	if err != nil {
 		errorJSON(w, 500, "audit query failed: "+err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"entries": asJSONList(entries), "next_cursor": next})
+	visible := entries[:0]
+	for _, e := range entries {
+		if s.callerCanSeeSite(r, e.SiteID) {
+			visible = append(visible, e)
+		}
+	}
+	writeJSON(w, 200, map[string]any{"entries": asJSONList(visible), "next_cursor": next})
 }
 
 // auditExport streams the full matching audit history as newline-delimited
@@ -191,6 +214,9 @@ func (s *Server) auditExport(w http.ResponseWriter, r *http.Request) {
 	f := auditFilterFromQuery(r)
 	f.Limit = 1000
 	w.Header().Set("Content-Type", "application/x-ndjson")
+	if f.SiteID != "" && !s.callerCanSeeSite(r, f.SiteID) {
+		return
+	}
 	flusher, _ := w.(http.Flusher)
 	enc := json.NewEncoder(w)
 	for {
@@ -200,6 +226,9 @@ func (s *Server) auditExport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, e := range entries {
+			if !s.callerCanSeeSite(r, e.SiteID) {
+				continue
+			}
 			if err := enc.Encode(e); err != nil {
 				return
 			}

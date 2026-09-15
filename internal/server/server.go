@@ -499,6 +499,51 @@ func (s *Server) orgForBearer(tok string) (orgID string, scoped bool) {
 	return org, true
 }
 
+// siteOrgID resolves siteID's org, "" if siteID is empty (a fleet-wide
+// entity) or the site doesn't exist.
+func (s *Server) siteOrgID(siteID string) string {
+	if siteID == "" {
+		return ""
+	}
+	site, ok := s.store.Site(siteID)
+	if !ok {
+		return ""
+	}
+	return site.OrgID
+}
+
+// callerCanSeeSite reports whether a request's bearer token may VIEW data
+// scoped to siteID: always true for a global (unscoped) caller, and for a
+// fleet-wide entity (siteID==""), since fleet-wide config (a global route
+// or policy pack) still applies to every org's sites and hiding it would
+// mislead rather than protect. An org-scoped caller otherwise sees siteID
+// only when it belongs to their own org. Used by every org-filtered list
+// handler in this file — see docs/ARCHITECTURE.md's "Multi-tenant orgs".
+func (s *Server) callerCanSeeSite(r *http.Request, siteID string) bool {
+	orgID, scoped := s.orgForBearer(bearer(r))
+	if !scoped || siteID == "" {
+		return true
+	}
+	return s.siteOrgID(siteID) == orgID
+}
+
+// callerCanMutateSite reports whether a request's bearer token may CREATE
+// or CHANGE a resource scoped to siteID: always true for a global caller.
+// An org-scoped caller may mutate only a resource scoped to one of its own
+// sites — never a fleet-wide resource (siteID=="", unlike the read-side
+// callerCanSeeSite) and never another org's site, since either would let
+// one tenant's admin token affect every other tenant.
+func (s *Server) callerCanMutateSite(r *http.Request, siteID string) bool {
+	orgID, scoped := s.orgForBearer(bearer(r))
+	if !scoped {
+		return true
+	}
+	if siteID == "" {
+		return false
+	}
+	return s.siteOrgID(siteID) == orgID
+}
+
 // requireGlobalAdmin gates org-management endpoints to the platform
 // operator's own global admin token — an org-scoped admin token (a
 // tenant's own admin) must not be able to create, list, or delete orgs,
@@ -920,16 +965,56 @@ func (s *Server) registerDevice(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	st := s.store.Snapshot()
-	online := 0
+	orgID, scoped := s.orgForBearer(bearer(r))
+	sites, online := 0, 0
 	cut := time.Now().Add(-90 * time.Second)
 	for _, v := range st.Sites {
+		if scoped && v.OrgID != orgID {
+			continue
+		}
+		sites++
 		if !v.Revoked && v.LastSeen.After(cut) {
 			online++
 		}
 	}
+	devices, twins, routes, deployments, openAlerts, events := 0, 0, 0, 0, 0, 0
+	for _, v := range st.Devices {
+		if s.callerCanSeeSite(r, v.SiteID) {
+			devices++
+		}
+	}
+	for _, v := range st.Twins {
+		if s.callerCanSeeSite(r, v.SiteID) {
+			twins++
+		}
+	}
+	for _, v := range st.Routes {
+		if s.callerCanSeeSite(r, v.SiteID) {
+			routes++
+		}
+	}
+	for _, v := range st.Deployments {
+		if s.callerCanSeeSite(r, v.SiteID) {
+			deployments++
+		}
+	}
+	for _, v := range st.Alerts {
+		if !v.Resolved && s.callerCanSeeSite(r, v.SiteID) {
+			openAlerts++
+		}
+	}
+	for _, v := range st.Events {
+		if s.callerCanSeeSite(r, v.SiteID) {
+			events++
+		}
+	}
+	// pending_deliveries/delivery_queue_bytes/dead_letters come from
+	// queue.Stats(), which has no per-site breakdown — these three remain
+	// fleet-wide totals even for an org-scoped caller. See
+	// docs/ARCHITECTURE.md's "Multi-tenant orgs" section.
 	ds := s.deliveries.Stats()
 	qs := s.dlq.Stats()
-	writeJSON(w, 200, map[string]any{"sites": len(st.Sites), "online_sites": online, "devices": len(st.Devices), "twins": len(st.Twins), "routes": len(st.Routes), "deployments": len(st.Deployments), "open_alerts": countOpen(st.Alerts), "pending_deliveries": ds.Items, "delivery_queue_bytes": ds.Bytes, "dead_letters": qs.Items, "events": len(st.Events)})
+	writeJSON(w, 200, map[string]any{"sites": sites, "online_sites": online, "devices": devices, "twins": twins, "routes": routes, "deployments": deployments, "open_alerts": openAlerts, "pending_deliveries": ds.Items, "delivery_queue_bytes": ds.Bytes, "dead_letters": qs.Items, "events": events})
 }
 func countOpen(a []model.Alert) int {
 	n := 0
@@ -1149,7 +1234,14 @@ func (s *Server) certLifecycleLoop(ctx context.Context) {
 	}
 }
 func (s *Server) routesList(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, asJSONList(s.store.Routes()))
+	v := s.store.Routes()
+	out := v[:0]
+	for _, rt := range v {
+		if s.callerCanSeeSite(r, rt.SiteID) {
+			out = append(out, rt)
+		}
+	}
+	writeJSON(w, 200, asJSONList(out))
 }
 func (s *Server) routeCreate(w http.ResponseWriter, r *http.Request) {
 	var in model.Route
@@ -1158,6 +1250,10 @@ func (s *Server) routeCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Name == "" || in.Topic == "" || in.TargetURL == "" {
 		errorJSON(w, 400, "name, topic and target_url are required")
+		return
+	}
+	if !s.callerCanMutateSite(r, in.SiteID) {
+		errorJSON(w, 403, "an org-scoped token may only create routes scoped to its own org's sites")
 		return
 	}
 	u, err := url.ParseRequestURI(in.TargetURL)
@@ -1198,6 +1294,21 @@ func (s *Server) routeCreate(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) routeDelete(w http.ResponseWriter, r *http.Request) {
 	idv := r.PathValue("id")
+	found := false
+	for _, rt := range s.store.Routes() {
+		if rt.ID == idv {
+			if !s.callerCanMutateSite(r, rt.SiteID) {
+				errorJSON(w, 404, "route not found")
+				return
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		errorJSON(w, 404, "route not found")
+		return
+	}
 	if err := s.store.DeleteRoute(idv); err != nil {
 		errorJSON(w, 404, "route not found")
 		return
@@ -1206,14 +1317,28 @@ func (s *Server) routeDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 func (s *Server) devices(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, asJSONList(s.store.Devices()))
+	v := s.store.Devices()
+	out := v[:0]
+	for _, d := range v {
+		if s.callerCanSeeSite(r, d.SiteID) {
+			out = append(out, d)
+		}
+	}
+	writeJSON(w, 200, asJSONList(out))
 }
 func (s *Server) twins(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, asJSONList(s.store.Snapshot().Twins))
+	v := s.store.Snapshot().Twins
+	out := v[:0]
+	for _, t := range v {
+		if s.callerCanSeeSite(r, t.SiteID) {
+			out = append(out, t)
+		}
+	}
+	writeJSON(w, 200, asJSONList(out))
 }
 func (s *Server) twinDesired(w http.ResponseWriter, r *http.Request) {
 	dev, ok := s.store.Device(r.PathValue("id"))
-	if !ok {
+	if !ok || !s.callerCanMutateSite(r, dev.SiteID) {
 		errorJSON(w, 404, "device not found")
 		return
 	}
@@ -1273,7 +1398,14 @@ func (s *Server) agentTwinReported(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, tw)
 }
 func (s *Server) deployments(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, asJSONList(s.store.Deployments()))
+	v := s.store.Deployments()
+	out := v[:0]
+	for _, d := range v {
+		if s.callerCanSeeSite(r, d.SiteID) {
+			out = append(out, d)
+		}
+	}
+	writeJSON(w, 200, asJSONList(out))
 }
 func (s *Server) deploymentCreate(w http.ResponseWriter, r *http.Request) {
 	var in model.Deployment
@@ -1286,6 +1418,10 @@ func (s *Server) deploymentCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, ok := s.store.Site(in.SiteID); !ok {
 		errorJSON(w, 404, "site not found")
+		return
+	}
+	if !s.callerCanMutateSite(r, in.SiteID) {
+		errorJSON(w, 403, "an org-scoped token may only deploy to its own org's sites")
 		return
 	}
 	if ok, deniedBy := policy.Allowed(s.store.PolicyPacks(), in.SiteID, in.Image); !ok {
@@ -1324,6 +1460,11 @@ func (s *Server) deploymentPatch(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 400, "version, image or desired_state is required")
 		return
 	}
+	existing, ok := s.store.Deployment(idv)
+	if !ok || !s.callerCanMutateSite(r, existing.SiteID) {
+		errorJSON(w, 404, "deployment not found")
+		return
+	}
 	if in.DesiredState != nil {
 		ds := strings.ToLower(strings.TrimSpace(*in.DesiredState))
 		if ds != "running" && ds != "stopped" {
@@ -1333,11 +1474,6 @@ func (s *Server) deploymentPatch(w http.ResponseWriter, r *http.Request) {
 		*in.DesiredState = ds
 	}
 	if in.Image != nil && *in.Image != "" {
-		existing, ok := s.store.Deployment(idv)
-		if !ok {
-			errorJSON(w, 404, "deployment not found")
-			return
-		}
 		if ok, deniedBy := policy.Allowed(s.store.PolicyPacks(), existing.SiteID, *in.Image); !ok {
 			s.note("warn", "control-plane", s.actorForBearer(bearer(r)), "", existing.SiteID, existing.Name, "policy.deny", "image denied by policy pack "+deniedBy, map[string]any{"image": *in.Image, "policy": deniedBy})
 			errorJSON(w, 403, fmt.Sprintf("image %q denied by policy pack %q", *in.Image, deniedBy))
@@ -1376,6 +1512,11 @@ func (s *Server) deploymentPatch(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) deploymentDelete(w http.ResponseWriter, r *http.Request) {
 	idv := r.PathValue("id")
+	existing, ok := s.store.Deployment(idv)
+	if !ok || !s.callerCanMutateSite(r, existing.SiteID) {
+		errorJSON(w, 404, "deployment not found")
+		return
+	}
 	if err := s.store.DeleteDeployment(idv); err != nil {
 		errorJSON(w, 404, "deployment not found")
 		return
@@ -1384,7 +1525,14 @@ func (s *Server) deploymentDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 func (s *Server) policyPacks(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, asJSONList(s.store.PolicyPacks()))
+	v := s.store.PolicyPacks()
+	out := v[:0]
+	for _, p := range v {
+		if s.callerCanSeeSite(r, p.SiteID) {
+			out = append(out, p)
+		}
+	}
+	writeJSON(w, 200, asJSONList(out))
 }
 func (s *Server) policyPackCreate(w http.ResponseWriter, r *http.Request) {
 	var in model.PolicyPack
@@ -1393,6 +1541,10 @@ func (s *Server) policyPackCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Name == "" {
 		errorJSON(w, 400, "name is required")
+		return
+	}
+	if !s.callerCanMutateSite(r, in.SiteID) {
+		errorJSON(w, 403, "an org-scoped token may only create policy packs scoped to its own org's sites")
 		return
 	}
 	now := time.Now().UTC()
@@ -1417,6 +1569,11 @@ func (s *Server) policyPackPatch(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &in) {
 		return
 	}
+	existing, ok := s.store.PolicyPack(idv)
+	if !ok || !s.callerCanMutateSite(r, existing.SiteID) {
+		errorJSON(w, 404, "policy pack not found")
+		return
+	}
 	if err := s.store.UpdatePolicyPack(idv, func(p *model.PolicyPack) {
 		if in.Name != nil && *in.Name != "" {
 			p.Name = *in.Name
@@ -1439,6 +1596,11 @@ func (s *Server) policyPackPatch(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) policyPackDelete(w http.ResponseWriter, r *http.Request) {
 	idv := r.PathValue("id")
+	existing, ok := s.store.PolicyPack(idv)
+	if !ok || !s.callerCanMutateSite(r, existing.SiteID) {
+		errorJSON(w, 404, "policy pack not found")
+		return
+	}
 	if err := s.store.DeletePolicyPack(idv); err != nil {
 		errorJSON(w, 404, "policy pack not found")
 		return
@@ -1545,10 +1707,32 @@ func (s *Server) orgDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 func (s *Server) alerts(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, asJSONList(s.store.Alerts()))
+	v := s.store.Alerts()
+	out := v[:0]
+	for _, a := range v {
+		if s.callerCanSeeSite(r, a.SiteID) {
+			out = append(out, a)
+		}
+	}
+	writeJSON(w, 200, asJSONList(out))
 }
 func (s *Server) alertResolve(w http.ResponseWriter, r *http.Request) {
 	idv := r.PathValue("id")
+	found := false
+	for _, a := range s.store.Alerts() {
+		if a.ID == idv {
+			if !s.callerCanMutateSite(r, a.SiteID) {
+				errorJSON(w, 404, "alert not found")
+				return
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		errorJSON(w, 404, "alert not found")
+		return
+	}
 	if err := s.store.ResolveAlert(idv); err != nil {
 		errorJSON(w, 404, "alert not found")
 		return
@@ -1561,7 +1745,14 @@ func (s *Server) eventsList(w http.ResponseWriter, r *http.Request) {
 	if mins <= 0 {
 		mins = 60
 	}
-	writeJSON(w, 200, asJSONList(s.store.EventsSince(time.Now().Add(-time.Duration(mins)*time.Minute))))
+	v := s.store.EventsSince(time.Now().Add(-time.Duration(mins) * time.Minute))
+	out := v[:0]
+	for _, e := range v {
+		if s.callerCanSeeSite(r, e.SiteID) {
+			out = append(out, e)
+		}
+	}
+	writeJSON(w, 200, asJSONList(out))
 }
 func (s *Server) agentDeployments(w http.ResponseWriter, r *http.Request) {
 	siteID := r.URL.Query().Get("site_id")
@@ -1671,12 +1862,18 @@ func (s *Server) agentDeploymentRollback(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) deadletters(w http.ResponseWriter, r *http.Request) {
 	items, _ := s.dlq.List()
-	writeJSON(w, 200, asJSONList(items))
+	out := items[:0]
+	for _, dl := range items {
+		if s.callerCanSeeSite(r, dl.Delivery.SiteID) {
+			out = append(out, dl)
+		}
+	}
+	writeJSON(w, 200, asJSONList(out))
 }
 func (s *Server) deadletterReplay(w http.ResponseWriter, r *http.Request) {
 	idv := r.PathValue("id")
 	dl, ok := s.dlq.Get(idv)
-	if !ok {
+	if !ok || !s.callerCanMutateSite(r, dl.Delivery.SiteID) {
 		errorJSON(w, 404, "dead letter not found")
 		return
 	}
@@ -1695,7 +1892,12 @@ func (s *Server) deadletterReplay(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 202, map[string]any{"replayed": true, "delivery_id": d.ID})
 }
 func (s *Server) deadletterDelete(w http.ResponseWriter, r *http.Request) {
-	if err := s.dlq.Delete(r.PathValue("id")); err != nil {
+	idv := r.PathValue("id")
+	if dl, ok := s.dlq.Get(idv); ok && !s.callerCanMutateSite(r, dl.Delivery.SiteID) {
+		errorJSON(w, 404, "dead letter not found")
+		return
+	}
+	if err := s.dlq.Delete(idv); err != nil {
 		errorJSON(w, 500, err.Error())
 		return
 	}

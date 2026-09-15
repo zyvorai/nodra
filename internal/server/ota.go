@@ -67,7 +67,7 @@ func otaStatusFromReported(reported map[string]any) (ota.Status, bool, error) {
 // not a new delivery path.
 func (s *Server) otaDeviceRequest(w http.ResponseWriter, r *http.Request) {
 	dev, ok := s.store.Device(r.PathValue("id"))
-	if !ok {
+	if !ok || !s.callerCanMutateSite(r, dev.SiteID) {
 		errorJSON(w, 404, "device not found")
 		return
 	}
@@ -106,7 +106,7 @@ func (s *Server) otaDeviceRequest(w http.ResponseWriter, r *http.Request) {
 // picking the "ota" key back out of two generic maps itself.
 func (s *Server) otaDeviceGet(w http.ResponseWriter, r *http.Request) {
 	dev, ok := s.store.Device(r.PathValue("id"))
-	if !ok {
+	if !ok || !s.callerCanSeeSite(r, dev.SiteID) {
 		errorJSON(w, 404, "device not found")
 		return
 	}
