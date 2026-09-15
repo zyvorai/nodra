@@ -6,6 +6,7 @@ package mqtt
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"io"
 	"net"
 	"testing"
@@ -204,9 +205,11 @@ func TestCleanSessionDiscardsPriorState(t *testing.T) {
 	}
 }
 
-// TestQoS2StillRejectedWithSessionsEnabled is a regression check: enabling
-// persistent sessions must not loosen the existing QoS2 rejection.
-func TestQoS2StillRejectedWithSessionsEnabled(t *testing.T) {
+// TestOutboundQoS2SubscribeStillRejected is a regression check: inbound
+// QoS2 PUBLISH support (TestInboundQoS2ExactlyOnceHandshake) must not loosen
+// SUBSCRIBE's existing QoS2 rejection — outbound QoS2 remains a separate,
+// unimplemented piece of work (see the package doc).
+func TestOutboundQoS2SubscribeStillRejected(t *testing.T) {
 	addr := freeAddr(t)
 	dir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -216,17 +219,103 @@ func TestQoS2StillRejectedWithSessionsEnabled(t *testing.T) {
 
 	c, r := dial(t, addr)
 	defer c.Close()
-	writeAndReadConnack(t, c, r, connectPacket("qos2client", true))
+	writeAndReadConnack(t, c, r, connectPacket("qos2subclient", true))
 
-	body := appendString(nil, "a/b")
-	body = append(body, 0, 1)
-	body = append(body, []byte("x")...)
-	if _, err := c.Write(pkt(0x34, body)); err != nil {
+	if _, err := c.Write(subscribePacket(1, "a/b", 2)); err != nil {
 		t.Fatal(err)
 	}
 	_ = c.SetReadDeadline(time.Now().Add(time.Second))
 	buf := make([]byte, 1)
 	if _, err := r.Read(buf); err == nil {
-		t.Fatal("expected connection to close after a QoS2 publish, got data instead")
+		t.Fatal("expected connection to close after a QoS2 subscribe, got data instead")
+	}
+}
+
+// TestInboundQoS2ExactlyOnceHandshake drives the full PUBLISH/PUBREC/PUBREL/
+// PUBCOMP handshake and asserts the Handler is invoked only once, only after
+// PUBREL — not on the initial PUBLISH, which would double-deliver if the
+// sender retransmits PUBLISH after a lost PUBREC.
+func TestInboundQoS2ExactlyOnceHandshake(t *testing.T) {
+	addr := freeAddr(t)
+	got := make(chan Message, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b := New(addr, func(_ context.Context, m Message) error { got <- m; return nil })
+	go func() { _ = b.Start(ctx) }()
+
+	c, r := dial(t, addr)
+	defer c.Close()
+	writeAndReadConnack(t, c, r, connectPacket("qos2pub", true))
+
+	const pid uint16 = 77
+	if _, err := c.Write(publishPacket("a/b", []byte("hello"), 2, pid)); err != nil {
+		t.Fatal(err)
+	}
+	pubrec := make([]byte, 4)
+	if _, err := io.ReadFull(r, pubrec); err != nil {
+		t.Fatal(err)
+	}
+	if pubrec[0] != 0x50 || binary.BigEndian.Uint16(pubrec[2:]) != pid {
+		t.Fatalf("expected PUBREC for pid %d, got %v", pid, pubrec)
+	}
+
+	select {
+	case <-got:
+		t.Fatal("handler must not fire before PUBREL")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// A retransmitted PUBLISH (sender never saw our PUBREC) must be
+	// idempotent: another PUBREC, still no handler delivery.
+	if _, err := c.Write(publishPacket("a/b", []byte("hello"), 2, pid)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(r, pubrec); err != nil {
+		t.Fatal(err)
+	}
+	if pubrec[0] != 0x50 || binary.BigEndian.Uint16(pubrec[2:]) != pid {
+		t.Fatalf("expected PUBREC again for pid %d, got %v", pid, pubrec)
+	}
+
+	if _, err := c.Write(pkt(0x62, []byte{byte(pid >> 8), byte(pid)})); err != nil { // PUBREL
+		t.Fatal(err)
+	}
+	pubcomp := make([]byte, 4)
+	if _, err := io.ReadFull(r, pubcomp); err != nil {
+		t.Fatal(err)
+	}
+	if pubcomp[0] != 0x70 || binary.BigEndian.Uint16(pubcomp[2:]) != pid {
+		t.Fatalf("expected PUBCOMP for pid %d, got %v", pid, pubcomp)
+	}
+
+	select {
+	case m := <-got:
+		if m.Topic != "a/b" || string(m.Payload) != "hello" {
+			t.Fatalf("unexpected message: %+v", m)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handler never fired after PUBREL")
+	}
+	select {
+	case m := <-got:
+		t.Fatalf("handler fired twice: second delivery %+v", m)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// A retransmitted PUBREL (sender never saw our first PUBCOMP) must still
+	// get a PUBCOMP, without re-delivering to the handler.
+	if _, err := c.Write(pkt(0x62, []byte{byte(pid >> 8), byte(pid)})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(r, pubcomp); err != nil {
+		t.Fatal(err)
+	}
+	if pubcomp[0] != 0x70 || binary.BigEndian.Uint16(pubcomp[2:]) != pid {
+		t.Fatalf("expected PUBCOMP again for pid %d, got %v", pid, pubcomp)
+	}
+	select {
+	case m := <-got:
+		t.Fatalf("handler fired again on duplicate PUBREL: %+v", m)
+	case <-time.After(100 * time.Millisecond):
 	}
 }

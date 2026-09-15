@@ -78,10 +78,18 @@
   session-present byte reflects whether a prior session existed);
   `CleanSession=1` discards prior state. Also fixes a pre-existing
   unsynchronized-access race on a client's subscription list, found while
-  touching every read/write site for this change. QoS 2 remains explicitly
-  rejected exactly as before. One honesty gap: subscription lists are
-  in-memory only and don't survive a broker restart, though the durable
-  message queue itself does.
+  touching every read/write site for this change. One honesty gap:
+  subscription lists are in-memory only and don't survive a broker restart,
+  though the durable message queue itself does.
+
+- Inbound MQTT QoS2 (`internal/mqtt`): a publishing client now gets the full
+  exactly-once `PUBLISH`/`PUBREC`/`PUBREL`/`PUBCOMP` handshake — delivery to
+  the local `Handler`/subscribers is deferred to `PUBREL`, so a retransmitted
+  `PUBLISH` (lost `PUBREC`) never double-delivers, and a retransmitted
+  `PUBREL` (lost `PUBCOMP`) is idempotent. Outbound QoS2 (broker → subscriber)
+  remains unsupported — `SUBSCRIBE` still caps at QoS1, since
+  `Broker.Publish`'s fanout has no ack-tracking even for QoS1 today; that's
+  a separate, larger piece of work tracked in `ROADMAP.md`.
 
 - OPC-UA connector (`connectors/opcua`): dependency-free UA-TCP binary
   client and poller. SecurityPolicy None, anonymous session; Read polled by

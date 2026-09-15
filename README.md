@@ -64,7 +64,7 @@ operational issues with their documented fix.
 
 ## v0.2 highlights
 
-- **Real MQTT 3.1.1 edge ingress**: CONNECT, SUBSCRIBE, QoS 0/1 PUBLISH, PUBACK, PINGREQ and local subscriber fan-out.
+- **Real MQTT 3.1.1 edge ingress**: CONNECT, SUBSCRIBE, PUBLISH QoS 0/1/2 (inbound exactly-once), PUBACK/PUBREC/PUBREL/PUBCOMP, PINGREQ, persistent sessions and local subscriber fan-out.
 - **HTTP ingress**: `POST /v1/publish` with optional local bearer protection.
 - **Offline-first WAL spool**: append-only, fsynced, replayed after restart and compacted automatically.
 - **Explicit backpressure**: cap edge spool by bytes and event count; choose `reject`, `drop-oldest` or `drop-newest` deliberately.
@@ -187,15 +187,15 @@ docker compose up --build
 
 ### Publish over MQTT
 
-Any MQTT 3.1.1 client can publish QoS 0/1:
+Any MQTT 3.1.1 client can publish QoS 0/1/2:
 
 ```bash
 mosquitto_pub -h 127.0.0.1 -p 1883 \
   -t factory/line-1/temperature \
-  -q 1 -m '{"c":31.2}'
+  -q 2 -m '{"c":31.2}'
 ```
 
-Nodra's embedded MQTT broker is deliberately focused on edge ingress/local fan-out. Persistent sessions (`CleanSession=0`) are now supported for QoS 0/1 subscribers — a durable per-client queue replays missed messages (with `DUP` set) on reconnect, though in-memory subscription lists don't survive a broker restart. QoS 2 is still not claimed in v0.2.
+Nodra's embedded MQTT broker is deliberately focused on edge ingress/local fan-out. Persistent sessions (`CleanSession=0`) are now supported for QoS 0/1 subscribers — a durable per-client queue replays missed messages (with `DUP` set) on reconnect, though in-memory subscription lists don't survive a broker restart. QoS 2 is supported for **publishing** clients (full `PUBLISH`/`PUBREC`/`PUBREL`/`PUBCOMP` exactly-once handshake); `SUBSCRIBE` still caps at QoS 1, since outbound delivery has no ack-tracking yet — that remains future work.
 
 ## Local routes
 
@@ -406,11 +406,11 @@ Nodra does not try to invent a new universal wire protocol. The core provides lo
 Included:
 
 - HTTP ingress
-- MQTT 3.1.1 QoS 0/1 ingress/local subscription
-- Modbus TCP client building block
+- MQTT 3.1.1 ingress/local subscription (QoS 0/1/2 inbound, QoS 0/1 outbound/subscribe, persistent sessions)
+- Modbus TCP/RTU, J1939, OPC-UA, NATS, generic serial/USB connectors
 - Connector SDK
 
-Planned/community adapters: OPC-UA, serial, NATS, Zenoh and Kafka bridge. See `pkg/connector` and [ROADMAP.md](ROADMAP.md).
+Planned/community adapters: Zenoh, Kafka bridge. See `pkg/connector` and [ROADMAP.md](ROADMAP.md).
 
 ## Security defaults
 
