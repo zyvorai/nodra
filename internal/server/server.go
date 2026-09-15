@@ -41,28 +41,38 @@ import (
 	webassets "github.com/zyvorai/nodra/web"
 )
 
-// deliveryWorkerLockKey is the fixed pg_try_advisory_lock key used to elect
-// which replica's worker() actively processes deliveries when
-// NODRA_STORE=postgres. Arbitrary but stable — changing it would let two
-// old/new-binary replicas both believe they're leader during a rollout.
+// deliveryWorkerLockKey is a fixed pg_try_advisory_lock key retained for
+// leader.NewPostgresLock's Close()/lifecycle plumbing. It no longer gates
+// delivery processing itself: since queue.PostgresQueue[T] implements
+// queue.Claimer, processDeliveries claims deliveries per-item instead of
+// requiring a single elected leader, so every Postgres-mode replica
+// processes concurrently (true multi-writer HA, not single-active-writer
+// failover). Arbitrary but stable — kept in case a future singleton task
+// needs a leader lock again.
 const deliveryWorkerLockKey int64 = 0x6e6f647261645f31 // "nodrad_1"
 
 type Config struct {
-	Listen             string
-	DataDir            string
-	AdminToken         string
-	AdminUser          string
-	AdminPassword      string
-	ViewerToken        string
-	ViewerUser         string
-	ViewerPassword     string
-	EnrollmentToken    string
-	PublicRead         bool
-	MaxBodyBytes       int64
-	WorkerInterval     time.Duration
-	WorkerConcurrency  int
-	DeliveryMaxItems   int
-	DeliveryMaxBytes   int64
+	Listen            string
+	DataDir           string
+	AdminToken        string
+	AdminUser         string
+	AdminPassword     string
+	ViewerToken       string
+	ViewerUser        string
+	ViewerPassword    string
+	EnrollmentToken   string
+	PublicRead        bool
+	MaxBodyBytes      int64
+	WorkerInterval    time.Duration
+	WorkerConcurrency int
+	DeliveryMaxItems  int
+	DeliveryMaxBytes  int64
+	// DeliveryClaimLease only applies when StoreDriver=="postgres": how stale
+	// another replica's claim on a delivery must be before this replica will
+	// steal it. Must exceed the slowest possible processOne (bounded by the
+	// largest per-delivery TimeoutSecs, 60s) with headroom, or a live worker's
+	// in-progress claim could be stolen out from under it.
+	DeliveryClaimLease time.Duration
 	PKIEnabled         bool
 	PKIDir             string
 	TLSCertFile        string
@@ -93,7 +103,11 @@ type Config struct {
 }
 
 type Server struct {
-	cfg           Config
+	cfg Config
+	// instanceID identifies this process as a delivery claim owner when
+	// deliveries is a queue.Claimer (Postgres multi-writer mode) — see
+	// processDeliveries. Unused in file-WAL/single-process mode.
+	instanceID    string
 	store         store.Backend
 	deliveries    queue.QueueLike[model.Delivery]
 	dlq           queue.QueueLike[model.DeadLetter]
@@ -172,6 +186,9 @@ func New(cfg Config) (*Server, error) {
 	if cfg.DeliveryMaxBytes <= 0 {
 		cfg.DeliveryMaxBytes = 4 << 30
 	}
+	if cfg.DeliveryClaimLease <= 0 {
+		cfg.DeliveryClaimLease = 90 * time.Second
+	}
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return nil, err
 	}
@@ -184,10 +201,10 @@ func New(cfg Config) (*Server, error) {
 	var lead leader.Elector
 	deliveryOpts := queue.Options{MaxItems: cfg.DeliveryMaxItems, MaxBytes: cfg.DeliveryMaxBytes, Policy: "reject"}
 	if cfg.StoreDriver == "postgres" && cfg.DatabaseURL != "" {
-		// Postgres-backed delivery/DLQ: readable from any replica, but only
-		// one replica actively processes them at a time via deliveryWorkerLockKey
-		// below — single-active-writer with automatic failover, not
-		// multi-writer conflict-resolved HA. See docs/ARCHITECTURE.md.
+		// Postgres-backed delivery/DLQ: readable from every replica, and
+		// every replica actively claims and processes items concurrently
+		// (queue.Claimer, see processDeliveries) — true multi-writer HA, not
+		// single-active-writer failover. See docs/ARCHITECTURE.md.
 		q, err = queue.OpenPostgres[model.Delivery](cfg.DatabaseURL, "nodra_deliveries", deliveryOpts)
 		if err != nil {
 			return nil, err
@@ -215,7 +232,11 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, store: st, deliveries: q, dlq: dlq, leader: lead, metrics: &telemetry.Metrics{}, activity: &activityLog{}, audit: au, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}, oidcStates: map[string]oidcState{}}
+	instanceID, err := auth.NewToken(8)
+	if err != nil {
+		return nil, err
+	}
+	s := &Server{cfg: cfg, instanceID: instanceID, store: st, deliveries: q, dlq: dlq, leader: lead, metrics: &telemetry.Metrics{}, activity: &activityLog{}, audit: au, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}, oidcStates: map[string]oidcState{}}
 	s.oidc = oidc.Config{
 		IssuerURL: cfg.OIDCIssuerURL, ClientID: cfg.OIDCClientID, ClientSecret: cfg.OIDCClientSecret,
 		RedirectURL: cfg.OIDCRedirectURL, GroupsClaim: cfg.OIDCGroupsClaim,
@@ -286,6 +307,10 @@ func (s *Server) routes() http.Handler {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		ds := s.deliveries.Stats()
 		qs := s.dlq.Stats()
+		// nodra_delivery_leader: 1 iff this replica is actively processing
+		// deliveries. In file-WAL mode that means "the elected leader"; in
+		// Postgres multi-writer mode every replica processes concurrently,
+		// so this is always 1 there once the worker loop has ticked once.
 		leaderGauge := 0
 		if s.isLeader.Load() {
 			leaderGauge = 1
@@ -1497,8 +1522,10 @@ func (s *Server) worker(ctx context.Context) {
 }
 
 // tryLead reports whether this replica may process deliveries right now,
-// updating isLeader for /metrics. Non-blocking: on any error it treats this
-// tick as not-leader rather than stalling the worker loop.
+// updating isLeader for /metrics. Only used in file-WAL/single-process mode
+// (see processDeliveries) — Postgres multi-writer mode bypasses this
+// entirely in favor of per-item claiming. Non-blocking: on any error it
+// treats this tick as not-leader rather than stalling the worker loop.
 func (s *Server) tryLead(ctx context.Context) bool {
 	held, err := s.leader.TryAcquire(ctx)
 	if err != nil {
@@ -1509,8 +1536,19 @@ func (s *Server) tryLead(ctx context.Context) bool {
 	return held
 }
 
+// processDeliveries dispatches ready deliveries for this tick. When
+// s.deliveries is a queue.Claimer (Postgres, multi-writer HA), every replica
+// runs this loop concurrently and claims items individually — there is no
+// single elected leader for delivery processing in that mode, so isLeader is
+// forced true (every participating replica is "leading" its own claimed
+// share). In file-WAL/single-process mode, deliveries doesn't implement
+// Claimer, so this falls back to the original single-leader gate via
+// tryLead (a no-op check against leader.AlwaysLeader{}).
 func (s *Server) processDeliveries(ctx context.Context) {
-	if !s.tryLead(ctx) {
+	claimer, multiWriter := s.deliveries.(queue.Claimer)
+	if multiWriter {
+		s.isLeader.Store(true)
+	} else if !s.tryLead(ctx) {
 		return
 	}
 	items, err := s.deliveries.List()
@@ -1524,7 +1562,16 @@ func (s *Server) processDeliveries(ctx context.Context) {
 		if d.NextAttempt.After(now) {
 			continue
 		}
+		if multiWriter {
+			ok, err := claimer.TryClaim(d.ID, s.instanceID, s.cfg.DeliveryClaimLease)
+			if err != nil || !ok {
+				continue
+			}
+		}
 		if _, loaded := s.inflight.LoadOrStore(d.ID, struct{}{}); loaded {
+			if multiWriter {
+				_ = claimer.ReleaseClaim(d.ID)
+			}
 			continue
 		}
 		wg.Add(1)

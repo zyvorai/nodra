@@ -9,17 +9,21 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/zyvorai/nodra/internal/model"
 	"github.com/zyvorai/nodra/internal/pki"
+	"github.com/zyvorai/nodra/internal/queue"
 	"github.com/zyvorai/nodra/pkg/ota"
 )
 
@@ -171,6 +175,92 @@ func TestFailedDeliveryBecomesAlert(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "delivery_failed") {
 		t.Fatalf("alerts=%s", b)
+	}
+}
+
+// TestPostgresMultiWriterDeliveryProcessing is the server-level proof that
+// wiring queue.Claimer into processDeliveries actually delivers true
+// multi-writer HA: two independent replicas racing against the same
+// Postgres-backed delivery queue must, between them, deliver every item
+// exactly once — never both, never neither — with no single elected leader.
+func TestPostgresMultiWriterDeliveryProcessing(t *testing.T) {
+	dsn := os.Getenv("NODRA_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("NODRA_DATABASE_URL unset — optional Postgres multi-writer delivery HA")
+	}
+
+	var mu sync.Mutex
+	seen := map[string]int{}
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen[r.Header.Get("X-Delivery-Id")]++
+		mu.Unlock()
+		w.WriteHeader(204)
+	}))
+	defer target.Close()
+
+	newReplica := func() *Server {
+		s, err := New(Config{StoreDriver: "postgres", DatabaseURL: dsn, DataDir: t.TempDir(), AdminToken: "adm", EnrollmentToken: "enroll", DeliveryClaimLease: 50 * time.Millisecond})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = s.Shutdown(context.Background()) })
+		return s
+	}
+	replicaA := newReplica()
+	replicaB := newReplica()
+
+	if _, ok := replicaA.deliveries.(queue.Claimer); !ok {
+		t.Fatal("expected postgres-backed deliveries to implement queue.Claimer")
+	}
+
+	prefix := fmt.Sprintf("mw_%d_", time.Now().UnixNano())
+	const n = 25
+	ids := make([]string, n)
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("%s%d", prefix, i)
+		ids[i] = id
+		d := model.Delivery{
+			ID: id, RouteID: "rt", EventID: id, SiteID: "site", Topic: "t",
+			TargetURL: target.URL, Method: "POST", Payload: json.RawMessage(`{}`),
+			Headers:     map[string]string{"X-Delivery-Id": id},
+			TimeoutSecs: 5, MaxAttempts: 3, NextAttempt: time.Now(), CreatedAt: time.Now(),
+		}
+		if err := replicaA.deliveries.Put(id, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Several ticks, both replicas racing concurrently each time — mirrors
+	// two real processes each running their own worker() loop.
+	for tick := 0; tick < 8; tick++ {
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() { defer wg.Done(); replicaA.ProcessOnce(context.Background()) }()
+		go func() { defer wg.Done(); replicaB.ProcessOnce(context.Background()) }()
+		wg.Wait()
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != n {
+		t.Fatalf("expected %d distinct deliveries processed, got %d: %v", n, len(seen), seen)
+	}
+	for _, id := range ids {
+		if seen[id] != 1 {
+			t.Fatalf("delivery %s processed %d times, want exactly 1 (no double-processing across replicas)", id, seen[id])
+		}
+	}
+
+	items, err := replicaA.deliveries.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range items {
+		if strings.HasPrefix(d.ID, prefix) {
+			t.Fatalf("delivery %s still pending after processing, want drained", d.ID)
+		}
 	}
 }
 func TestDeviceAndDeploymentLifecycle(t *testing.T) {

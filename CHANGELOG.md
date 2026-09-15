@@ -69,15 +69,23 @@
   deployment revert, not a staged/canary campaign — that remains on
   `ROADMAP.md`'s Next list.
 
-- Single-active-writer delivery/DLQ failover on Postgres
-  (`internal/queue.PostgresQueue`, `internal/leader`): with
-  `NODRA_STORE=postgres`, delivery/DLQ are now readable from any replica
-  pointed at the same database, but only one replica actively processes
-  them at a time via a non-blocking `pg_try_advisory_lock` check —
-  automatic failover on process/connection loss, **not** multi-writer
-  conflict-resolved HA. File mode (`NODRA_STORE=file`, the default) is
-  completely unaffected — still single-process by construction, no
-  coordination needed. `nodra_delivery_leader` gauge on `/metrics`.
+- True multi-writer delivery/DLQ HA on Postgres
+  (`internal/queue.PostgresQueue`): with `NODRA_STORE=postgres`, every
+  replica pointed at the same database now claims and processes deliveries
+  concurrently instead of routing through a single elected leader.
+  `PostgresQueue[T]` implements a new `queue.Claimer` capability
+  (`TryClaim`/`ReleaseClaim`) backed by an atomic conditional
+  `UPDATE ... RETURNING id` against new `claimed_by`/`claimed_at` columns;
+  a claim auto-expires after `Config.DeliveryClaimLease` (default `90s`) so
+  a crashed or hung replica's in-flight items become reclaimable rather
+  than stuck forever, and `Put` (a fresh delivery, or a reschedule after a
+  failed attempt) always clears any existing claim. `internal/leader`'s
+  `pg_try_advisory_lock` is still opened in Postgres mode but is no longer
+  consulted by delivery processing — retained only in case a future
+  singleton background task needs it. File mode (`NODRA_STORE=file`, the
+  default) is completely unaffected — still single-process by construction,
+  no coordination needed. `nodra_delivery_leader` on `/metrics` now reads 1
+  for every actively-processing replica rather than exactly one leader.
 
 - MQTT persistent sessions for QoS0/1 (`internal/mqtt`): `CONNECT`'s
   `CleanSession` flag and `ClientID` are now actually parsed (previously

@@ -54,7 +54,9 @@ CREATE TABLE IF NOT EXISTS %s (
 	data JSONB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS %s_seq_idx ON %s (seq);
-`, table, table, table)
+ALTER TABLE %s ADD COLUMN IF NOT EXISTS claimed_by TEXT;
+ALTER TABLE %s ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;
+`, table, table, table, table, table)
 }
 
 // OpenPostgres opens (creating if needed) a Postgres-backed queue at table.
@@ -117,10 +119,72 @@ func (q *PostgresQueue[T]) Put(id string, v T) error {
 	// seq is bumped on every Put, including re-puts of an existing id, so a
 	// retried/rescheduled delivery moves to the back of FIFO order — matching
 	// Queue[T].Put's behavior (it always increments q.seq before appending).
+	// claimed_by/claimed_at are cleared unconditionally: whoever calls Put
+	// (a fresh insert, or a reschedule after a failed delivery attempt) is
+	// declaring this record ready to be claimed again by any replica — a
+	// stale claim from a previous attempt must never linger past its data.
 	query := fmt.Sprintf(`INSERT INTO %s (id, seq, data) VALUES ($1, nextval(pg_get_serial_sequence('%s','seq')), $2)
-		ON CONFLICT (id) DO UPDATE SET seq = nextval(pg_get_serial_sequence('%s','seq')), data = EXCLUDED.data`,
+		ON CONFLICT (id) DO UPDATE SET seq = nextval(pg_get_serial_sequence('%s','seq')), data = EXCLUDED.data, claimed_by = NULL, claimed_at = NULL`,
 		q.table, q.table, q.table)
 	_, err = q.db.Exec(query, id, data)
+	return err
+}
+
+// Claimer is implemented by *PostgresQueue[T] (not by the file-WAL Queue[T],
+// which is single-process by construction and never needs it) to let
+// multiple replicas concurrently process the same shared queue: each item
+// is claimed by exactly one replica at a time via an atomic conditional
+// UPDATE, not gated behind a single elected leader — see internal/server's
+// processDeliveries for how this replaces the old single-leader-lock gate
+// specifically for delivery/DLQ processing (other singleton background
+// tasks, like audit retention, are unaffected and stay leader-gated, since
+// they don't need to scale and duplicate runs are merely wasteful, not
+// unsafe).
+type Claimer interface {
+	// TryClaim atomically claims id for owner if it is unclaimed or its
+	// existing claim's lease has expired (the claimant crashed or hung
+	// without releasing it), returning true iff this call won the claim.
+	// Never blocks waiting on another claimant.
+	//
+	// lease is evaluated against the EXISTING claim's age, not recorded
+	// anywhere — every replica claiming against the same table must pass
+	// the same configured lease duration, not an arbitrary per-call value,
+	// or "how stale is stale enough to steal" becomes inconsistent between
+	// callers.
+	TryClaim(id, owner string, lease time.Duration) (bool, error)
+	// ReleaseClaim clears id's claim (a no-op, not an error, if id no
+	// longer exists — e.g. it was already deleted after a successful
+	// delivery).
+	ReleaseClaim(id string) error
+}
+
+func (q *PostgresQueue[T]) TryClaim(id, owner string, lease time.Duration) (bool, error) {
+	if id == "" || owner == "" {
+		return false, errors.New("queue id and owner are required")
+	}
+	// Fractional seconds, not truncated to int — a sub-second lease (useful
+	// in tests, and for fast reclaim of a genuinely dead worker) must not
+	// get floored to a whole second.
+	leaseSeconds := lease.Seconds()
+	if leaseSeconds <= 0 {
+		leaseSeconds = 1
+	}
+	query := fmt.Sprintf(`UPDATE %s SET claimed_by = $1, claimed_at = now()
+		WHERE id = $2 AND (claimed_by IS NULL OR claimed_at < now() - ($3 * interval '1 second'))
+		RETURNING id`, q.table)
+	row := q.db.QueryRow(query, owner, id, leaseSeconds)
+	var got string
+	if err := row.Scan(&got); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil // claimed elsewhere within its lease, or id no longer exists
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (q *PostgresQueue[T]) ReleaseClaim(id string) error {
+	_, err := q.db.Exec(fmt.Sprintf(`UPDATE %s SET claimed_by = NULL, claimed_at = NULL WHERE id = $1`, q.table), id)
 	return err
 }
 func (q *PostgresQueue[T]) Delete(id string) error {

@@ -91,3 +91,80 @@ func TestPostgresQueueRoundTrip(t *testing.T) {
 		t.Fatalf("instance B did not see instance A's Put: v=%v ok=%v", v, ok)
 	}
 }
+
+// TestPostgresQueueClaimEnablesMultiWriterProcessing is the actual point of
+// multi-writer HA: two independent replicas racing to claim the same item
+// must never both win, a lost/expired claim must become reclaimable rather
+// than stuck forever, and Put must reset an item back to unclaimed so a
+// rescheduled/retried delivery isn't permanently stuck under a stale claim.
+func TestPostgresQueueClaimEnablesMultiWriterProcessing(t *testing.T) {
+	dsn := os.Getenv("NODRA_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("NODRA_DATABASE_URL unset — optional Postgres delivery queue multi-writer claiming")
+	}
+	table := fmt.Sprintf("nodra_test_claim_%d", time.Now().UnixNano())
+
+	replicaA, err := OpenPostgres[testItem](dsn, table, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = replicaA.db.Exec("DROP TABLE IF EXISTS " + table)
+		replicaA.Close()
+	}()
+	replicaB, err := OpenPostgres[testItem](dsn, table, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer replicaB.Close()
+
+	if err := replicaA.Put("x", testItem{Value: "1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ok, err := replicaA.TryClaim("x", "replica-a", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("replica A should win the claim: ok=%v err=%v", ok, err)
+	}
+	ok, err = replicaB.TryClaim("x", "replica-b", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("replica B must not win a claim replica A already holds")
+	}
+
+	// The lease argument is "how stale must the *existing* claim be before
+	// I'll steal it" — every replica in a real fleet is configured with the
+	// same lease duration, so both sides of a reclaim check use the same
+	// value here too (a short one, so the test doesn't need to sleep long).
+	const lease = 20 * time.Millisecond
+	if err := replicaA.ReleaseClaim("x"); err != nil {
+		t.Fatal(err)
+	}
+	ok, err = replicaA.TryClaim("x", "replica-a", lease)
+	if err != nil || !ok {
+		t.Fatalf("replica A should reclaim after release: ok=%v err=%v", ok, err)
+	}
+	time.Sleep(3 * lease)
+	ok, err = replicaB.TryClaim("x", "replica-b", lease)
+	if err != nil || !ok {
+		t.Fatalf("replica B should reclaim after replica A's lease expired: ok=%v err=%v", ok, err)
+	}
+
+	// Put (a reschedule after a failed delivery attempt) must clear any
+	// existing claim, so the item isn't stuck for the full lease duration.
+	if err := replicaA.Put("x", testItem{Value: "2-rescheduled"}); err != nil {
+		t.Fatal(err)
+	}
+	ok, err = replicaA.TryClaim("x", "replica-a", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("Put should have cleared replica B's claim: ok=%v err=%v", ok, err)
+	}
+
+	// Claiming a nonexistent id is not an error, just a miss.
+	ok, err = replicaA.TryClaim("does-not-exist", "replica-a", time.Minute)
+	if err != nil || ok {
+		t.Fatalf("claiming a nonexistent id: ok=%v err=%v", ok, err)
+	}
+}
