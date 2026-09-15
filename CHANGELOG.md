@@ -24,6 +24,13 @@
   latter a persistent-connection async-push architecture, neither an
   incremental extension of the current ticker-driven poller.
 
+- NATS bridge connector (`connectors/nats`): dependency-free, hand-rolled
+  NATS core client (INFO/CONNECT/SUB/MSG/PING/PONG/-ERR) that subscribes to
+  configured subjects and publishes into the ingest pipeline. No TLS,
+  clustering, queue groups, or JetStream in v1. Zenoh is explicitly not
+  implemented — its binary wire format has no small hand-rollable path;
+  see `docs/NATS_BRIDGE.md`.
+
 - Local route filter/transform rules (`internal/transform`): per-route `filter`
   (`exists`/`equals`/`min`/`max`/`in`) drops events locally before delivery;
   `transform` sets headers, drops/sets JSON fields, wraps the payload, and

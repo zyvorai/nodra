@@ -54,6 +54,7 @@ nav:
       - Hardware permissions: HARDWARE_PERMISSIONS.md
       - Relay bridge: RELAY.md
       - Industrial protocols: INDUSTRIAL_PROTOCOLS.md
+      - NATS bridge: NATS_BRIDGE.md
   - Security & supply chain:
       - Security model: SECURITY-MODEL.md
       - Supply chain: SUPPLY_CHAIN.md
