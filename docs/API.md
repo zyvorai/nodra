@@ -57,14 +57,32 @@ Defaults: `NODRA_ADMIN_USER=admin`, `NODRA_ADMIN_PASSWORD` falls back to `NODRA_
 
 A 202 means matching deliveries and the event were durably committed. 503/507 means the edge agent must retain and retry.
 
+## Multi-tenant orgs (v1, partial)
+
+`POST /orgs` (global admin token only) creates a named org and mints its own enrollment/admin/viewer bearer tokens, each returned in plaintext exactly once (only their hashes are persisted, like a site's agent token):
+
+```json
+{
+  "org": {"id": "org_...", "name": "acme", "created_at": "2026-09-15T..."},
+  "enrollment_token": "...", "admin_token": "...", "viewer_token": "..."
+}
+```
+
+Enroll a site into that org by passing its `enrollment_token` to `POST /enroll` instead of the global one — the resulting site's `org_id` is set accordingly. From then on, that org's `admin_token`/`viewer_token` behave exactly like the global admin/viewer tokens on every endpoint **except**:
+
+- `GET /sites` — an org-scoped token sees only sites with a matching `org_id`, never another org's sites and never the unscoped global fleet's sites
+- `POST /sites/{id}/revoke` — an org-scoped admin token gets `404` on a site outside its own org (not `403`, so it can't even confirm the site exists)
+
+Every other endpoint — devices, twins, routes, deployments, alerts, policy-packs, audit, deliveries/DLQ — is **not** org-filtered in v1: an org's admin/viewer token can see and act on the entire fleet's data there, identically to the global token. This is a real but deliberately partial isolation boundary, not full multi-tenant security isolation — do not rely on org tokens to keep tenants' non-site data apart from each other. Org management itself (`GET|POST /orgs`, `GET|DELETE /orgs/{id}`) is restricted to the global admin token; an org's own admin token cannot create, list, or delete orgs.
+
 ## Management
 
 - `GET /overview`
-- `GET /sites`
-- `POST /sites/{id}/revoke`
+- `GET /sites` — a global admin/viewer token sees every site; an org-scoped token (see Orgs below) sees only its own org's sites
+- `POST /sites/{id}/revoke` — an org-scoped admin token gets `404` (not `403`) on a site outside its own org
 - `POST /sites/{id}/rotate` — agent CSR re-sign (PKI); `403 site_revoked` when revoked
 - `GET /ca/crl` — unauthenticated X.509 CRL
-- `GET /audit` / `GET /audit/export` — durable audit trail
+- `GET /audit` / `GET /audit/export` — durable audit trail; fleet-wide regardless of caller's org, not org-filtered
 - `GET /devices`
 - `GET /twins`
 - `PUT /twins/{deviceID}/desired`
@@ -77,6 +95,8 @@ A 202 means matching deliveries and the event were durably committed. 503/507 me
 - `DELETE /deployments/{id}`
 - `GET|POST /policy-packs` — fleet policy packs (v1: `allowed_images` allowlist only)
 - `PATCH|DELETE /policy-packs/{id}`
+- `GET|POST /orgs` — multi-tenant orgs (v1, global admin token only — an org-scoped admin token gets `403`); `POST` returns `enrollment_token`/`admin_token`/`viewer_token` in plaintext exactly once
+- `GET|DELETE /orgs/{id}` — deleting an org doesn't reassign or delete its sites, it just orphans their `org_id` — those sites become invisible to any org-scoped token, still visible to a global one
 - `GET /alerts`
 - `POST /alerts/{id}/resolve`
 - `GET /events?minutes=60`

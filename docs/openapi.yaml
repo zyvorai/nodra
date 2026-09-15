@@ -168,6 +168,7 @@ paths:
         '200': {description: Accepted entries}
   /enroll:
     post:
+      summary: Enroll a site with either the global enrollment token or an org's own enrollment token (from POST /orgs); the resulting site's org_id is set accordingly
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [name, enrollment_token], properties: {name: {type: string}, enrollment_token: {type: string}, csr_pem: {type: string}}}}}}
       responses: {'201': {description: Site enrolled}, '401': {description: Bad bootstrap token}}
   /events:
@@ -193,6 +194,7 @@ paths:
   /sites:
     get:
       security: [{bearer: []}]
+      summary: List sites — a global admin/viewer token sees every site; an org-scoped token sees only its own org's sites
       responses: {'200': {description: Sites}}
   /routes:
     get:
@@ -345,9 +347,9 @@ paths:
   /sites/{id}/revoke:
     post:
       security: [{bearer: []}]
-      summary: Revoke a site (admin)
+      summary: Revoke a site (admin) — an org-scoped admin token gets 404 (not 403) on a site outside its own org, so it can't confirm the site exists
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
-      responses: {"200": {description: Revoked}, "404": {description: Not found}}
+      responses: {"200": {description: Revoked}, "404": {description: Not found, or belongs to another org}}
   /sites/{id}/rotate:
     post:
       security: [{bearer: []}]
@@ -376,6 +378,42 @@ paths:
           content:
             application/pkix-crl: {schema: {type: string, format: binary}}
         '503': {description: PKI not enabled}
+  /orgs:
+    get:
+      security: [{bearer: []}]
+      summary: List orgs (global admin token only — an org-scoped admin token gets 403)
+      responses:
+        '200': {description: Orgs, with token hashes always redacted}
+        '403': {description: Caller is not the global admin}
+    post:
+      security: [{bearer: []}]
+      summary: Create an org (global admin token only); returns its enrollment/admin/viewer tokens exactly once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [name], properties: {name: {type: string}}}
+      responses:
+        '201': {description: Created, includes enrollment_token/admin_token/viewer_token in plaintext once}
+        '400': {description: name is required}
+        '403': {description: Caller is not the global admin}
+  /orgs/{id}:
+    get:
+      security: [{bearer: []}]
+      summary: Get an org (global admin token only)
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: Org, with token hashes always redacted}
+        '403': {description: Caller is not the global admin}
+        '404': {description: Not found}
+    delete:
+      security: [{bearer: []}]
+      summary: Delete an org (global admin token only) — its already-enrolled sites keep their org_id but become invisible to any org-scoped token from then on
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        '204': {description: Deleted}
+        '403': {description: Caller is not the global admin}
+        '404': {description: Not found}
   /policy-packs:
     get:
       security: [{bearer: []}]

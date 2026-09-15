@@ -38,6 +38,11 @@ type Backend interface {
 	PolicyPack(id string) (model.PolicyPack, bool)
 	UpdatePolicyPack(id string, fn func(*model.PolicyPack)) error
 	DeletePolicyPack(id string) error
+	AddOrg(v model.Org) error
+	Orgs() []model.Org
+	Org(id string) (model.Org, bool)
+	UpdateOrg(id string, fn func(*model.Org)) error
+	DeleteOrg(id string) error
 	AddAlert(v model.Alert) error
 	Alerts() []model.Alert
 	ResolveAlert(id string) error

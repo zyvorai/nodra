@@ -232,6 +232,27 @@ func (s *Store) apply(o op) error {
 			}
 		}
 		s.state.PolicyPacks = out
+	case "org.add":
+		var v model.Org
+		_ = json.Unmarshal(o.Data, &v)
+		s.state.Orgs = append(s.state.Orgs, v)
+	case "org.set":
+		var v model.Org
+		_ = json.Unmarshal(o.Data, &v)
+		for i := range s.state.Orgs {
+			if s.state.Orgs[i].ID == v.ID {
+				s.state.Orgs[i] = v
+				return nil
+			}
+		}
+	case "org.del":
+		out := s.state.Orgs[:0]
+		for _, v := range s.state.Orgs {
+			if v.ID != o.ID {
+				out = append(out, v)
+			}
+		}
+		s.state.Orgs = out
 	case "alert.add":
 		var v model.Alert
 		_ = json.Unmarshal(o.Data, &v)
@@ -450,6 +471,48 @@ func (s *Store) DeletePolicyPack(id string) error {
 		return os.ErrNotExist
 	}
 	return s.mutate(op{Type: "policy.del", ID: id})
+}
+func (s *Store) AddOrg(v model.Org) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mutate(op{Type: "org.add", Data: mustJSON(v)})
+}
+func (s *Store) Orgs() []model.Org { return s.Snapshot().Orgs }
+func (s *Store) Org(id string) (model.Org, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, v := range s.state.Orgs {
+		if v.ID == id {
+			return v, true
+		}
+	}
+	return model.Org{}, false
+}
+func (s *Store) UpdateOrg(id string, fn func(*model.Org)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, v := range s.state.Orgs {
+		if v.ID == id {
+			fn(&v)
+			return s.mutate(op{Type: "org.set", Data: mustJSON(v)})
+		}
+	}
+	return os.ErrNotExist
+}
+func (s *Store) DeleteOrg(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	found := false
+	for _, v := range s.state.Orgs {
+		if v.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return os.ErrNotExist
+	}
+	return s.mutate(op{Type: "org.del", ID: id})
 }
 func (s *Store) AddAlert(v model.Alert) error {
 	s.mu.Lock()

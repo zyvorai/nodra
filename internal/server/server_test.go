@@ -263,6 +263,133 @@ func TestPostgresMultiWriterDeliveryProcessing(t *testing.T) {
 		}
 	}
 }
+
+// TestMultiTenantOrgScoping exercises the v1 partial multi-tenant isolation
+// boundary: org enrollment tokens route new sites into that org, org bearer
+// tokens see only their own org's sites (never another org's, never the
+// unscoped global fleet's), org admins can revoke their own sites but not
+// another org's or the global fleet's, and org management itself is
+// restricted to the global admin token.
+func TestMultiTenantOrgScoping(t *testing.T) {
+	_, _, c := newTestServer(t)
+
+	// Global fleet site, enrolled with the global enrollment token —
+	// OrgID stays "", exactly like every site before orgs existed.
+	globalSite, _ := enrollSite(t, c)
+
+	code, b := c.req("POST", "/api/v1/orgs", map[string]any{"name": "acme"}, "adm")
+	if code != 201 {
+		t.Fatalf("org create %d %s", code, b)
+	}
+	var acme struct {
+		EnrollmentToken string `json:"enrollment_token"`
+		AdminToken      string `json:"admin_token"`
+		ViewerToken     string `json:"viewer_token"`
+		Org             struct {
+			ID                  string `json:"id"`
+			EnrollmentTokenHash string `json:"enrollment_token_hash"`
+			AdminTokenHash      string `json:"admin_token_hash"`
+		} `json:"org"`
+	}
+	if err := json.Unmarshal(b, &acme); err != nil {
+		t.Fatal(err)
+	}
+	if acme.Org.ID == "" || acme.EnrollmentToken == "" || acme.AdminToken == "" || acme.ViewerToken == "" {
+		t.Fatalf("missing org credentials: %s", b)
+	}
+	if acme.Org.EnrollmentTokenHash != "" || acme.Org.AdminTokenHash != "" {
+		t.Fatalf("org response must never carry token hashes: %s", b)
+	}
+
+	code, b = c.req("POST", "/api/v1/orgs", map[string]any{"name": "globex"}, "adm")
+	if code != 201 {
+		t.Fatalf("second org create %d %s", code, b)
+	}
+	var globex struct {
+		AdminToken string `json:"admin_token"`
+	}
+	_ = json.Unmarshal(b, &globex)
+
+	// A site enrolled with acme's own enrollment token — not the global one.
+	code, b = c.req("POST", "/api/v1/enroll", map[string]any{"name": "acme-factory", "enrollment_token": acme.EnrollmentToken}, "")
+	if code != 201 {
+		t.Fatalf("org enroll %d %s", code, b)
+	}
+	var acmeEnroll struct {
+		SiteID string `json:"site_id"`
+	}
+	_ = json.Unmarshal(b, &acmeEnroll)
+
+	// acme's admin token sees only its own site.
+	code, b = c.req("GET", "/api/v1/sites", nil, acme.AdminToken)
+	if code != 200 {
+		t.Fatalf("acme sites %d %s", code, b)
+	}
+	var acmeSites []map[string]any
+	_ = json.Unmarshal(b, &acmeSites)
+	if len(acmeSites) != 1 || acmeSites[0]["id"] != acmeEnroll.SiteID {
+		t.Fatalf("acme admin should see exactly its own site, got %s", b)
+	}
+
+	// globex's admin token sees no sites at all (it has none).
+	code, b = c.req("GET", "/api/v1/sites", nil, globex.AdminToken)
+	if code != 200 {
+		t.Fatalf("globex sites %d %s", code, b)
+	}
+	var globexSites []map[string]any
+	_ = json.Unmarshal(b, &globexSites)
+	if len(globexSites) != 0 {
+		t.Fatalf("globex admin should see no sites, got %s", b)
+	}
+
+	// The global admin token still sees everything, unfiltered.
+	code, b = c.req("GET", "/api/v1/sites", nil, "adm")
+	if code != 200 {
+		t.Fatalf("global sites %d %s", code, b)
+	}
+	var allSites []map[string]any
+	_ = json.Unmarshal(b, &allSites)
+	if len(allSites) != 2 {
+		t.Fatalf("global admin should see both sites (global fleet + acme), got %s", b)
+	}
+
+	// globex cannot revoke acme's site (must not even reveal it exists).
+	code, _ = c.req("POST", "/api/v1/sites/"+acmeEnroll.SiteID+"/revoke", nil, globex.AdminToken)
+	if code != 404 {
+		t.Fatalf("globex revoking acme's site: want 404, got %d", code)
+	}
+	// globex cannot revoke the unscoped global fleet's site either.
+	code, _ = c.req("POST", "/api/v1/sites/"+globalSite+"/revoke", nil, globex.AdminToken)
+	if code != 404 {
+		t.Fatalf("globex revoking the global fleet's site: want 404, got %d", code)
+	}
+	// acme CAN revoke its own site.
+	code, _ = c.req("POST", "/api/v1/sites/"+acmeEnroll.SiteID+"/revoke", nil, acme.AdminToken)
+	if code != 200 {
+		t.Fatalf("acme revoking its own site: want 200, got %d", code)
+	}
+
+	// Org management itself is global-admin-only: acme's own admin token
+	// (an org-scoped admin) must not be able to create or list orgs.
+	code, _ = c.req("POST", "/api/v1/orgs", map[string]any{"name": "shouldnt-work"}, acme.AdminToken)
+	if code != 403 {
+		t.Fatalf("org-scoped admin creating an org: want 403, got %d", code)
+	}
+	code, _ = c.req("GET", "/api/v1/orgs", nil, acme.AdminToken)
+	if code != 403 {
+		t.Fatalf("org-scoped admin listing orgs: want 403, got %d", code)
+	}
+
+	// acme's viewer token can read but not revoke.
+	code, _ = c.req("GET", "/api/v1/sites", nil, acme.ViewerToken)
+	if code != 200 {
+		t.Fatalf("acme viewer read: want 200, got %d", code)
+	}
+	code, _ = c.req("POST", "/api/v1/sites/"+globalSite+"/revoke", nil, acme.ViewerToken)
+	if code != 403 {
+		t.Fatalf("acme viewer revoking: want 403, got %d", code)
+	}
+}
 func TestDeviceAndDeploymentLifecycle(t *testing.T) {
 	_, _, c := newTestServer(t)
 	site, tok := enrollSite(t, c)

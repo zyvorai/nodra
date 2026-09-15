@@ -351,6 +351,10 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("POST /api/v1/deployments", s.admin(http.HandlerFunc(s.deploymentCreate)))
 	mux.Handle("PATCH /api/v1/deployments/{id}", s.admin(http.HandlerFunc(s.deploymentPatch)))
 	mux.Handle("DELETE /api/v1/deployments/{id}", s.admin(http.HandlerFunc(s.deploymentDelete)))
+	mux.Handle("GET /api/v1/orgs", s.admin(http.HandlerFunc(s.orgs)))
+	mux.Handle("POST /api/v1/orgs", s.admin(http.HandlerFunc(s.orgCreate)))
+	mux.Handle("GET /api/v1/orgs/{id}", s.admin(http.HandlerFunc(s.orgGet)))
+	mux.Handle("DELETE /api/v1/orgs/{id}", s.admin(http.HandlerFunc(s.orgDelete)))
 	mux.Handle("GET /api/v1/policy-packs", s.admin(http.HandlerFunc(s.policyPacks)))
 	mux.Handle("POST /api/v1/policy-packs", s.admin(http.HandlerFunc(s.policyPackCreate)))
 	mux.Handle("PATCH /api/v1/policy-packs/{id}", s.admin(http.HandlerFunc(s.policyPackPatch)))
@@ -449,12 +453,72 @@ func (s *Server) roleForBearer(tok string) string {
 	if s.cfg.ViewerToken != "" && auth.EqualToken(tok, s.cfg.ViewerToken) {
 		return "viewer"
 	}
-	return ""
+	role, _ := s.orgRoleForBearer(tok)
+	return role
+}
+
+// orgRoleForBearer checks tok against every org's admin/viewer token hash,
+// returning the role and that org's ID. An org-scoped token grants exactly
+// the same "admin"/"viewer" capability as the matching global token on
+// every endpoint except the few explicitly org-filtered ones (sites list,
+// single-site revoke — see orgForBearer and docs/ARCHITECTURE.md's
+// "Multi-tenant orgs" section); it is not a general per-org permission
+// system in v1.
+func (s *Server) orgRoleForBearer(tok string) (role, orgID string) {
+	if tok == "" {
+		return "", ""
+	}
+	for _, org := range s.store.Orgs() {
+		if org.AdminTokenHash != "" && auth.EqualHash(org.AdminTokenHash, tok) {
+			return "admin", org.ID
+		}
+		if org.ViewerTokenHash != "" && auth.EqualHash(org.ViewerTokenHash, tok) {
+			return "viewer", org.ID
+		}
+	}
+	return "", ""
+}
+
+// orgForBearer reports which org (if any) tok is scoped to. An empty orgID
+// with scoped=false means tok is a global admin/viewer token (or doesn't
+// resolve to any role at all) and sees the whole fleet, unfiltered.
+func (s *Server) orgForBearer(tok string) (orgID string, scoped bool) {
+	if tok == "" {
+		return "", false
+	}
+	if s.cfg.AdminToken != "" && auth.EqualToken(tok, s.cfg.AdminToken) {
+		return "", false
+	}
+	if s.cfg.ViewerToken != "" && auth.EqualToken(tok, s.cfg.ViewerToken) {
+		return "", false
+	}
+	_, org := s.orgRoleForBearer(tok)
+	if org == "" {
+		return "", false
+	}
+	return org, true
+}
+
+// requireGlobalAdmin gates org-management endpoints to the platform
+// operator's own global admin token — an org-scoped admin token (a
+// tenant's own admin) must not be able to create, list, or delete orgs,
+// only the fleet-wide admin configured via Config.AdminToken. Writes a 403
+// and returns false when the caller doesn't qualify.
+func (s *Server) requireGlobalAdmin(w http.ResponseWriter, r *http.Request) bool {
+	tok := bearer(r)
+	if _, scoped := s.orgForBearer(tok); scoped || s.roleForBearer(tok) != "admin" {
+		errorJSON(w, 403, "global admin role required")
+		return false
+	}
+	return true
 }
 
 // actorForBearer resolves the audit-log actor (the console username) for a
 // request's bearer token, empty if it doesn't match a configured role.
 func (s *Server) actorForBearer(tok string) string {
+	if role, org := s.orgRoleForBearer(tok); role != "" {
+		return org + ":" + role
+	}
 	switch s.roleForBearer(tok) {
 	case "admin":
 		return s.cfg.AdminUser
@@ -666,9 +730,22 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &in) {
 		return
 	}
-	if s.cfg.EnrollmentToken == "" || !auth.EqualToken(in.EnrollmentToken, s.cfg.EnrollmentToken) {
-		errorJSON(w, 401, "invalid enrollment token")
-		return
+	orgID := ""
+	switch {
+	case s.cfg.EnrollmentToken != "" && auth.EqualToken(in.EnrollmentToken, s.cfg.EnrollmentToken):
+		// global fleet enrollment, orgID stays ""
+	default:
+		matched := false
+		for _, org := range s.store.Orgs() {
+			if org.EnrollmentTokenHash != "" && auth.EqualHash(org.EnrollmentTokenHash, in.EnrollmentToken) {
+				orgID, matched = org.ID, true
+				break
+			}
+		}
+		if !matched {
+			errorJSON(w, 401, "invalid enrollment token")
+			return
+		}
 	}
 	if strings.TrimSpace(in.Name) == "" {
 		errorJSON(w, 400, "site name is required")
@@ -680,7 +757,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
-	site := model.Site{ID: id("site"), Name: in.Name, TokenHash: auth.Hash(tok), Status: "online", CreatedAt: now, LastSeen: now, Metadata: in.Metadata}
+	site := model.Site{ID: id("site"), Name: in.Name, TokenHash: auth.Hash(tok), Status: "online", CreatedAt: now, LastSeen: now, Metadata: in.Metadata, OrgID: orgID}
 	out := map[string]any{"agent_token": tok}
 	if s.ca != nil && in.CSRPem != "" {
 		signed, er := pki.SignCSR(s.ca, []byte(in.CSRPem), site.ID, 90*24*time.Hour, s.crlDistributionPoints()...)
@@ -865,6 +942,19 @@ func countOpen(a []model.Alert) int {
 }
 func (s *Server) sites(w http.ResponseWriter, r *http.Request) {
 	v := s.store.Sites()
+	// An org-scoped token only ever sees its own org's sites — a site
+	// enrolled outside any org (OrgID=="") is invisible to it too, same as
+	// a different org's sites. A global admin/viewer token is unfiltered,
+	// unchanged from before orgs existed.
+	if orgID, scoped := s.orgForBearer(bearer(r)); scoped {
+		filtered := v[:0]
+		for _, site := range v {
+			if site.OrgID == orgID {
+				filtered = append(filtered, site)
+			}
+		}
+		v = filtered
+	}
 	cut := time.Now().Add(-90 * time.Second)
 	for i := range v {
 		if v[i].Revoked {
@@ -880,6 +970,13 @@ func (s *Server) sites(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) siteRevoke(w http.ResponseWriter, r *http.Request) {
 	idv := r.PathValue("id")
+	if orgID, scoped := s.orgForBearer(bearer(r)); scoped {
+		site, ok := s.store.Site(idv)
+		if !ok || site.OrgID != orgID {
+			errorJSON(w, 404, "site not found")
+			return
+		}
+	}
 	now := time.Now().UTC()
 	if err := s.store.UpdateSite(idv, func(v *model.Site) { v.Revoked = true; v.Status = "revoked"; v.RevokedAt = now }); err != nil {
 		errorJSON(w, 404, "site not found")
@@ -1347,6 +1444,104 @@ func (s *Server) policyPackDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", "", idv, "policy.delete", "policy pack deleted: "+idv, map[string]any{"policy_id": idv})
+	w.WriteHeader(204)
+}
+
+// redactedOrg strips the token hashes before an org ever reaches an HTTP
+// response — they're durable-storage-only (see model.Org), never exposed,
+// not even to the global admin that created them (the plaintext is
+// returned exactly once, at orgCreate time).
+func redactedOrg(o model.Org) model.Org {
+	o.EnrollmentTokenHash, o.AdminTokenHash, o.ViewerTokenHash = "", "", ""
+	return o
+}
+
+// orgs, orgCreate, and orgDelete are gated to the global admin token only
+// (requireGlobalAdmin) — org management is a platform-operator action, not
+// something a tenant's own org-scoped admin token can do to itself or to
+// other orgs. See docs/ARCHITECTURE.md's "Multi-tenant orgs" section for
+// the full, deliberately partial v1 scope: only sites-list and
+// single-site-revoke are org-filtered — every other endpoint (devices,
+// twins, routes, deployments, alerts, policy-packs, audit, deliveries)
+// remains fleet-wide regardless of which token, global or org-scoped, is
+// used to call it.
+func (s *Server) orgs(w http.ResponseWriter, r *http.Request) {
+	if !s.requireGlobalAdmin(w, r) {
+		return
+	}
+	v := s.store.Orgs()
+	out := make([]model.Org, len(v))
+	for i, o := range v {
+		out[i] = redactedOrg(o)
+	}
+	writeJSON(w, 200, asJSONList(out))
+}
+func (s *Server) orgCreate(w http.ResponseWriter, r *http.Request) {
+	if !s.requireGlobalAdmin(w, r) {
+		return
+	}
+	var in struct {
+		Name string `json:"name"`
+	}
+	if !s.decode(w, r, &in) {
+		return
+	}
+	if strings.TrimSpace(in.Name) == "" {
+		errorJSON(w, 400, "name is required")
+		return
+	}
+	enrollTok, err := auth.NewToken(24)
+	if err != nil {
+		errorJSON(w, 500, "token generation failed")
+		return
+	}
+	adminTok, err := auth.NewToken(24)
+	if err != nil {
+		errorJSON(w, 500, "token generation failed")
+		return
+	}
+	viewerTok, err := auth.NewToken(24)
+	if err != nil {
+		errorJSON(w, 500, "token generation failed")
+		return
+	}
+	org := model.Org{
+		ID: id("org"), Name: in.Name, CreatedAt: time.Now().UTC(),
+		EnrollmentTokenHash: auth.Hash(enrollTok), AdminTokenHash: auth.Hash(adminTok), ViewerTokenHash: auth.Hash(viewerTok),
+	}
+	if err := s.store.AddOrg(org); err != nil {
+		errorJSON(w, 507, err.Error())
+		return
+	}
+	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", "", org.Name, "org.create", "org created: "+org.Name, map[string]any{"org_id": org.ID})
+	writeJSON(w, 201, map[string]any{
+		"org": redactedOrg(org), "enrollment_token": enrollTok, "admin_token": adminTok, "viewer_token": viewerTok,
+	})
+}
+func (s *Server) orgGet(w http.ResponseWriter, r *http.Request) {
+	if !s.requireGlobalAdmin(w, r) {
+		return
+	}
+	org, ok := s.store.Org(r.PathValue("id"))
+	if !ok {
+		errorJSON(w, 404, "org not found")
+		return
+	}
+	writeJSON(w, 200, redactedOrg(org))
+}
+func (s *Server) orgDelete(w http.ResponseWriter, r *http.Request) {
+	if !s.requireGlobalAdmin(w, r) {
+		return
+	}
+	idv := r.PathValue("id")
+	if err := s.store.DeleteOrg(idv); err != nil {
+		errorJSON(w, 404, "org not found")
+		return
+	}
+	// Sites already enrolled under this org keep their OrgID — they don't
+	// get deleted or reassigned — but with no org left to match, only a
+	// global admin/viewer token can see them from here on (see sites()).
+	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", "", idv, "org.delete", "org deleted: "+idv, map[string]any{"org_id": idv})
 	w.WriteHeader(204)
 }
 func (s *Server) alerts(w http.ResponseWriter, r *http.Request) {

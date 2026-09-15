@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS nodra_twins (device_id TEXT PRIMARY KEY, data JSONB N
 CREATE TABLE IF NOT EXISTS nodra_routes (id TEXT PRIMARY KEY, data JSONB NOT NULL);
 CREATE TABLE IF NOT EXISTS nodra_deployments (id TEXT PRIMARY KEY, data JSONB NOT NULL);
 CREATE TABLE IF NOT EXISTS nodra_policy_packs (id TEXT PRIMARY KEY, data JSONB NOT NULL);
+CREATE TABLE IF NOT EXISTS nodra_orgs (id TEXT PRIMARY KEY, data JSONB NOT NULL);
 CREATE TABLE IF NOT EXISTS nodra_alerts (id TEXT PRIMARY KEY, data JSONB NOT NULL);
 CREATE TABLE IF NOT EXISTS nodra_events (id TEXT PRIMARY KEY, data JSONB NOT NULL, event_time TIMESTAMPTZ);
 CREATE TABLE IF NOT EXISTS nodra_seen_events (id TEXT PRIMARY KEY);
@@ -153,6 +154,16 @@ func (s *PostgresStore) load() error {
 			return err
 		}
 		s.state.PolicyPacks = append(s.state.PolicyPacks, v)
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := loadJSON(`SELECT data FROM nodra_orgs`, func(b []byte) error {
+		var v model.Org
+		if err := json.Unmarshal(b, &v); err != nil {
+			return err
+		}
+		s.state.Orgs = append(s.state.Orgs, v)
 		return nil
 	}); err != nil {
 		return err
@@ -452,6 +463,62 @@ func (s *PostgresStore) DeletePolicyPack(id string) error {
 		}
 	}
 	s.state.PolicyPacks = out
+	return nil
+}
+
+func (s *PostgresStore) AddOrg(v model.Org) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.upsert("nodra_orgs", "id", v.ID, v); err != nil {
+		return err
+	}
+	s.state.Orgs = append(s.state.Orgs, v)
+	return nil
+}
+func (s *PostgresStore) Orgs() []model.Org { return s.Snapshot().Orgs }
+func (s *PostgresStore) Org(id string) (model.Org, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, v := range s.state.Orgs {
+		if v.ID == id {
+			return v, true
+		}
+	}
+	return model.Org{}, false
+}
+func (s *PostgresStore) UpdateOrg(id string, fn func(*model.Org)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, v := range s.state.Orgs {
+		if v.ID == id {
+			fn(&v)
+			if err := s.upsert("nodra_orgs", "id", v.ID, v); err != nil {
+				return err
+			}
+			s.state.Orgs[i] = v
+			return nil
+		}
+	}
+	return os.ErrNotExist
+}
+func (s *PostgresStore) DeleteOrg(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res, err := s.db.Exec(`DELETE FROM nodra_orgs WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return os.ErrNotExist
+	}
+	out := s.state.Orgs[:0]
+	for _, v := range s.state.Orgs {
+		if v.ID != id {
+			out = append(out, v)
+		}
+	}
+	s.state.Orgs = out
 	return nil
 }
 

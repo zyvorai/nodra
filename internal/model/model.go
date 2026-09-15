@@ -22,6 +22,34 @@ type Site struct {
 	CertificateExpiresAt time.Time         `json:"certificate_expires_at,omitempty"`
 	Revoked              bool              `json:"revoked,omitempty"`
 	RevokedAt            time.Time         `json:"revoked_at,omitempty"`
+	// OrgID is empty for a site enrolled against the global enrollment
+	// token (or before orgs existed) — such sites are visible only to
+	// global admin/viewer tokens, never to an org-scoped token. See
+	// docs/ARCHITECTURE.md's "Multi-tenant orgs" section for exactly which
+	// endpoints are org-filtered in v1 (sites list + single-site
+	// revoke/rotate only — everything else is fleet-wide regardless of
+	// which token, global or org-scoped, is used).
+	OrgID string `json:"org_id,omitempty"`
+}
+
+// Org is a v1, deliberately partial tenant boundary: an org has its own
+// enrollment token (so its sites are distinguishable from the global fleet
+// and from other orgs) and its own admin/viewer bearer tokens (scoped to
+// "admin"/"viewer" role semantics identical to the global tokens). Only
+// EnrollmentTokenHash/AdminTokenHash/ViewerTokenHash are persisted — the
+// plaintext tokens are returned exactly once, at creation, like a site's
+// agent token.
+type Org struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+	// *TokenHash fields are marshaled for durable storage (like
+	// Site.TokenHash) but must never reach an HTTP response — callers
+	// redact them (set to "") on a copy before writeJSON, the same
+	// convention server.enroll() uses for Site.TokenHash.
+	EnrollmentTokenHash string `json:"enrollment_token_hash,omitempty"`
+	AdminTokenHash      string `json:"admin_token_hash,omitempty"`
+	ViewerTokenHash     string `json:"viewer_token_hash,omitempty"`
 }
 
 type Device struct {
@@ -156,4 +184,5 @@ type State struct {
 	Events      []Event      `json:"events"`
 	SeenEvents  []string     `json:"seen_event_ids,omitempty"`
 	PolicyPacks []PolicyPack `json:"policy_packs,omitempty"`
+	Orgs        []Org        `json:"orgs,omitempty"`
 }
