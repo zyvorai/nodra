@@ -51,6 +51,7 @@ nav:
       - Production: PRODUCTION.md
       - Qualification: QUALIFICATION.md
       - Integrations: INTEGRATIONS.md
+      - OTA integration: OTA_INTEGRATION.md
       - Hardware permissions: HARDWARE_PERMISSIONS.md
       - Relay bridge: RELAY.md
       - Industrial protocols: INDUSTRIAL_PROTOCOLS.md

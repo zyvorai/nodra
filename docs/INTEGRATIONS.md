@@ -35,8 +35,9 @@ credential storage until a real adapter ships.
 | Path | Status |
 |---|---|
 | OTA health probe against loopback `nodrad` HTTP | **Common lab pattern** — OTA `checks` may target `http://127.0.0.1:9091/healthz` |
+| Nodra-side OTA contract (`pkg/ota`) | **Real (contract only)** — manifest/request/status/capability types + A/B state machine; no MQTT/HTTP/twin transport wiring yet — see [OTA_INTEGRATION.md](OTA_INTEGRATION.md) |
 | Nodra assigning OS releases | **Out of scope** — Zyvor OTA + Fleet OTA contract |
-| Nodra agent self-update campaigns | **Roadmap** — not in v0.2.x |
+| Nodra agent self-update campaigns | **Roadmap** — staged multi-site campaigns remain Next |
 
 ## Relay
 

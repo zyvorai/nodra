@@ -14,6 +14,12 @@
 
 ## Unreleased
 
+- Zyvor OTA integration contract (`pkg/ota`): additive Manifest/Request/Status/
+  Capability types and A/B lifecycle state machine with transport-level
+  validation. `policy.health_timeout` is a Go duration string on the wire
+  (e.g. `"5m"`), not nanoseconds. Docs: `docs/OTA_INTEGRATION.md`. Contract
+  only — durable delivery / twin / API wiring remains follow-up work.
+
 - Fleet policy packs v1 (`internal/policy`): a named, versioned,
   fleet-wide-or-per-site `allowed_images` allowlist enforced on deployment
   create/patch. `*` in a pattern matches across `/` (OCI image refs use it

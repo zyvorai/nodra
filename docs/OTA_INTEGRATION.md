@@ -27,6 +27,8 @@ This separation prevents hardware- and bootloader-specific update code from beco
 
 Every artifact must include a SHA-256 digest and a signature reference. SBOM and bundle-format metadata are represented in the manifest. RAUC or SWUpdate bundles are preferred for system-image updates when supported by the target platform.
 
+`policy.health_timeout` is a Go duration string on the wire (for example `"5m"` or `"90s"`), not a nanosecond integer. An empty value means no timeout was specified.
+
 ## A/B lifecycle
 
 The Nodra-facing lifecycle is:
