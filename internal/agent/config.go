@@ -70,10 +70,15 @@ type Config struct {
 	CosignCertOIDCIssuer     string        `json:"cosign_certificate_oidc_issuer,omitempty"`
 	DeployHealthGrace        time.Duration `json:"-"`
 	DeployHealthGraceText    string        `json:"deploy_health_grace,omitempty"`
+	// MQTTSessionMaxItems/MQTTSessionMaxBytes bound the durable per-ClientID
+	// message queue used for persistent MQTT sessions (CleanSession=0,
+	// QoS0/1 only).
+	MQTTSessionMaxItems int   `json:"mqtt_session_max_items,omitempty"`
+	MQTTSessionMaxBytes int64 `json:"mqtt_session_max_bytes,omitempty"`
 }
 
 func DefaultConfig() Config {
-	return Config{ServerURL: "http://127.0.0.1:8080", SiteName: "edge-site", DataDir: "./nodra-agent-data", Listen: "127.0.0.1:9091", MQTTListen: "127.0.0.1:1883", HeartbeatText: "30s", FlushText: "2s", Runner: "none", MaxSpoolBytes: 2 << 30, MaxSpoolEvents: 1000000, SpoolPolicy: "reject", AuditRetentionDays: 30, CertRotateBeforeText: "720h", SignatureMode: "warn", DeployHealthGraceText: "60s"}
+	return Config{ServerURL: "http://127.0.0.1:8080", SiteName: "edge-site", DataDir: "./nodra-agent-data", Listen: "127.0.0.1:9091", MQTTListen: "127.0.0.1:1883", HeartbeatText: "30s", FlushText: "2s", Runner: "none", MaxSpoolBytes: 2 << 30, MaxSpoolEvents: 1000000, SpoolPolicy: "reject", AuditRetentionDays: 30, CertRotateBeforeText: "720h", SignatureMode: "warn", DeployHealthGraceText: "60s", MQTTSessionMaxItems: 20000, MQTTSessionMaxBytes: 64 << 20}
 }
 func LoadConfig(path string) (Config, error) {
 	b, err := os.ReadFile(path)
@@ -119,6 +124,12 @@ func (c *Config) normalize() error {
 	}
 	if c.AuditRetentionDays <= 0 {
 		c.AuditRetentionDays = 30
+	}
+	if c.MQTTSessionMaxItems <= 0 {
+		c.MQTTSessionMaxItems = 20000
+	}
+	if c.MQTTSessionMaxBytes <= 0 {
+		c.MQTTSessionMaxBytes = 64 << 20
 	}
 	if c.CertRotateBeforeText == "" {
 		c.CertRotateBeforeText = "720h"

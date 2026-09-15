@@ -195,7 +195,7 @@ mosquitto_pub -h 127.0.0.1 -p 1883 \
   -q 1 -m '{"c":31.2}'
 ```
 
-Nodra's embedded MQTT broker is deliberately focused on edge ingress/local fan-out. Persistent sessions and QoS 2 are not claimed in v0.2.
+Nodra's embedded MQTT broker is deliberately focused on edge ingress/local fan-out. Persistent sessions (`CleanSession=0`) are now supported for QoS 0/1 subscribers — a durable per-client queue replays missed messages (with `DUP` set) on reconnect, though in-memory subscription lists don't survive a broker restart. QoS 2 is still not claimed in v0.2.
 
 ## Local routes
 

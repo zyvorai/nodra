@@ -99,7 +99,7 @@ func New(cfg Config, configPath string) (*Agent, error) {
 			}
 			_, err := a.ingest(ctx, m.Topic, p, map[string]string{"x-nodra-ingress": "mqtt"})
 			return err
-		})
+		}).EnableSessions(filepath.Join(cfg.DataDir, "mqtt-sessions"), queue.Options{MaxItems: cfg.MQTTSessionMaxItems, MaxBytes: cfg.MQTTSessionMaxBytes, Policy: "reject"})
 	}
 	return a, nil
 }

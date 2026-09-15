@@ -2,10 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package mqtt implements the small MQTT 3.1.1 edge-ingress subset Nodra needs:
-// CONNECT, SUBSCRIBE, PUBLISH QoS 0/1, PUBACK, PINGREQ and DISCONNECT.
-// It is intentionally not a replacement for a full broker; persistent sessions and QoS2
-// are out of scope. The broker is sufficient for sensors/PLCs to publish locally and for
-// local applications to subscribe while the cloud is unavailable.
+// CONNECT (now parsing CleanSession and ClientID, previously silently
+// ignored), SUBSCRIBE, PUBLISH QoS 0/1, PUBACK, PINGREQ and DISCONNECT.
+// It is intentionally not a replacement for a full broker. Persistent
+// sessions (CleanSession=0) are supported for QoS0/1 subscribers when
+// EnableSessions is used — see its doc for the one honesty gap (in-memory
+// subscription lists don't survive a broker restart). QoS2 remains
+// explicitly unsupported regardless. The broker is sufficient for
+// sensors/PLCs to publish locally and for local applications to subscribe
+// while the cloud is unavailable.
 package mqtt
 
 import (
@@ -19,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zyvorai/nodra/internal/queue"
 	"github.com/zyvorai/nodra/internal/router"
 )
 
@@ -31,21 +37,27 @@ type Message struct {
 type Handler func(context.Context, Message) error
 
 type Broker struct {
-	Addr    string
-	Handler Handler
-	ln      net.Listener
-	mu      sync.RWMutex
-	clients map[*client]struct{}
+	Addr        string
+	Handler     Handler
+	ln          net.Listener
+	mu          sync.RWMutex
+	clients     map[*client]struct{}
+	sessionDir  string
+	sessionOpts queue.Options
+	sessMu      sync.Mutex
+	sessions    map[string]*persistentSession
 }
 type subscription struct {
 	filter string
 	qos    byte
 }
 type client struct {
-	c      net.Conn
-	wmu    sync.Mutex
-	subs   []subscription
-	closed chan struct{}
+	c       net.Conn
+	wmu     sync.Mutex
+	subsMu  sync.Mutex
+	subs    []subscription
+	closed  chan struct{}
+	session *persistentSession
 }
 
 func New(addr string, h Handler) *Broker {
@@ -77,6 +89,11 @@ func (b *Broker) Start(ctx context.Context) error {
 	}
 }
 func (b *Broker) Close() error {
+	b.sessMu.Lock()
+	for _, s := range b.sessions {
+		_ = s.q.Close()
+	}
+	b.sessMu.Unlock()
 	if b.ln != nil {
 		return b.ln.Close()
 	}
@@ -90,11 +107,33 @@ func (b *Broker) Publish(msg Message) {
 	}
 	b.mu.RUnlock()
 	for _, c := range cs {
-		for _, s := range c.subs {
+		c.subsMu.Lock()
+		subs := c.subs
+		c.subsMu.Unlock()
+		for _, s := range subs {
 			if router.Match(s.filter, msg.Topic) {
-				_ = c.sendPublish(msg.Topic, msg.Payload, minQoS(msg.QoS, s.qos))
+				_ = c.sendPublish(msg.Topic, msg.Payload, minQoS(msg.QoS, s.qos), false)
 				break
 			}
+		}
+	}
+	if b.sessionDir == "" {
+		return
+	}
+	b.sessMu.Lock()
+	sessions := make([]*persistentSession, 0, len(b.sessions))
+	for _, s := range b.sessions {
+		sessions = append(sessions, s)
+	}
+	b.sessMu.Unlock()
+	for _, s := range sessions {
+		// A live session already received this message via the loop above —
+		// enqueueing here too would double-deliver it once it reconnects.
+		if s.isLive() {
+			continue
+		}
+		if qos, ok := s.matches(msg.Topic); ok {
+			s.enqueue(msg.Topic, msg.Payload, minQoS(msg.QoS, qos))
 		}
 	}
 }
@@ -105,7 +144,16 @@ func minQoS(a, b byte) byte {
 	return b
 }
 func (b *Broker) serve(ctx context.Context, cl *client) {
-	defer func() { _ = cl.c.Close(); b.mu.Lock(); delete(b.clients, cl); b.mu.Unlock(); close(cl.closed) }()
+	defer func() {
+		_ = cl.c.Close()
+		b.mu.Lock()
+		delete(b.clients, cl)
+		b.mu.Unlock()
+		if cl.session != nil {
+			cl.session.detach(cl)
+		}
+		close(cl.closed)
+	}()
 	r := bufio.NewReader(cl.c)
 	connected := false
 	for {
@@ -119,13 +167,38 @@ func (b *Broker) serve(ctx context.Context, cl *client) {
 			if connected {
 				return
 			}
-			if err = validateConnect(payload); err != nil {
+			info, err := parseConnect(payload)
+			if err != nil {
 				return
 			}
-			if err = cl.write([]byte{0x20, 0x02, 0x00, 0x00}); err != nil {
+			sessionPresent := byte(0)
+			if b.sessionDir != "" {
+				if info.cleanSession {
+					b.discardSession(info.clientID)
+				} else {
+					sess, existed, err := b.resumeSession(info.clientID)
+					if err != nil {
+						return
+					}
+					cl.session = sess
+					sess.attach(cl)
+					cl.subsMu.Lock()
+					cl.subs = sess.snapshotSubs()
+					cl.subsMu.Unlock()
+					if existed {
+						sessionPresent = 1
+					}
+				}
+			}
+			if err = cl.write([]byte{0x20, 0x02, 0x00, sessionPresent}); err != nil {
 				return
 			}
 			connected = true
+			if cl.session != nil {
+				if err := cl.session.replay(cl); err != nil {
+					return
+				}
+			}
 		case 3:
 			if !connected {
 				return
@@ -150,7 +223,13 @@ func (b *Broker) serve(ctx context.Context, cl *client) {
 			if er != nil {
 				return
 			}
+			cl.subsMu.Lock()
 			cl.subs = append(cl.subs, subs...)
+			all := append([]subscription(nil), cl.subs...)
+			cl.subsMu.Unlock()
+			if cl.session != nil {
+				cl.session.setSubs(all)
+			}
 			ack := []byte{0x90, byte(2 + len(subs)), byte(pid >> 8), byte(pid)}
 			for _, s := range subs {
 				ack = append(ack, s.qos)
@@ -174,7 +253,7 @@ func (c *client) write(p []byte) error {
 	_, err := c.c.Write(p)
 	return err
 }
-func (c *client) sendPublish(topic string, payload []byte, qos byte) error {
+func (c *client) sendPublish(topic string, payload []byte, qos byte, dup bool) error {
 	vh := appendString(nil, topic)
 	if qos > 0 {
 		vh = append(vh, 0, 1)
@@ -183,6 +262,9 @@ func (c *client) sendPublish(topic string, payload []byte, qos byte) error {
 	h := byte(0x30)
 	if qos == 1 {
 		h |= 0x02
+	}
+	if qos > 0 && dup {
+		h |= 0x08
 	}
 	pkt := []byte{h}
 	pkt = append(pkt, encodeRemaining(len(body))...)
@@ -244,15 +326,39 @@ func appendString(dst []byte, s string) []byte {
 	dst = append(dst, byte(len(s)>>8), byte(len(s)))
 	return append(dst, []byte(s)...)
 }
-func validateConnect(p []byte) error {
+
+// connectInfo is the subset of a CONNECT packet's variable header/payload
+// this broker acts on: whether the client wants a persistent session
+// (CleanSession=0) and, if so, its ClientID.
+type connectInfo struct {
+	cleanSession bool
+	clientID     string
+}
+
+// parseConnect validates the protocol name/level (as validateConnect always
+// did) and additionally reads the connect-flags byte's CleanSession bit
+// (0x02) and the ClientID from the payload — both previously parsed far
+// enough to skip past, but never looked at. A persistent session (
+// CleanSession=0) requires a non-empty ClientID, per the MQTT 3.1.1 spec.
+func parseConnect(p []byte) (connectInfo, error) {
 	proto, rest, err := readString(p)
 	if err != nil {
-		return err
+		return connectInfo{}, err
 	}
 	if proto != "MQTT" || len(rest) < 4 || rest[0] != 4 {
-		return errors.New("only MQTT 3.1.1 supported")
+		return connectInfo{}, errors.New("only MQTT 3.1.1 supported")
 	}
-	return nil
+	flags := rest[1]
+	// rest[2:4] is Keep Alive — not enforced by this broker.
+	clientID, _, err := readString(rest[4:])
+	if err != nil {
+		return connectInfo{}, err
+	}
+	info := connectInfo{cleanSession: flags&0x02 != 0, clientID: clientID}
+	if !info.cleanSession && info.clientID == "" {
+		return connectInfo{}, errors.New("persistent session requires a non-empty client id")
+	}
+	return info, nil
 }
 func parsePublish(flags byte, p []byte) (string, []byte, byte, uint16, error) {
 	topic, rest, err := readString(p)

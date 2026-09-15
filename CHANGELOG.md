@@ -58,6 +58,19 @@
   completely unaffected — still single-process by construction, no
   coordination needed. `nodra_delivery_leader` gauge on `/metrics`.
 
+- MQTT persistent sessions for QoS0/1 (`internal/mqtt`): `CONNECT`'s
+  `CleanSession` flag and `ClientID` are now actually parsed (previously
+  silently ignored). `Broker.EnableSessions` opts a broker into durably
+  queuing messages matched while no live connection holds a `CleanSession=0`
+  session, replaying them with `DUP` set on reconnect (`CONNACK`'s
+  session-present byte reflects whether a prior session existed);
+  `CleanSession=1` discards prior state. Also fixes a pre-existing
+  unsynchronized-access race on a client's subscription list, found while
+  touching every read/write site for this change. QoS 2 remains explicitly
+  rejected exactly as before. One honesty gap: subscription lists are
+  in-memory only and don't survive a broker restart, though the durable
+  message queue itself does.
+
 - OPC-UA connector (`connectors/opcua`): dependency-free UA-TCP binary
   client and poller. SecurityPolicy None, anonymous session; Read polled by
   the connector, plus Write, GetEndpoints/FindServers and Browse as
