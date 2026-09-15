@@ -4,6 +4,7 @@
 package opcua
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math"
 	"testing"
@@ -123,6 +124,59 @@ func TestDecodeDataValueFieldOrderAndOffsets(t *testing.T) {
 	}
 	if r.b[r.off] != 0xAA {
 		t.Fatalf("misaligned: next byte=0x%02x, want 0xAA", r.b[r.off])
+	}
+}
+
+func TestEncodeVariantRoundTrip(t *testing.T) {
+	cases := []any{
+		true, false,
+		int16(-7), uint16(7),
+		int32(-72), uint32(72),
+		int64(-720), uint64(720),
+		float32(3.5), float64(31.25),
+		"hello opc-ua",
+	}
+	for _, want := range cases {
+		buf := &bytes.Buffer{}
+		if err := encodeVariant(buf, want); err != nil {
+			t.Fatalf("encodeVariant(%v): %v", want, err)
+		}
+		r := &reader{b: buf.Bytes()}
+		got, err := decodeVariant(r)
+		if err != nil {
+			t.Fatalf("decodeVariant(%v): %v", want, err)
+		}
+		if r.off != buf.Len() {
+			t.Fatalf("consumed %d of %d bytes for %v", r.off, buf.Len(), want)
+		}
+		if got != want {
+			t.Fatalf("round trip %v (%T) -> %v (%T)", want, want, got, got)
+		}
+	}
+}
+
+func TestEncodeVariantRejectsUnsupportedType(t *testing.T) {
+	buf := &bytes.Buffer{}
+	if err := encodeVariant(buf, struct{}{}); err == nil {
+		t.Fatal("expected unsupported type to be rejected")
+	}
+}
+
+func TestEncodeDataValueForWriteOmitsTimestamps(t *testing.T) {
+	buf := &bytes.Buffer{}
+	if err := encodeDataValueForWrite(buf, int32(9)); err != nil {
+		t.Fatal(err)
+	}
+	r := &reader{b: buf.Bytes()}
+	dv, err := decodeDataValue(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dv.Value != int32(9) || dv.SourceTimestamp != nil || dv.StatusCode != 0 {
+		t.Fatalf("%+v", dv)
+	}
+	if r.off != buf.Len() {
+		t.Fatalf("consumed %d of %d bytes", r.off, buf.Len())
 	}
 }
 

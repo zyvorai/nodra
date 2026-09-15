@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package opcua implements a dependency-free OPC-UA (UA-TCP binary) client
-// suitable for Nodra adapters. v1 scope is deliberately narrow: SecurityPolicy
+// suitable for Nodra adapters. Scope is deliberately narrow: SecurityPolicy
 // None only (no channel encryption/signing), an anonymous session, and the
-// Read service polled on an interval — no Subscribe/MonitoredItems, no
-// endpoint discovery (GetEndpoints/FindServers), no Browse, no Write. The
-// configured endpoint URL is dialed directly.
+// Read and Write services, plus GetEndpoints/FindServers/Browse. No
+// SecurityPolicy beyond None, no Subscribe/MonitoredItems — see
+// docs/INDUSTRIAL_PROTOCOLS.md. The Poller connector only ever polls Read;
+// Write/Browse/discovery are exposed as Client/package-level Go API calls,
+// not poller configuration. The configured endpoint URL is dialed directly.
 package opcua
 
 import (

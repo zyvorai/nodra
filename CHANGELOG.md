@@ -14,11 +14,15 @@
 
 ## Unreleased
 
-- OPC-UA connector (`connectors/opcua`): dependency-free UA-TCP binary client
-  and poller. v1 scope is deliberately narrow — SecurityPolicy None,
-  anonymous session, Read service only, polling only, no endpoint
-  discovery/Browse. Basic256Sha256, Write and Subscribe/MonitoredItems are
-  tracked as v2 follow-ups in `ROADMAP.md`.
+- OPC-UA connector (`connectors/opcua`): dependency-free UA-TCP binary
+  client and poller. SecurityPolicy None, anonymous session; Read polled by
+  the connector, plus Write, GetEndpoints/FindServers and Browse as
+  `Client`/package-level Go API calls (not poller config — mirrors how
+  Modbus's own Write isn't wired into its poller either). Basic256Sha256
+  security and Subscribe/MonitoredItems are tracked as v3 follow-ups in
+  `ROADMAP.md` — the former needs real asymmetric-crypto protocol work, the
+  latter a persistent-connection async-push architecture, neither an
+  incremental extension of the current ticker-driven poller.
 
 - Local route filter/transform rules (`internal/transform`): per-route `filter`
   (`exists`/`equals`/`min`/`max`/`in`) drops events locally before delivery;

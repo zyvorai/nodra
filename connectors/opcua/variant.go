@@ -4,7 +4,9 @@
 package opcua
 
 import (
+	"bytes"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -58,6 +60,60 @@ func decodeVariant(r *reader) (any, error) {
 	default:
 		return nil, fmt.Errorf("unsupported variant type id %d", mask&0x3F)
 	}
+}
+
+// encodeVariant encodes v as a scalar Variant, the encode-side counterpart
+// to decodeVariant. Supports exactly the same scalar type set decodeVariant
+// decodes (bool, (u)int16/32/64, float32/64, string) — anything else is
+// rejected with a clear error rather than guessed, mirroring decodeVariant's
+// own rejection of array variants.
+func encodeVariant(buf *bytes.Buffer, v any) error {
+	switch x := v.(type) {
+	case bool:
+		buf.WriteByte(1)
+		if x {
+			buf.WriteByte(1)
+		} else {
+			buf.WriteByte(0)
+		}
+	case int16:
+		buf.WriteByte(4)
+		writeUint16(buf, uint16(x))
+	case uint16:
+		buf.WriteByte(5)
+		writeUint16(buf, x)
+	case int32:
+		buf.WriteByte(6)
+		writeInt32(buf, x)
+	case uint32:
+		buf.WriteByte(7)
+		writeUint32(buf, x)
+	case int64:
+		buf.WriteByte(8)
+		writeInt64(buf, x)
+	case uint64:
+		buf.WriteByte(9)
+		writeUint64(buf, x)
+	case float32:
+		buf.WriteByte(10)
+		writeUint32(buf, math.Float32bits(x))
+	case float64:
+		buf.WriteByte(11)
+		writeFloat64(buf, x)
+	case string:
+		buf.WriteByte(12)
+		writeString(buf, x, false)
+	default:
+		return fmt.Errorf("encodeVariant: unsupported Go type %T for OPC-UA scalar write", v)
+	}
+	return nil
+}
+
+// encodeDataValueForWrite encodes a DataValue with only the Value field set
+// (mask 0x01) — Write conventionally omits timestamps.
+func encodeDataValueForWrite(buf *bytes.Buffer, v any) error {
+	buf.WriteByte(0x01)
+	return encodeVariant(buf, v)
 }
 
 // decodeDataValue decodes one DataValue per Part 6 §5.2.2.17: an encoding

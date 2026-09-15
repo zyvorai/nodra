@@ -78,19 +78,24 @@ This increment keeps protocol semantics in Nodra while Zyvor Device Agent owns o
 === "OPC-UA"
 
     A dependency-free, hand-rolled UA-TCP (binary) client, following the same
-    dependency-free philosophy as the Modbus TCP building block. v1 is
+    dependency-free philosophy as the Modbus TCP building block. Scope is
     deliberately narrow:
 
     - **SecurityPolicy `None` only** — no channel encryption or signing.
+      Deferred: needs X.509 cert load/parse, RSA-OAEP encrypt/decrypt,
+      PKCS#1/PSS signing, and nonce/HMAC-SHA256 key derivation — real
+      crypto-protocol work, not an incremental extension.
     - **Anonymous session only** — no username/password or certificate-based
       user tokens.
-    - **Read-only** — no Write service.
-    - **Polling only** — no Subscribe/MonitoredItems (event-driven push).
-    - **No endpoint discovery** — no `GetEndpoints`/`FindServers`/`Browse`;
-      the configured `endpoint` URL is dialed directly.
+    - **Polling only for Read** — no Subscribe/MonitoredItems (event-driven
+      push). Deferred: Subscribe needs a long-lived session with an async
+      server-push loop (keep-alive, republish, sequence-number bookkeeping)
+      — a second poller architecture, not an extension of the ticker-driven
+      `Poller`.
     - Values must decode as a scalar Boolean/Int16/UInt16/Int32/UInt32/
       Int64/UInt64/Float/Double/String/DateTime; an array or unsupported
-      Variant type fails that poll cycle.
+      Variant type fails that poll cycle (Read) or is rejected before
+      sending (Write).
 
     ```json
     {
@@ -109,6 +114,72 @@ This increment keeps protocol semantics in Nodra while Zyvor Device Agent owns o
     Each poll opens a fresh connection (Hello/Acknowledge, OpenSecureChannel,
     CreateSession, ActivateSession, Read, Close) rather than holding a
     session open across polls — the same per-call-dial pattern the Modbus
-    TCP client uses. Security policies beyond `None`, the Write service,
-    Subscribe/MonitoredItems, and endpoint discovery/Browse are tracked as
-    v2 follow-ups in `ROADMAP.md`.
+    TCP client uses.
+
+    **Write, discovery and Browse** are Go `Client`/package-level API calls,
+    not poller configuration — there's no `nodrad.json` config surface for
+    them, mirroring how Modbus's own `WriteSingleRegister` isn't wired into
+    its poller either:
+
+    ```go
+    cli := &opcua.Client{Endpoint: "opc.tcp://boiler-plc.local:4840", Timeout: 5 * time.Second}
+
+    // Write a single node's Value attribute.
+    status, err := cli.Write(ctx, opcua.NodeID{Namespace: 2, Numeric: 1001}, int32(72))
+
+    // Browse an address-space node's references.
+    refs, err := cli.Browse(ctx, opcua.NodeID{Namespace: 0, Numeric: 85}, 0, nil)
+
+    // Discovery services run over an unsecured pre-session channel, so
+    // they're package-level functions, not methods on an authenticated Client.
+    endpoints, err := opcua.GetEndpoints(ctx, "opc.tcp://boiler-plc.local:4840", 5*time.Second)
+    servers, err := opcua.FindServers(ctx, "opc.tcp://boiler-plc.local:4840", 5*time.Second)
+    ```
+
+    Basic256Sha256 security and Subscribe/MonitoredItems are tracked as v3
+    follow-ups in `ROADMAP.md`.
+
+=== "Serial (generic)"
+
+    A protocol-agnostic passthrough connector for devices that don't speak
+    Modbus/OPC-UA/J1939 — it opens a serial device and publishes each
+    delimited (or idle-gap-framed) chunk of bytes as a Nodra event without
+    decoding any application protocol. It shares Linux termios
+    configuration with the Modbus RTU transport via `internal/serialport`
+    rather than duplicating it, and is Linux-only for the same reason (a
+    non-Linux build still compiles and registers the `serial` connector
+    type; it only fails, with a clear error, when actually started).
+
+    ```json
+    {
+      "type": "serial",
+      "name": "sensor-line",
+      "config": {
+        "device": "/dev/ttyUSB0",
+        "baud": 9600,
+        "data_bits": 8,
+        "parity": "none",
+        "stop_bits": 1,
+        "framing": "delimiter",
+        "delimiter": "\n",
+        "max_frame": 65536,
+        "topic": "factory/sensor/raw",
+        "timeout": "2s"
+      }
+    }
+    ```
+
+    `framing` is `"delimiter"` (default, split on the one-byte `delimiter`,
+    itself defaulting to `"\n"`) or `"idle"` (flush whatever's been read
+    after `idle_timeout` of silence on the line, default `100ms`). `timeout`
+    is the reconnect backoff after an I/O error (e.g. device unplugged),
+    default `2s` — it is not a per-transaction deadline like Modbus's
+    `timeout`, since this connector is a continuous read loop, not a
+    request/response client. If no frame boundary shows up within
+    `max_frame` bytes, the buffer is dropped (logged, reflected in
+    connector health) rather than grown unboundedly — almost always a sign
+    of a misconfigured delimiter or baud rate, not a legitimately huge
+    frame.
+
+    The kernel/board is expected to own RS485 direction control, same as
+    Modbus RTU — Nodra does not silently rewrite RS485 mode.
