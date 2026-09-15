@@ -20,12 +20,22 @@ type nodeReader interface {
 	Read(ctx context.Context, nodeIDs []NodeID) ([]DataValue, error)
 }
 
-// PollerConfig configures a v1 OPC-UA poller: SecurityPolicy None, anonymous
-// session, Read-only, polling only — see docs/INDUSTRIAL_PROTOCOLS.md.
+// subscribeClient is satisfied by *Client; poller tests substitute a fake.
+type subscribeClient interface {
+	Subscribe(ctx context.Context, nodeIDs []NodeID, interval time.Duration, handler func(NodeID, DataValue)) error
+}
+
+// PollerConfig configures an OPC-UA poller: SecurityPolicy None, anonymous
+// session — see docs/INDUSTRIAL_PROTOCOLS.md. Mode "poll" (the default)
+// ticks Read on Interval; mode "subscribe" instead opens one long-lived
+// Subscribe/MonitoredItems session and reconnects (waiting Interval between
+// attempts) on any error — see Client.Subscribe's doc for why this is the
+// least-verified part of the package.
 type PollerConfig struct {
 	Endpoint string   `json:"endpoint"`
 	NodeIDs  []string `json:"node_ids"`
 	Topic    string   `json:"topic"`
+	Mode     string   `json:"mode,omitempty"`
 	Interval string   `json:"interval,omitempty"`
 	Timeout  string   `json:"timeout,omitempty"`
 }
@@ -35,6 +45,7 @@ type Poller struct {
 	cfg     PollerConfig
 	nodeIDs []NodeID
 	cli     nodeReader
+	subCli  subscribeClient
 	ival    time.Duration
 	cancel  context.CancelFunc
 	last    string
@@ -84,12 +95,18 @@ func NewPoller(name string, raw json.RawMessage) (connector.Connector, error) {
 		}
 		timeout = d
 	}
+	switch cfg.Mode {
+	case "", "poll", "subscribe":
+	default:
+		return nil, fmt.Errorf("opcua mode must be poll or subscribe, got %q", cfg.Mode)
+	}
 	if name == "" {
 		name = "opcua"
 	}
+	client := &Client{Endpoint: cfg.Endpoint, Timeout: timeout}
 	return &Poller{
 		name: name, cfg: cfg, nodeIDs: nodeIDs, ival: ival,
-		cli: &Client{Endpoint: cfg.Endpoint, Timeout: timeout},
+		cli: client, subCli: client,
 	}, nil
 }
 
@@ -97,8 +114,57 @@ func (p *Poller) Name() string { return p.name }
 func (p *Poller) Start(ctx context.Context, h connector.Handler) error {
 	ctx, cancel := context.WithCancel(ctx)
 	p.cancel = cancel
-	go p.loop(ctx, h)
+	if p.cfg.Mode == "subscribe" {
+		go p.subscribeLoop(ctx, h)
+	} else {
+		go p.loop(ctx, h)
+	}
 	return nil
+}
+
+// subscribeLoop keeps a long-lived Subscribe session open (see
+// Client.Subscribe), reconnecting with a p.ival backoff on any error —
+// mirroring the reconnect-on-error shape connectors/nats and connectors/
+// j1939 already use for their own persistent-connection connectors, since
+// this is fundamentally that same push-driven model, not the ticker-driven
+// polling connectors/modbus/connectors/opcua's own Read mode use.
+func (p *Poller) subscribeLoop(ctx context.Context, h connector.Handler) {
+	for ctx.Err() == nil {
+		err := p.subCli.Subscribe(ctx, p.nodeIDs, p.ival, func(id NodeID, dv DataValue) {
+			p.emitOne(ctx, h, id, dv)
+		})
+		if ctx.Err() != nil {
+			return
+		}
+		p.last = fmt.Sprintf("subscribe error, reconnecting: %v", err)
+		slog.Warn("opcua subscribe disconnected", "connector", p.name, "endpoint", p.cfg.Endpoint, "error", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(p.ival):
+		}
+	}
+}
+
+// emitOne publishes a single Subscribe-mode data-change notification, using
+// the same event shape (one values[] array) as poll() does for Read mode so
+// downstream local routes/transforms don't need to special-case which mode
+// produced an event.
+func (p *Poller) emitOne(ctx context.Context, h connector.Handler, id NodeID, dv DataValue) {
+	ov := opcuaValue{NodeID: id.String(), Value: dv.Value, StatusCode: dv.StatusCode}
+	if dv.SourceTimestamp != nil {
+		ov.SourceTimestamp = dv.SourceTimestamp.Format(time.RFC3339Nano)
+	}
+	payload, _ := json.Marshal(map[string]any{"endpoint": p.cfg.Endpoint, "values": []opcuaValue{ov}})
+	if err := h(ctx, connector.Event{
+		Topic: p.cfg.Topic, Payload: payload,
+		Headers: map[string]string{"x-nodra-ingress": "opcua", "x-nodra-connector": p.name},
+	}); err != nil {
+		p.last = err.Error()
+		slog.Warn("opcua ingest failed", "connector", p.name, "error", err)
+		return
+	}
+	p.last = "ok"
 }
 func (p *Poller) loop(ctx context.Context, h connector.Handler) {
 	t := time.NewTicker(p.ival)

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,15 +37,30 @@ func TestNewPollerDefaults(t *testing.T) {
 
 func TestNewPollerRejectsMissingFields(t *testing.T) {
 	cases := []string{
-		`{"node_ids":["ns=2;i=1"],"topic":"x"}`,                          // missing endpoint
-		`{"endpoint":"opc.tcp://x:4840","node_ids":["ns=2;i=1"]}`,        // missing topic
-		`{"endpoint":"opc.tcp://x:4840","topic":"x"}`,                    // missing node_ids
-		`{"endpoint":"opc.tcp://x:4840","node_ids":["bad"],"topic":"x"}`, // unparsable node id
+		`{"node_ids":["ns=2;i=1"],"topic":"x"}`,                                             // missing endpoint
+		`{"endpoint":"opc.tcp://x:4840","node_ids":["ns=2;i=1"]}`,                           // missing topic
+		`{"endpoint":"opc.tcp://x:4840","topic":"x"}`,                                       // missing node_ids
+		`{"endpoint":"opc.tcp://x:4840","node_ids":["bad"],"topic":"x"}`,                    // unparsable node id
+		`{"endpoint":"opc.tcp://x:4840","node_ids":["ns=2;i=1"],"topic":"x","mode":"push"}`, // invalid mode
 	}
 	for _, raw := range cases {
 		if _, err := NewPoller("p", json.RawMessage(raw)); err == nil {
 			t.Fatalf("expected error for config %s", raw)
 		}
+	}
+}
+
+func TestNewPollerAcceptsSubscribeMode(t *testing.T) {
+	raw, _ := json.Marshal(PollerConfig{
+		Endpoint: "opc.tcp://plc.local:4840", NodeIDs: []string{"ns=2;i=1001"}, Topic: "factory/plc", Mode: "subscribe",
+	})
+	c, err := NewPoller("plc", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := c.(*Poller)
+	if _, ok := p.subCli.(*Client); !ok {
+		t.Fatalf("subCli=%+v, want *Client", p.subCli)
 	}
 }
 
@@ -135,5 +151,87 @@ func TestPollHandlesReadError(t *testing.T) {
 	}
 	if h := p.Health(context.Background()); h.Healthy {
 		t.Fatalf("expected unhealthy after read error, got %+v", h)
+	}
+}
+
+// fakeSubscriber substitutes for *Client in subscribeLoop() tests, avoiding
+// any network. It always returns err (simulating a dropped connection) after
+// optionally invoking handler once on its first call, so tests can assert
+// both that an emitted event's shape is correct and that subscribeLoop
+// actually reconnects (calls Subscribe again) rather than giving up.
+type fakeSubscriber struct {
+	mu    sync.Mutex
+	calls int
+	err   error
+}
+
+func (f *fakeSubscriber) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
+func (f *fakeSubscriber) Subscribe(_ context.Context, nodeIDs []NodeID, _ time.Duration, handler func(NodeID, DataValue)) error {
+	f.mu.Lock()
+	f.calls++
+	first := f.calls == 1
+	f.mu.Unlock()
+	if first && len(nodeIDs) > 0 {
+		handler(nodeIDs[0], DataValue{Value: "first"})
+	}
+	return f.err
+}
+
+func TestSubscribeLoopEmitsAndReconnectsOnError(t *testing.T) {
+	fs := &fakeSubscriber{err: errors.New("connection dropped")}
+	p := &Poller{
+		name: "plc", subCli: fs, ival: 5 * time.Millisecond,
+		cfg:     PollerConfig{Endpoint: "opc.tcp://x:4840", Topic: "factory/plc"},
+		nodeIDs: []NodeID{{Namespace: 2, Numeric: 1}},
+	}
+
+	var mu sync.Mutex
+	var events []connector.Event
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.subscribeLoop(ctx, func(_ context.Context, ev connector.Event) error {
+			mu.Lock()
+			events = append(events, ev)
+			mu.Unlock()
+			return nil
+		})
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && fs.callCount() < 2 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	if fs.callCount() < 2 {
+		t.Fatalf("expected subscribeLoop to reconnect (>=2 Subscribe calls), got %d", fs.callCount())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(events) == 0 {
+		t.Fatal("expected at least one emitted event")
+	}
+	if events[0].Topic != "factory/plc" {
+		t.Fatalf("topic=%q", events[0].Topic)
+	}
+	if events[0].Headers["x-nodra-ingress"] != "opcua" {
+		t.Fatalf("headers=%v", events[0].Headers)
+	}
+	var payload struct {
+		Values []opcuaValue `json:"values"`
+	}
+	if err := json.Unmarshal(events[0].Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Values) != 1 || payload.Values[0].Value != "first" {
+		t.Fatalf("payload values=%+v", payload.Values)
 	}
 }

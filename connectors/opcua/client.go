@@ -479,7 +479,15 @@ func (s *session) readSecureMessage() (msgType string, body []byte, err error) {
 // in a Symmetric MSG frame, sends it, and returns the response bytes
 // starting right after the validated response TypeId.
 func (s *session) serviceCall(expectedRespTypeID uint32, reqBody []byte) ([]byte, error) {
-	if err := s.setDeadline(); err != nil {
+	return s.serviceCallDeadline(expectedRespTypeID, reqBody, s.timeout)
+}
+
+// serviceCallDeadline is serviceCall with an explicit deadline instead of
+// the session's default s.timeout — Publish (see subscribe.go) needs to
+// wait far longer than a normal request/response, since the server may
+// legitimately hold the request open until there's something to report.
+func (s *session) serviceCallDeadline(expectedRespTypeID uint32, reqBody []byte, deadline time.Duration) ([]byte, error) {
+	if err := s.conn.SetDeadline(time.Now().Add(deadline)); err != nil {
 		return nil, err
 	}
 	symHeader := make([]byte, 4)

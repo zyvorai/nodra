@@ -92,14 +92,23 @@
   a separate, larger piece of work tracked in `ROADMAP.md`.
 
 - OPC-UA connector (`connectors/opcua`): dependency-free UA-TCP binary
-  client and poller. SecurityPolicy None, anonymous session; Read polled by
-  the connector, plus Write, GetEndpoints/FindServers and Browse as
-  `Client`/package-level Go API calls (not poller config — mirrors how
-  Modbus's own Write isn't wired into its poller either). Basic256Sha256
-  security and Subscribe/MonitoredItems are tracked as v3 follow-ups in
-  `ROADMAP.md` — the former needs real asymmetric-crypto protocol work, the
-  latter a persistent-connection async-push architecture, neither an
-  incremental extension of the current ticker-driven poller.
+  client and poller. SecurityPolicy None, anonymous session; Write,
+  GetEndpoints/FindServers and Browse as `Client`/package-level Go API calls
+  (not poller config — mirrors how Modbus's own Write isn't wired into its
+  poller either). Basic256Sha256 security remains a follow-up in
+  `ROADMAP.md` — real asymmetric-crypto protocol work, deliberately not
+  attempted without a real server to verify against.
+
+- OPC-UA Subscribe/MonitoredItems (`connectors/opcua`): poller
+  `"mode": "subscribe"` opens one long-lived CreateSubscription +
+  CreateMonitoredItems + Publish session per node set instead of ticking
+  Read, emitting one event per server-pushed value change; reconnects with
+  an `interval` backoff on any error. `"mode": "poll"` (the previous, and
+  still default, Read-on-a-ticker behavior) is unchanged. This is the
+  least-verified part of the package: its multi-step protocol has more
+  surface for a subtle wire-format mistake to hide than Read/Write/Browse's
+  single request/response did — smoke-test against a real server before
+  production use.
 
 - NATS bridge connector (`connectors/nats`): dependency-free, hand-rolled
   NATS core client (INFO/CONNECT/SUB/MSG/PING/PONG/-ERR) that subscribes to

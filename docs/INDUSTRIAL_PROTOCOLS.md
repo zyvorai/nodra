@@ -87,11 +87,14 @@ This increment keeps protocol semantics in Nodra while Zyvor Device Agent owns o
       crypto-protocol work, not an incremental extension.
     - **Anonymous session only** — no username/password or certificate-based
       user tokens.
-    - **Polling only for Read** — no Subscribe/MonitoredItems (event-driven
-      push). Deferred: Subscribe needs a long-lived session with an async
-      server-push loop (keep-alive, republish, sequence-number bookkeeping)
-      — a second poller architecture, not an extension of the ticker-driven
-      `Poller`.
+    - **Read and Subscribe/MonitoredItems** — `mode: "poll"` (default) ticks
+      Read on `interval`; `mode: "subscribe"` instead opens one long-lived
+      Subscribe session and reconnects (waiting `interval` between attempts)
+      on any error. This is the least-verified part of the package: unlike
+      Read/Write/Browse's single-request-response shape, Subscribe's
+      multi-step CreateSubscription/CreateMonitoredItems/Publish protocol has
+      more surface for a subtle wire-format mistake to hide — smoke-test
+      against a real server (e.g. open62541) before production use.
     - Values must decode as a scalar Boolean/Int16/UInt16/Int32/UInt32/
       Int64/UInt64/Float/Double/String/DateTime; an array or unsupported
       Variant type fails that poll cycle (Read) or is rejected before
@@ -116,6 +119,35 @@ This increment keeps protocol semantics in Nodra while Zyvor Device Agent owns o
     session open across polls — the same per-call-dial pattern the Modbus
     TCP client uses.
 
+    Set `"mode": "subscribe"` instead of polling Read on an interval:
+
+    ```json
+    {
+      "type": "opcua",
+      "name": "boiler-plc-push",
+      "config": {
+        "endpoint": "opc.tcp://boiler-plc.local:4840",
+        "node_ids": ["ns=2;i=1001", "ns=2;s=Temperature"],
+        "topic": "factory/boiler/opcua",
+        "mode": "subscribe",
+        "interval": "1s",
+        "timeout": "5s"
+      }
+    }
+    ```
+
+    This holds one connection open (CreateSubscription + CreateMonitoredItems
+    for every configured node, then a continuous Publish loop) instead of
+    dialing per tick — `interval` becomes the requested publishing interval
+    and, separately, the reconnect backoff after an error. Each server-
+    pushed value is emitted as its own event, one node per event, unlike
+    `mode: "poll"`'s single event batching every configured node.
+
+    Only the Value attribute's data changes are monitored (no Events,
+    filters, or non-Value attributes); QueueSize is 1 with DiscardOldest, so
+    a burst of rapid changes only ever surfaces the latest value, not a
+    backlog.
+
     **Write, discovery and Browse** are Go `Client`/package-level API calls,
     not poller configuration — there's no `nodrad.json` config surface for
     them, mirroring how Modbus's own `WriteSingleRegister` isn't wired into
@@ -136,8 +168,12 @@ This increment keeps protocol semantics in Nodra while Zyvor Device Agent owns o
     servers, err := opcua.FindServers(ctx, "opc.tcp://boiler-plc.local:4840", 5*time.Second)
     ```
 
-    Basic256Sha256 security and Subscribe/MonitoredItems are tracked as v3
-    follow-ups in `ROADMAP.md`.
+    Basic256Sha256 security remains a follow-up in `ROADMAP.md` — real
+    asymmetric-crypto protocol work (X.509 cert load/parse, RSA-OAEP
+    encrypt/decrypt, PKCS#1/PSS signing, nonce/HMAC-SHA256 key derivation)
+    that's deliberately not attempted without a real server to verify
+    against: shipping a subtly-wrong "encrypted" channel would be worse than
+    not offering one.
 
 === "Serial (generic)"
 
