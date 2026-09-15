@@ -63,6 +63,35 @@ components:
       properties:
         username: {type: string}
         password: {type: string}
+    PolicyPack:
+      type: object
+      required: [name]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        version: {type: integer}
+        site_id: {type: string, description: Empty means fleet-wide}
+        enabled: {type: boolean}
+        allowed_images:
+          type: array
+          items: {type: string}
+          description: OCI image allowlist; * matches across /
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    AuditEntry:
+      type: object
+      required: [action, message]
+      properties:
+        id: {type: string}
+        time: {type: string, format: date-time}
+        actor: {type: string}
+        actor_type: {type: string, enum: [admin, viewer, agent, system]}
+        action: {type: string}
+        target: {type: string}
+        site_id: {type: string}
+        result: {type: string, enum: [ok, error, denied]}
+        message: {type: string}
+        detail: {type: object}
 paths:
   /version:
     get:
@@ -85,6 +114,26 @@ paths:
       responses:
         '200': {description: User descriptor}
         '401': {description: Unauthorized}
+  /auth/oidc/login:
+    get:
+      summary: Start OIDC console login (redirect to IdP)
+      responses:
+        '302': {description: Redirect to authorization endpoint}
+        '503': {description: OIDC not configured}
+  /auth/oidc/callback:
+    get:
+      summary: Complete OIDC login; redirects to console with bearer fragment
+      parameters:
+        - name: code
+          in: query
+          schema: {type: string}
+        - name: state
+          in: query
+          schema: {type: string}
+      responses:
+        '302': {description: Redirect with oidc_token fragment}
+        '403': {description: No configured group matched}
+        '503': {description: OIDC not configured}
   /activity:
     get:
       security: [{bearer: []}]
@@ -225,6 +274,26 @@ paths:
       summary: Agent reports deployment reconcile status
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: Updated}, "404": {description: Not found}}
+  /agent/deployments/{id}/rollback:
+    post:
+      security: [{bearer: []}]
+      summary: Agent-triggered rollback to last known-good image/version
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id]
+              properties:
+                site_id: {type: string}
+                reason: {type: string}
+      responses:
+        '200': {description: rolled_back true/false}
+        '401': {description: Unauthorized agent}
+        '403': {description: Deployment belongs to another site}
+        '404': {description: Not found}
   /agent/twins:
     get:
       security: [{bearer: []}]
@@ -242,6 +311,128 @@ paths:
       summary: Revoke a site (admin)
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: Revoked}, "404": {description: Not found}}
+  /sites/{id}/rotate:
+    post:
+      security: [{bearer: []}]
+      summary: Agent certificate rotation (CSR re-sign)
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [csr_pem]
+              properties:
+                csr_pem: {type: string}
+      responses:
+        '200': {description: New certificate issued}
+        '401': {description: Unauthorized agent}
+        '403': {description: site_revoked}
+        '503': {description: PKI not enabled}
+  /ca/crl:
+    get:
+      summary: Current X.509 certificate revocation list (unauthenticated)
+      responses:
+        '200':
+          description: DER or PEM CRL
+          content:
+            application/pkix-crl: {schema: {type: string, format: binary}}
+        '503': {description: PKI not enabled}
+  /policy-packs:
+    get:
+      security: [{bearer: []}]
+      summary: List fleet policy packs
+      responses:
+        '200':
+          description: Policy packs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/PolicyPack'}
+    post:
+      security: [{bearer: []}]
+      summary: Create a policy pack (allowed_images allowlist)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PolicyPack'}
+      responses:
+        '201': {description: Created}
+        '400': {description: Invalid}
+  /policy-packs/{id}:
+    patch:
+      security: [{bearer: []}]
+      summary: Update name, enabled, and/or allowed_images
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                enabled: {type: boolean}
+                allowed_images: {type: array, items: {type: string}}
+      responses:
+        '200': {description: Updated}
+        '404': {description: Not found}
+    delete:
+      security: [{bearer: []}]
+      summary: Delete a policy pack
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        '204': {description: Deleted}
+        '404': {description: Not found}
+  /audit:
+    get:
+      security: [{bearer: []}]
+      summary: Query durable audit log
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 1000}
+        - name: site_id
+          in: query
+          schema: {type: string}
+        - name: action
+          in: query
+          schema: {type: string}
+        - name: actor
+          in: query
+          schema: {type: string}
+        - name: cursor
+          in: query
+          schema: {type: string}
+      responses:
+        '200':
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AuditEntry'}
+  /audit/export:
+    get:
+      security: [{bearer: []}]
+      summary: Export audit log (downloadable)
+      parameters:
+        - name: site_id
+          in: query
+          schema: {type: string}
+        - name: action
+          in: query
+          schema: {type: string}
+      responses:
+        '200':
+          description: Exported audit records
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AuditEntry'}
   /routes/{id}:
     delete:
       security: [{bearer: []}]

@@ -62,6 +62,9 @@ A 202 means matching deliveries and the event were durably committed. 503/507 me
 - `GET /overview`
 - `GET /sites`
 - `POST /sites/{id}/revoke`
+- `POST /sites/{id}/rotate` — agent CSR re-sign (PKI); `403 site_revoked` when revoked
+- `GET /ca/crl` — unauthenticated X.509 CRL
+- `GET /audit` / `GET /audit/export` — durable audit trail
 - `GET /devices`
 - `GET /twins`
 - `PUT /twins/{deviceID}/desired`

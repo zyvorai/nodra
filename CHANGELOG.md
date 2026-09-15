@@ -14,6 +14,12 @@
 
 ## Unreleased
 
+- OpenAPI route coverage: document missing control-plane routes
+  (`/auth/oidc/*`, `/policy-packs`, `/audit`, `/ca/crl`, site rotate,
+  agent deployment rollback) and run `scripts/openapi-coverage.py` as an
+  explicit CI step on every Go matrix job so qualify no longer fails on
+  stale OpenAPI alone.
+
 - Zyvor OTA integration contract (`pkg/ota`): additive Manifest/Request/Status/
   Capability types and A/B lifecycle state machine with transport-level
   validation. `policy.health_timeout` is a Go duration string on the wire
