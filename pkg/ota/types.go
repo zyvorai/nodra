@@ -71,8 +71,10 @@ type Manifest struct {
 	RollbackSupported bool         `json:"rollback_supported"`
 }
 
-// Policy contains per-device execution policy. Fleet owns fleet-wide batching,
-// canaries and rollout orchestration.
+// Policy contains per-device execution policy. Nodra OTA campaigns
+// (internal/model.OTACampaign) own staged canary rollout and batching on
+// this control plane; an external Fleet product may still orchestrate
+// across Nodra instances.
 //
 // HealthTimeout is a Go duration string on the wire (for example "5m", "90s").
 // An empty value means no timeout was specified.

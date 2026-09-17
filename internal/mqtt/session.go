@@ -125,9 +125,10 @@ func itoa(n uint64) string {
 }
 
 // EnableSessions turns on persistent-session support (CleanSession=0) for
-// QoS0/1 subscribers, durably queuing messages matched while no live
+// QoS0/1/2 subscribers, durably queuing messages matched while no live
 // connection holds the session and replaying them (with DUP set) on
-// reconnect. QoS2 remains unsupported regardless.
+// reconnect. QoS2 replays go through the full outbound PUBLISH/PUBREC/
+// PUBREL/PUBCOMP handshake via sendPublish.
 //
 // Known limitation: subscription lists are in-memory only and are lost on a
 // broker/process restart. The durable message queue itself survives a

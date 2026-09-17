@@ -38,6 +38,10 @@ type Backend interface {
 	PolicyPack(id string) (model.PolicyPack, bool)
 	UpdatePolicyPack(id string, fn func(*model.PolicyPack)) error
 	DeletePolicyPack(id string) error
+	AddOTACampaign(v model.OTACampaign) error
+	OTACampaigns() []model.OTACampaign
+	OTACampaign(id string) (model.OTACampaign, bool)
+	UpdateOTACampaign(id string, fn func(*model.OTACampaign)) error
 	AddOrg(v model.Org) error
 	Orgs() []model.Org
 	Org(id string) (model.Org, bool)

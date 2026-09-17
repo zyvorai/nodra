@@ -4,11 +4,11 @@ Nodra integrates with, but does not replace, the Zyvor OTA agent.
 
 ## Responsibility boundary
 
-- **Fleet** owns targeting, maintenance windows, canaries, batch sizes, pause/resume and fleet-wide failure policy.
+- **Nodra OTA campaigns** (`/api/v1/ota/campaigns`) own targeting, canary waves, promote/abort and failure-threshold policy for rollouts managed on this control plane.
 - **Nodra** owns durable command delivery, edge connectivity, desired/reported state and forwarding OTA progress while sites are intermittently connected.
 - **Zyvor OTA Agent** owns download, artifact verification, device compatibility checks, staging, activation, reboot, boot verification, commit and rollback.
 
-This separation prevents hardware- and bootloader-specific update code from becoming part of Nodra's core protocol/runtime path.
+An external Fleet product may still orchestrate across Nodra instances; campaigns here are the in-process canary path for a single Nodra control plane.
 
 ## Wire protocol
 
@@ -16,6 +16,7 @@ OTA requests and status are carried through the same generic desired/reported De
 
 - `POST /api/v1/devices/{id}/ota` (admin) — set a device's desired OTA state. Body is a `pkg/ota.Request`; rejected with `400` if `Request.Validate()` fails (missing `update_id`, an invalid `Manifest`, etc.). Stored as `Twin.Desired["ota"]`.
 - `GET /api/v1/devices/{id}/ota` (admin) — convenience read of the device's current OTA `request`/`status`, extracted from its twin (everything here is also visible via the generic `GET /api/v1/twins`).
+- `GET|POST /api/v1/ota/campaigns`, `GET /api/v1/ota/campaigns/{id}`, `POST .../start|promote|abort` (admin) — staged multi-site canary campaigns. Targeting is `site_ids` and/or `device_ids`; stages use cumulative `canary_percent` (final stage must be 100). Start/promote select devices for the current wave and write the same `Twin.Desired["ota"]` path as the single-device endpoint (update_id = `{campaign_id}-{device_id}`). Outcomes are read back from twins; the campaign completes when every target is `committed`, or aborts when selected `failed`/`rolled-back` share meets `failure_threshold_percent` (default 10). Abort does not cancel in-flight device OTAs.
 - `POST /api/v1/agent/devices/{id}/ota/status` (agent, site-authenticated) — report OTA status. Body is `{"site_id", "status": pkg/ota.Status}`. Rejected with `400` if `Status.Validate()` fails, or `409` if the transition from the previously-reported state is illegal per `pkg/ota.ValidateTransition` (idempotent replay of the *same* state is always allowed). Stored as `Twin.Reported["ota"]`; a terminal `failed` or `rolled-back` status raises an `ota_failed`/`ota_rolled-back` alert.
 - `POST /v1/devices/{id}/ota/status` (nodrad-local, for the OTA agent running on the same host) — validates transport-level fields and forwards to the control-plane endpoint above.
 

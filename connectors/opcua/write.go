@@ -67,7 +67,7 @@ func (c *Client) Write(ctx context.Context, nodeID NodeID, value any) (uint32, e
 	if to <= 0 {
 		to = 5 * time.Second
 	}
-	s, err := dial(ctx, c.Endpoint, to)
+	s, err := dial(ctx, c.Endpoint, to, c.Security)
 	if err != nil {
 		return 0, err
 	}

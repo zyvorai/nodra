@@ -70,9 +70,9 @@ A 202 means matching deliveries and the event were durably committed. 503/507 me
 
 Enroll a site into that org by passing its `enrollment_token` to `POST /enroll` instead of the global one — the resulting site's `org_id` is set accordingly. From then on, that org's `admin_token`/`viewer_token` behave exactly like the global admin/viewer tokens, but scoped:
 
-- Every list endpoint (`GET /sites`, `/devices`, `/twins`, `/routes`, `/deployments`, `/policy-packs`, `/alerts`, `/events`, `/activity`, `/deadletters`, `/audit`) returns only entries scoped to the caller's own org, plus any fleet-wide entry (empty `site_id` — a global route/policy pack still applies to every org's sites, so it stays visible).
-- Every single-entity admin mutation (`POST /sites/{id}/revoke`, `PUT /twins/{id}/desired`, `DELETE /routes/{id}`, `PATCH|DELETE /deployments/{id}`, `PATCH|DELETE /policy-packs/{id}`, `POST /alerts/{id}/resolve`, `POST /deadletters/{id}/replay`, `DELETE /deadletters/{id}`, `POST|GET /devices/{id}/ota`) gets `404` if the target belongs to a different org (not `403`, so it can't even confirm the target exists) — and an org-scoped token can never mutate a fleet-wide resource, only create/change entries scoped to its own sites.
-- Every *create* endpoint that takes a `site_id` (`POST /routes`, `/deployments`, `/policy-packs`) gets `403` if `site_id` is empty or belongs to a different org — an org-scoped token can't create fleet-wide config or attach a resource to another org's site.
+- Every list endpoint (`GET /sites`, `/devices`, `/twins`, `/routes`, `/deployments`, `/policy-packs`, `/ota/campaigns`, `/alerts`, `/events`, `/activity`, `/deadletters`, `/audit`) returns only entries scoped to the caller's own org, plus any fleet-wide entry (empty `site_id` — a global route/policy pack still applies to every org's sites, so it stays visible). OTA campaigns are visible only when the caller can see every site involved.
+- Every single-entity admin mutation (`POST /sites/{id}/revoke`, `PUT /twins/{id}/desired`, `DELETE /routes/{id}`, `PATCH|DELETE /deployments/{id}`, `PATCH|DELETE /policy-packs/{id}`, `POST /alerts/{id}/resolve`, `POST /deadletters/{id}/replay`, `DELETE /deadletters/{id}`, `POST|GET /devices/{id}/ota`, `POST /ota/campaigns/{id}/start|promote|abort`) gets `404` if the target belongs to a different org (not `403`, so it can't even confirm the target exists) — and an org-scoped token can never mutate a fleet-wide resource, only create/change entries scoped to its own sites.
+- Every *create* endpoint that takes a `site_id` (`POST /routes`, `/deployments`, `/policy-packs`) — or campaign `site_ids`/`device_ids` (`POST /ota/campaigns`) — gets `403` if `site_id` is empty or belongs to a different org — an org-scoped token can't create fleet-wide config or attach a resource to another org's site.
 - `GET /overview`'s per-entity counts (`sites`, `devices`, `twins`, `routes`, `deployments`, `open_alerts`, `events`) are org-scoped too. `pending_deliveries`, `delivery_queue_bytes`, and `dead_letters` are the exception — they come from the delivery queue's own stats, which have no per-site breakdown, so they stay fleet-wide totals for every caller.
 
 Two known limitations, not oversights: `GET /audit`/`GET /audit/export` org-filter by dropping non-matching entries out of each fetched page rather than filtering the underlying query, so an org-scoped caller's page can come back thinner than its requested `limit` even though more matching history exists — `next_cursor` still pages forward correctly. And deliveries/DLQ *processing* itself (the background worker, not the `GET /deadletters` list) is never org-aware — it processes the whole fleet's queue regardless of org, which is correct, since delivery workers aren't acting on behalf of any particular caller.
@@ -92,6 +92,11 @@ Org management itself (`GET|POST /orgs`, `GET|DELETE /orgs/{id}`) is restricted 
 - `PUT /twins/{deviceID}/desired`
 - `POST /devices/{id}/ota` — set desired OTA state (`pkg/ota.Request`, validated)
 - `GET /devices/{id}/ota` — read a device's current OTA request/status
+- `GET|POST /ota/campaigns` — list / create staged multi-site OTA canary campaigns
+- `GET /ota/campaigns/{id}` — get campaign (refreshes per-device outcomes from twins)
+- `POST /ota/campaigns/{id}/start` — begin first canary wave (writes Twin.Desired["ota"])
+- `POST /ota/campaigns/{id}/promote` — advance to next wave
+- `POST /ota/campaigns/{id}/abort` — abort campaign (does not cancel in-flight device OTAs)
 - `GET|POST /routes`
 - `DELETE /routes/{id}`
 - `GET|POST /deployments`

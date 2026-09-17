@@ -81,12 +81,18 @@ This increment keeps protocol semantics in Nodra while Zyvor Device Agent owns o
     dependency-free philosophy as the Modbus TCP building block. Scope is
     deliberately narrow:
 
-    - **SecurityPolicy `None` only** — no channel encryption or signing.
-      Deferred: needs X.509 cert load/parse, RSA-OAEP encrypt/decrypt,
-      PKCS#1/PSS signing, and nonce/HMAC-SHA256 key derivation — real
-      crypto-protocol work, not an incremental extension.
+    - **SecurityPolicy `None` by default** — anonymous session, no channel
+      encryption or signing. **`Basic256Sha256` scaffolding** is wired:
+      set `security_policy` to `Basic256Sha256`, `security_mode` to `Sign`
+      or `SignAndEncrypt` (default), and `client_cert_path` /
+      `client_key_path` / `server_cert_path`. Without those cert paths the
+      connector fails fast with an actionable error. Full secure-channel
+      crypto (RSA-OAEP, PKCS#1/PSS signing, HMAC-SHA256 key derivation) is
+      not shipped in this build yet — even with readable certs you get a
+      clear "channel crypto is not available" error rather than a subtly
+      wrong encrypted channel. Tracked in `ROADMAP.md`.
     - **Anonymous session only** — no username/password or certificate-based
-      user tokens.
+      user tokens (independent of channel security policy).
     - **Read and Subscribe/MonitoredItems** — `mode: "poll"` (default) ticks
       Read on `interval`; `mode: "subscribe"` instead opens one long-lived
       Subscribe session and reconnects (waiting `interval` between attempts)
@@ -110,6 +116,26 @@ This increment keeps protocol semantics in Nodra while Zyvor Device Agent owns o
         "topic": "factory/boiler/opcua",
         "interval": "5s",
         "timeout": "5s"
+      }
+    }
+    ```
+
+    Optional Basic256Sha256 config (fails until channel crypto lands; cert
+    paths are required when this policy is selected):
+
+    ```json
+    {
+      "type": "opcua",
+      "name": "boiler-plc-secure",
+      "config": {
+        "endpoint": "opc.tcp://boiler-plc.local:4840",
+        "node_ids": ["ns=2;i=1001"],
+        "topic": "factory/boiler/opcua",
+        "security_policy": "Basic256Sha256",
+        "security_mode": "SignAndEncrypt",
+        "client_cert_path": "/etc/nodra/opcua/client.crt",
+        "client_key_path": "/etc/nodra/opcua/client.key",
+        "server_cert_path": "/etc/nodra/opcua/server.crt"
       }
     }
     ```
@@ -168,12 +194,11 @@ This increment keeps protocol semantics in Nodra while Zyvor Device Agent owns o
     servers, err := opcua.FindServers(ctx, "opc.tcp://boiler-plc.local:4840", 5*time.Second)
     ```
 
-    Basic256Sha256 security remains a follow-up in `ROADMAP.md` — real
-    asymmetric-crypto protocol work (X.509 cert load/parse, RSA-OAEP
-    encrypt/decrypt, PKCS#1/PSS signing, nonce/HMAC-SHA256 key derivation)
-    that's deliberately not attempted without a real server to verify
-    against: shipping a subtly-wrong "encrypted" channel would be worse than
-    not offering one.
+    Basic256Sha256 config scaffolding is in place (`security_policy`,
+    `security_mode`, cert paths on the poller and `Client.Security`); full
+    asymmetric secure-channel crypto remains a follow-up in `ROADMAP.md` —
+    shipping a subtly-wrong "encrypted" channel would be worse than failing
+    closed with a clear error when certs or crypto support are missing.
 
 === "Serial (generic)"
 

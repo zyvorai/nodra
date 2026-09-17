@@ -14,6 +14,14 @@
 
 ## Unreleased
 
+- Staged multi-site OTA canary campaigns (`model.OTACampaign`): create/list/get
+  plus `start` / `promote` / `abort` under `/api/v1/ota/campaigns`. Waves select
+  devices by cumulative `canary_percent` and write the same Twin.Desired["ota"]
+  path as single-device OTA — no parallel delivery. Per-device outcomes are
+  tracked from twins; the campaign completes when the final wave is fully
+  committed, or aborts when selected failures meet `failure_threshold_percent`
+  (default 10). Persisted in the file WAL and Postgres fleet stores.
+
 - OpenAPI route coverage: document missing control-plane routes
   (`/auth/oidc/*`, `/policy-packs`, `/audit`, `/ca/crl`, site rotate,
   agent deployment rollback) and run `scripts/openapi-coverage.py` as an
@@ -32,8 +40,8 @@
   devices/{id}/ota/status` (agent — `400` on an invalid status, `409` on an
   illegal `pkg/ota` lifecycle transition, `ota_failed`/`ota_rolled-back`
   alerts on a terminal bad state), and nodrad-local `POST /v1/devices/{id}/
-  ota/status` forwarding to it. Single-device request/status only — staged
-  multi-site canary campaigns remain future work on `ROADMAP.md`.
+  ota/status` forwarding to it. Staged multi-site canary campaigns are now
+  available via `/api/v1/ota/campaigns` (see Unreleased note above).
 
 - Fleet policy packs v1 (`internal/policy`): a named, versioned,
   fleet-wide-or-per-site `allowed_images` allowlist enforced on deployment

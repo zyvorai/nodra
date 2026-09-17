@@ -6,6 +6,8 @@ package model
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/zyvorai/nodra/pkg/ota"
 )
 
 type Site struct {
@@ -174,15 +176,64 @@ type PolicyPack struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
+// OTA campaign status values.
+const (
+	OTACampaignDraft     = "draft"
+	OTACampaignRunning   = "running"
+	OTACampaignPaused    = "paused"
+	OTACampaignCompleted = "completed"
+	OTACampaignAborted   = "aborted"
+)
+
+// OTACampaignStage is one canary wave. CanaryPercent is cumulative: by the
+// end of this stage, that percentage of TargetDeviceIDs should have received
+// the campaign's Desired["ota"] write (ceil, at least one when the target
+// set is non-empty). Stages must be strictly increasing and the last stage
+// must be 100.
+type OTACampaignStage struct {
+	CanaryPercent int `json:"canary_percent"`
+}
+
+// OTACampaignDevice tracks one device selected into a campaign wave and the
+// last observed pkg/ota lifecycle state from its twin (empty until reported).
+type OTACampaignDevice struct {
+	DeviceID string    `json:"device_id"`
+	SiteID   string    `json:"site_id"`
+	UpdateID string    `json:"update_id"`
+	Stage    int       `json:"stage"`
+	State    ota.State `json:"state,omitempty"`
+}
+
+// OTACampaign is a staged, multi-site OTA canary rollout. Delivery still
+// goes through Twin.Desired["ota"] per device — the campaign only owns
+// targeting, wave selection, promote/abort, and outcome aggregation.
+type OTACampaign struct {
+	ID                      string              `json:"id"`
+	Name                    string              `json:"name"`
+	SiteIDs                 []string            `json:"site_ids,omitempty"`
+	DeviceIDs               []string            `json:"device_ids,omitempty"`
+	Stages                  []OTACampaignStage  `json:"stages"`
+	Manifest                ota.Manifest        `json:"manifest"`
+	Policy                  ota.Policy          `json:"policy"`
+	FailureThresholdPercent int                 `json:"failure_threshold_percent"`
+	Status                  string              `json:"status"`
+	CurrentStage            int                 `json:"current_stage"` // -1 while draft; else index into Stages
+	TargetDeviceIDs         []string            `json:"target_device_ids,omitempty"`
+	Devices                 []OTACampaignDevice `json:"devices,omitempty"`
+	CreatedAt               time.Time           `json:"created_at"`
+	UpdatedAt               time.Time           `json:"updated_at"`
+}
+
 type State struct {
-	Sites       []Site       `json:"sites"`
-	Devices     []Device     `json:"devices"`
-	Twins       []Twin       `json:"twins,omitempty"`
-	Routes      []Route      `json:"routes"`
-	Deployments []Deployment `json:"deployments"`
-	Alerts      []Alert      `json:"alerts"`
-	Events      []Event      `json:"events"`
-	SeenEvents  []string     `json:"seen_event_ids,omitempty"`
-	PolicyPacks []PolicyPack `json:"policy_packs,omitempty"`
-	Orgs        []Org        `json:"orgs,omitempty"`
+	Sites        []Site        `json:"sites"`
+	Devices      []Device      `json:"devices"`
+	Twins        []Twin        `json:"twins,omitempty"`
+	Routes       []Route       `json:"routes"`
+	Deployments  []Deployment  `json:"deployments"`
+	Alerts       []Alert       `json:"alerts"`
+	Events       []Event       `json:"events"`
+	SeenEvents   []string      `json:"seen_event_ids,omitempty"`
+	PolicyPacks  []PolicyPack  `json:"policy_packs,omitempty"`
+	Orgs         []Org         `json:"orgs,omitempty"`
+	OTACampaigns []OTACampaign `json:"ota_campaigns,omitempty"`
 }

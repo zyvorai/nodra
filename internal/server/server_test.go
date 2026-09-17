@@ -1131,3 +1131,245 @@ func TestDeploymentRollbackOnUnhealthy(t *testing.T) {
 		t.Fatalf("expected a deployment.rollback audit entry, got: %s", b)
 	}
 }
+
+func otaCampaignManifest() ota.Manifest {
+	return ota.Manifest{
+		ArtifactID: "gw-fw", Version: "3.0.0", Type: ota.ArtifactFirmware,
+		Architecture: "arm64", SizeBytes: 2048,
+		SHA256: strings.Repeat("b", 64), Signature: "sig",
+	}
+}
+
+func TestOTACampaignCreateStartPromoteAbort(t *testing.T) {
+	_, _, c := newTestServer(t)
+	site, tok := enrollSite(t, c)
+	for _, id := range []string{"dev-a", "dev-b", "dev-c", "dev-d"} {
+		code, b := c.req("POST", "/api/v1/devices/register", map[string]any{
+			"id": id, "site_id": site, "name": id, "protocol": "modbus",
+		}, tok)
+		if code != 201 {
+			t.Fatalf("register %s: %d %s", id, code, b)
+		}
+	}
+
+	body := map[string]any{
+		"name":     "canary-fw",
+		"site_ids": []string{site},
+		"stages": []map[string]any{
+			{"canary_percent": 25},
+			{"canary_percent": 50},
+			{"canary_percent": 100},
+		},
+		"manifest":                    otaCampaignManifest(),
+		"policy":                      map[string]any{"reboot_required": true, "rollback_on_failure": true},
+		"failure_threshold_percent":   100, // never auto-abort during this happy-path test
+	}
+	code, b := c.req("POST", "/api/v1/ota/campaigns", body, "adm")
+	if code != 201 {
+		t.Fatalf("create %d %s", code, b)
+	}
+	var camp model.OTACampaign
+	if err := json.Unmarshal(b, &camp); err != nil {
+		t.Fatal(err)
+	}
+	if camp.Status != model.OTACampaignDraft || camp.CurrentStage != -1 || camp.ID == "" {
+		t.Fatalf("unexpected create payload: %+v", camp)
+	}
+
+	code, b = c.req("GET", "/api/v1/ota/campaigns", nil, "adm")
+	if code != 200 || !strings.Contains(string(b), camp.ID) {
+		t.Fatalf("list %d %s", code, b)
+	}
+
+	code, b = c.req("POST", "/api/v1/ota/campaigns/"+camp.ID+"/start", nil, "adm")
+	if code != 200 {
+		t.Fatalf("start %d %s", code, b)
+	}
+	if err := json.Unmarshal(b, &camp); err != nil {
+		t.Fatal(err)
+	}
+	if camp.Status != model.OTACampaignRunning || camp.CurrentStage != 0 {
+		t.Fatalf("after start: status=%s stage=%d", camp.Status, camp.CurrentStage)
+	}
+	// 25% of 4 devices → 1 device (ceil)
+	if len(camp.Devices) != 1 {
+		t.Fatalf("canary wave 0: want 1 device, got %d (%+v)", len(camp.Devices), camp.Devices)
+	}
+	first := camp.Devices[0].DeviceID
+	code, b = c.req("GET", "/api/v1/devices/"+first+"/ota", nil, "adm")
+	if code != 200 || !strings.Contains(string(b), camp.ID+"-"+first) {
+		t.Fatalf("desired ota missing after start: %d %s", code, b)
+	}
+
+	code, b = c.req("POST", "/api/v1/ota/campaigns/"+camp.ID+"/promote", nil, "adm")
+	if code != 200 {
+		t.Fatalf("promote %d %s", code, b)
+	}
+	_ = json.Unmarshal(b, &camp)
+	if camp.CurrentStage != 1 || len(camp.Devices) != 2 {
+		t.Fatalf("after promote: stage=%d devices=%d", camp.CurrentStage, len(camp.Devices))
+	}
+
+	code, b = c.req("POST", "/api/v1/ota/campaigns/"+camp.ID+"/abort", nil, "adm")
+	if code != 200 {
+		t.Fatalf("abort %d %s", code, b)
+	}
+	_ = json.Unmarshal(b, &camp)
+	if camp.Status != model.OTACampaignAborted {
+		t.Fatalf("want aborted, got %s", camp.Status)
+	}
+
+	code, _ = c.req("POST", "/api/v1/ota/campaigns/"+camp.ID+"/promote", nil, "adm")
+	if code != 409 {
+		t.Fatalf("promote after abort: want 409, got %d", code)
+	}
+}
+
+func TestOTACampaignValidation(t *testing.T) {
+	_, _, c := newTestServer(t)
+	site, _ := enrollSite(t, c)
+
+	manifest := otaCampaignManifest()
+	cases := []struct {
+		name string
+		body map[string]any
+	}{
+		{"missing name", map[string]any{
+			"site_ids": []string{site},
+			"stages":   []map[string]any{{"canary_percent": 100}},
+			"manifest": manifest,
+		}},
+		{"no targets", map[string]any{
+			"name": "x", "stages": []map[string]any{{"canary_percent": 100}}, "manifest": manifest,
+		}},
+		{"non-increasing stages", map[string]any{
+			"name": "x", "site_ids": []string{site},
+			"stages":   []map[string]any{{"canary_percent": 50}, {"canary_percent": 50}},
+			"manifest": manifest,
+		}},
+		{"final not 100", map[string]any{
+			"name": "x", "site_ids": []string{site},
+			"stages":   []map[string]any{{"canary_percent": 50}},
+			"manifest": manifest,
+		}},
+		{"bad manifest", map[string]any{
+			"name": "x", "site_ids": []string{site},
+			"stages": []map[string]any{{"canary_percent": 100}},
+			"manifest": map[string]any{"artifact_id": "x", "version": "1", "type": "firmware",
+				"architecture": "arm64", "size_bytes": 1, "sha256": "nope", "signature": "s"},
+		}},
+	}
+	for _, tc := range cases {
+		code, b := c.req("POST", "/api/v1/ota/campaigns", tc.body, "adm")
+		if code != 400 {
+			t.Fatalf("%s: want 400, got %d %s", tc.name, code, b)
+		}
+	}
+}
+
+func TestOTACampaignCompletesAndFailureThreshold(t *testing.T) {
+	_, _, c := newTestServer(t)
+	site, tok := enrollSite(t, c)
+	for _, id := range []string{"c1", "c2"} {
+		code, b := c.req("POST", "/api/v1/devices/register", map[string]any{
+			"id": id, "site_id": site, "name": id, "protocol": "modbus",
+		}, tok)
+		if code != 201 {
+			t.Fatalf("register: %d %s", code, b)
+		}
+	}
+
+	// Completes when final wave devices all report committed.
+	code, b := c.req("POST", "/api/v1/ota/campaigns", map[string]any{
+		"name": "done", "device_ids": []string{"c1", "c2"},
+		"stages":                    []map[string]any{{"canary_percent": 50}, {"canary_percent": 100}},
+		"manifest":                  otaCampaignManifest(),
+		"failure_threshold_percent": 100,
+	}, "adm")
+	if code != 201 {
+		t.Fatalf("create %d %s", code, b)
+	}
+	var camp model.OTACampaign
+	_ = json.Unmarshal(b, &camp)
+	code, b = c.req("POST", "/api/v1/ota/campaigns/"+camp.ID+"/start", nil, "adm")
+	if code != 200 {
+		t.Fatalf("start %d %s", code, b)
+	}
+	_ = json.Unmarshal(b, &camp)
+	if len(camp.Devices) != 1 {
+		t.Fatalf("wave0 devices=%d", len(camp.Devices))
+	}
+	code, b = c.req("POST", "/api/v1/ota/campaigns/"+camp.ID+"/promote", nil, "adm")
+	if code != 200 {
+		t.Fatalf("promote %d %s", code, b)
+	}
+	_ = json.Unmarshal(b, &camp)
+	if len(camp.Devices) != 2 {
+		t.Fatalf("wave1 devices=%d", len(camp.Devices))
+	}
+	for _, d := range camp.Devices {
+		code, b = c.req("POST", "/api/v1/agent/devices/"+d.DeviceID+"/ota/status", map[string]any{
+			"site_id": site,
+			"status":  ota.Status{UpdateID: d.UpdateID, DeviceID: d.DeviceID, State: ota.StateCommitted},
+		}, tok)
+		if code != 200 {
+			t.Fatalf("status committed %d %s", code, b)
+		}
+	}
+	code, b = c.req("GET", "/api/v1/ota/campaigns/"+camp.ID, nil, "adm")
+	if code != 200 {
+		t.Fatalf("get %d %s", code, b)
+	}
+	_ = json.Unmarshal(b, &camp)
+	if camp.Status != model.OTACampaignCompleted {
+		t.Fatalf("want completed, got %s (%s)", camp.Status, b)
+	}
+
+	// Failure threshold aborts when enough devices fail.
+	for _, id := range []string{"f1", "f2"} {
+		code, b = c.req("POST", "/api/v1/devices/register", map[string]any{
+			"id": id, "site_id": site, "name": id, "protocol": "modbus",
+		}, tok)
+		if code != 201 {
+			t.Fatalf("register fail devices: %d %s", code, b)
+		}
+	}
+	code, b = c.req("POST", "/api/v1/ota/campaigns", map[string]any{
+		"name": "fail", "device_ids": []string{"f1", "f2"},
+		"stages":                    []map[string]any{{"canary_percent": 100}},
+		"manifest":                  otaCampaignManifest(),
+		"failure_threshold_percent": 50,
+	}, "adm")
+	if code != 201 {
+		t.Fatalf("create fail camp %d %s", code, b)
+	}
+	_ = json.Unmarshal(b, &camp)
+	code, b = c.req("POST", "/api/v1/ota/campaigns/"+camp.ID+"/start", nil, "adm")
+	if code != 200 {
+		t.Fatalf("start fail camp %d %s", code, b)
+	}
+	_ = json.Unmarshal(b, &camp)
+	// Fail both devices so 100% >= 50% threshold.
+	for _, d := range camp.Devices {
+		code, b = c.req("POST", "/api/v1/agent/devices/"+d.DeviceID+"/ota/status", map[string]any{
+			"site_id": site,
+			"status":  ota.Status{UpdateID: d.UpdateID, DeviceID: d.DeviceID, State: ota.StateFailed, LastError: "boom"},
+		}, tok)
+		if code != 200 {
+			t.Fatalf("status failed %d %s", code, b)
+		}
+	}
+	code, b = c.req("GET", "/api/v1/ota/campaigns/"+camp.ID, nil, "adm")
+	if code != 200 {
+		t.Fatalf("get fail camp %d %s", code, b)
+	}
+	_ = json.Unmarshal(b, &camp)
+	if camp.Status != model.OTACampaignAborted {
+		t.Fatalf("want aborted on threshold, got %s", camp.Status)
+	}
+	_, b = c.req("GET", "/api/v1/alerts", nil, "adm")
+	if !strings.Contains(string(b), "ota_campaign_aborted") {
+		t.Fatalf("expected ota_campaign_aborted alert, got %s", b)
+	}
+}
+

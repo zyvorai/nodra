@@ -232,6 +232,19 @@ func (s *Store) apply(o op) error {
 			}
 		}
 		s.state.PolicyPacks = out
+	case "ota_campaign.add":
+		var v model.OTACampaign
+		_ = json.Unmarshal(o.Data, &v)
+		s.state.OTACampaigns = append(s.state.OTACampaigns, v)
+	case "ota_campaign.set":
+		var v model.OTACampaign
+		_ = json.Unmarshal(o.Data, &v)
+		for i := range s.state.OTACampaigns {
+			if s.state.OTACampaigns[i].ID == v.ID {
+				s.state.OTACampaigns[i] = v
+				return nil
+			}
+		}
 	case "org.add":
 		var v model.Org
 		_ = json.Unmarshal(o.Data, &v)
@@ -471,6 +484,33 @@ func (s *Store) DeletePolicyPack(id string) error {
 		return os.ErrNotExist
 	}
 	return s.mutate(op{Type: "policy.del", ID: id})
+}
+func (s *Store) AddOTACampaign(v model.OTACampaign) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mutate(op{Type: "ota_campaign.add", Data: mustJSON(v)})
+}
+func (s *Store) OTACampaigns() []model.OTACampaign { return s.Snapshot().OTACampaigns }
+func (s *Store) OTACampaign(id string) (model.OTACampaign, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, v := range s.state.OTACampaigns {
+		if v.ID == id {
+			return v, true
+		}
+	}
+	return model.OTACampaign{}, false
+}
+func (s *Store) UpdateOTACampaign(id string, fn func(*model.OTACampaign)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, v := range s.state.OTACampaigns {
+		if v.ID == id {
+			fn(&v)
+			return s.mutate(op{Type: "ota_campaign.set", Data: mustJSON(v)})
+		}
+	}
+	return os.ErrNotExist
 }
 func (s *Store) AddOrg(v model.Org) error {
 	s.mu.Lock()

@@ -233,6 +233,42 @@ paths:
       responses:
         '200': {description: Current OTA request/status extracted from the device's twin}
         '404': {description: Device not found}
+  /ota/campaigns:
+    get:
+      security: [{bearer: []}]
+      summary: List staged multi-site OTA canary campaigns
+      responses: {'200': {description: Campaigns}}
+    post:
+      security: [{bearer: []}]
+      summary: Create a draft OTA canary campaign
+      responses:
+        '201': {description: Campaign created}
+        '400': {description: Invalid campaign}
+        '403': {description: Org-scoped token cannot target another org's sites}
+  /ota/campaigns/{id}:
+    get:
+      security: [{bearer: []}]
+      summary: Get an OTA campaign (refreshes per-device outcomes from twins)
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Campaign}, '404': {description: Not found}}
+  /ota/campaigns/{id}/start:
+    post:
+      security: [{bearer: []}]
+      summary: Start the first canary wave (writes Twin.Desired.ota for selected devices)
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Campaign running}, '409': {description: Invalid status}}
+  /ota/campaigns/{id}/promote:
+    post:
+      security: [{bearer: []}]
+      summary: Advance to the next canary wave
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Campaign promoted}, '409': {description: Invalid status or already final stage}}
+  /ota/campaigns/{id}/abort:
+    post:
+      security: [{bearer: []}]
+      summary: Abort a draft or running campaign (does not cancel in-flight device OTAs)
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Campaign aborted}, '409': {description: Already terminal}}
   /deployments:
     get:
       security: [{bearer: []}]

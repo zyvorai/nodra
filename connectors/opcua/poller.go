@@ -25,19 +25,26 @@ type subscribeClient interface {
 	Subscribe(ctx context.Context, nodeIDs []NodeID, interval time.Duration, handler func(NodeID, DataValue)) error
 }
 
-// PollerConfig configures an OPC-UA poller: SecurityPolicy None, anonymous
-// session — see docs/INDUSTRIAL_PROTOCOLS.md. Mode "poll" (the default)
-// ticks Read on Interval; mode "subscribe" instead opens one long-lived
+// PollerConfig configures an OPC-UA poller. Default security is
+// SecurityPolicy None with an anonymous session; set SecurityPolicy to
+// Basic256Sha256 (plus cert paths) to attempt that policy — see
+// docs/INDUSTRIAL_PROTOCOLS.md. Mode "poll" (the default) ticks Read on
+// Interval; mode "subscribe" instead opens one long-lived
 // Subscribe/MonitoredItems session and reconnects (waiting Interval between
 // attempts) on any error — see Client.Subscribe's doc for why this is the
 // least-verified part of the package.
 type PollerConfig struct {
-	Endpoint string   `json:"endpoint"`
-	NodeIDs  []string `json:"node_ids"`
-	Topic    string   `json:"topic"`
-	Mode     string   `json:"mode,omitempty"`
-	Interval string   `json:"interval,omitempty"`
-	Timeout  string   `json:"timeout,omitempty"`
+	Endpoint       string   `json:"endpoint"`
+	NodeIDs        []string `json:"node_ids"`
+	Topic          string   `json:"topic"`
+	Mode           string   `json:"mode,omitempty"`
+	Interval       string   `json:"interval,omitempty"`
+	Timeout        string   `json:"timeout,omitempty"`
+	SecurityPolicy string   `json:"security_policy,omitempty"`
+	SecurityMode   string   `json:"security_mode,omitempty"`
+	ClientCertPath string   `json:"client_cert_path,omitempty"`
+	ClientKeyPath  string   `json:"client_key_path,omitempty"`
+	ServerCertPath string   `json:"server_cert_path,omitempty"`
 }
 
 type Poller struct {
@@ -100,10 +107,20 @@ func NewPoller(name string, raw json.RawMessage) (connector.Connector, error) {
 	default:
 		return nil, fmt.Errorf("opcua mode must be poll or subscribe, got %q", cfg.Mode)
 	}
+	sec := SecurityConfig{
+		SecurityPolicy: cfg.SecurityPolicy,
+		SecurityMode:   cfg.SecurityMode,
+		ClientCertPath: cfg.ClientCertPath,
+		ClientKeyPath:  cfg.ClientKeyPath,
+		ServerCertPath: cfg.ServerCertPath,
+	}
+	if _, err := resolveSecurity(sec); err != nil {
+		return nil, err
+	}
 	if name == "" {
 		name = "opcua"
 	}
-	client := &Client{Endpoint: cfg.Endpoint, Timeout: timeout}
+	client := &Client{Endpoint: cfg.Endpoint, Timeout: timeout, Security: sec}
 	return &Poller{
 		name: name, cfg: cfg, nodeIDs: nodeIDs, ival: ival,
 		cli: client, subCli: client,

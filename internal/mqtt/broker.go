@@ -5,20 +5,21 @@
 // CONNECT (now parsing CleanSession and ClientID, previously silently
 // ignored), SUBSCRIBE, PUBLISH, PUBACK/PUBREC/PUBREL/PUBCOMP, PINGREQ and
 // DISCONNECT. It is intentionally not a replacement for a full broker.
-// Persistent sessions (CleanSession=0) are supported for QoS0/1 subscribers
+// Persistent sessions (CleanSession=0) are supported for QoS0/1/2 subscribers
 // when EnableSessions is used — see its doc for the one honesty gap
 // (in-memory subscription lists don't survive a broker restart).
 //
-// QoS2 is supported on the INBOUND (publisher -> broker) side only: a
+// QoS2 is supported in both directions. INBOUND (publisher -> broker): a
 // publishing client gets the full exactly-once PUBLISH/PUBREC/PUBREL/PUBCOMP
 // handshake, with delivery to the Handler/local subscribers deferred to
-// PUBREL so a retransmitted PUBLISH never double-delivers. OUTBOUND QoS2
-// (broker -> subscriber) remains unsupported: SUBSCRIBE still caps at QoS1,
-// since Broker.Publish's fanout is fire-and-forget with no ack-tracking even
-// for QoS1 today — building that out is a separate, larger piece of work
-// than the inbound half. The broker is sufficient for sensors/PLCs to
-// publish locally and for local applications to subscribe while the cloud
-// is unavailable.
+// PUBREL so a retransmitted PUBLISH never double-delivers. OUTBOUND
+// (broker -> subscriber): SUBSCRIBE grants up to QoS2; Broker.Publish and
+// session replay send PUBLISH QoS2 with a broker-allocated packet ID,
+// register the message in an in-flight map, and complete PUBREC→PUBREL→
+// PUBCOMP asynchronously in the client's serve loop without blocking the
+// Publish caller. QoS1 outbound remains fire-and-forget (no PUBACK wait).
+// The broker is sufficient for sensors/PLCs to publish locally and for
+// local applications to subscribe while the cloud is unavailable.
 package mqtt
 
 import (
@@ -59,6 +60,12 @@ type subscription struct {
 	filter string
 	qos    byte
 }
+// outQoS2 phases for broker→subscriber exactly-once delivery.
+const (
+	outAwaitPubrec  byte = iota // PUBLISH sent; waiting for PUBREC
+	outAwaitPubcomp             // PUBREL sent; waiting for PUBCOMP
+)
+
 type client struct {
 	c           net.Conn
 	wmu         sync.Mutex
@@ -67,7 +74,10 @@ type client struct {
 	closed      chan struct{}
 	session     *persistentSession
 	qos2Mu      sync.Mutex
-	qos2Pending map[uint16]Message
+	qos2Pending map[uint16]Message // inbound publisher→broker, keyed by client pid
+	outMu       sync.Mutex
+	nextOutID   uint16
+	qos2Out     map[uint16]byte // outbound broker→subscriber inflight state
 }
 
 func New(addr string, h Handler) *Broker {
@@ -241,7 +251,27 @@ func (b *Broker) serve(ctx context.Context, cl *client) {
 					return
 				}
 			}
-		case 6: // PUBREL
+		case 5: // PUBREC (outbound QoS2: subscriber ack of our PUBLISH)
+			if !connected {
+				return
+			}
+			if len(payload) < 2 {
+				return
+			}
+			pid := binary.BigEndian.Uint16(payload[:2])
+			cl.outMu.Lock()
+			st, ok := cl.qos2Out[pid]
+			if ok && (st == outAwaitPubrec || st == outAwaitPubcomp) {
+				cl.qos2Out[pid] = outAwaitPubcomp
+				cl.outMu.Unlock()
+				// Retransmit PUBREL if the subscriber never saw the first one.
+				if err = cl.write([]byte{0x62, 0x02, byte(pid >> 8), byte(pid)}); err != nil {
+					return
+				}
+			} else {
+				cl.outMu.Unlock()
+			}
+		case 6: // PUBREL (inbound QoS2)
 			if !connected {
 				return
 			}
@@ -265,6 +295,17 @@ func (b *Broker) serve(ctx context.Context, cl *client) {
 			if err = cl.write([]byte{0x70, 0x02, byte(pid >> 8), byte(pid)}); err != nil {
 				return
 			}
+		case 7: // PUBCOMP (outbound QoS2: subscriber finished handshake)
+			if !connected {
+				return
+			}
+			if len(payload) < 2 {
+				return
+			}
+			pid := binary.BigEndian.Uint16(payload[:2])
+			cl.outMu.Lock()
+			delete(cl.qos2Out, pid)
+			cl.outMu.Unlock()
 		case 8:
 			if !connected {
 				return
@@ -303,23 +344,63 @@ func (c *client) write(p []byte) error {
 	_, err := c.c.Write(p)
 	return err
 }
+
+// nextOutPacketID returns a free broker→client packet identifier (1..65535),
+// skipping any id currently in the outbound QoS2 inflight map.
+func (c *client) nextOutPacketID() uint16 {
+	c.outMu.Lock()
+	defer c.outMu.Unlock()
+	for {
+		c.nextOutID++
+		if c.nextOutID == 0 {
+			c.nextOutID = 1
+		}
+		if _, busy := c.qos2Out[c.nextOutID]; !busy {
+			return c.nextOutID
+		}
+	}
+}
+
 func (c *client) sendPublish(topic string, payload []byte, qos byte, dup bool) error {
 	vh := appendString(nil, topic)
+	var pid uint16
 	if qos > 0 {
-		vh = append(vh, 0, 1)
+		pid = c.nextOutPacketID()
+		vh = append(vh, byte(pid>>8), byte(pid))
 	}
 	body := append(vh, payload...)
 	h := byte(0x30)
-	if qos == 1 {
+	switch qos {
+	case 1:
 		h |= 0x02
+	case 2:
+		h |= 0x04
 	}
 	if qos > 0 && dup {
 		h |= 0x08
 	}
+	// Register outbound QoS2 before the write so a fast PUBREC cannot race
+	// the serve loop past an empty inflight map.
+	if qos == 2 {
+		c.outMu.Lock()
+		if c.qos2Out == nil {
+			c.qos2Out = map[uint16]byte{}
+		}
+		c.qos2Out[pid] = outAwaitPubrec
+		c.outMu.Unlock()
+	}
 	pkt := []byte{h}
 	pkt = append(pkt, encodeRemaining(len(body))...)
 	pkt = append(pkt, body...)
-	return c.write(pkt)
+	if err := c.write(pkt); err != nil {
+		if qos == 2 {
+			c.outMu.Lock()
+			delete(c.qos2Out, pid)
+			c.outMu.Unlock()
+		}
+		return err
+	}
+	return nil
 }
 func readPacket(r *bufio.Reader) (byte, byte, []byte, error) {
 	h, err := r.ReadByte()
@@ -414,9 +495,8 @@ func parseConnect(p []byte) (connectInfo, error) {
 // parsePublish accepts QoS 0/1/2 on the inbound (publisher -> broker) side.
 // QoS2 here is the receiver half of the exactly-once handshake (PUBLISH ->
 // PUBREC -> PUBREL -> PUBCOMP) — see the PUBLISH/PUBREL cases in serve().
-// Outbound QoS2 (broker -> subscriber) is a separate, larger piece of work
-// this does not attempt: parseSubscribe still caps subscriptions at QoS1,
-// and Broker.Publish's fanout remains fire-and-forget.
+// Outbound QoS2 (broker -> subscriber) uses the same wire encoding when the
+// broker sends; see sendPublish and the PUBREC/PUBCOMP cases in serve().
 func parsePublish(flags byte, p []byte) (string, []byte, byte, uint16, error) {
 	topic, rest, err := readString(p)
 	if err != nil || topic == "" {
@@ -449,9 +529,7 @@ func parseSubscribe(p []byte) (uint16, []subscription, error) {
 			return 0, nil, errors.New("invalid subscribe")
 		}
 		q := rest[0]
-		if q > 1 {
-			// Outbound QoS2 is deliberately not supported — see the package
-			// doc. This is unrelated to inbound QoS2 PUBLISH, which is.
+		if q > 2 {
 			return 0, nil, fmt.Errorf("QoS %d unsupported", q)
 		}
 		out = append(out, subscription{f, q})

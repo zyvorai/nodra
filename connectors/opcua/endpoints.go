@@ -273,7 +273,10 @@ func openChannel(ctx context.Context, endpoint string, timeout time.Duration) (*
 	if err != nil {
 		return nil, err
 	}
-	s := &session{conn: conn, timeout: timeout}
+	s := &session{
+		conn: conn, timeout: timeout,
+		security: &securityMaterial{PolicyURI: securityPolicyNone, Mode: messageSecurityModeNone},
+	}
 	if err := s.hello(endpoint); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("hello: %w", err)
@@ -428,7 +431,7 @@ func (c *Client) Browse(ctx context.Context, nodeID NodeID, direction int32, ref
 	if to <= 0 {
 		to = 5 * time.Second
 	}
-	s, err := dial(ctx, c.Endpoint, to)
+	s, err := dial(ctx, c.Endpoint, to, c.Security)
 	if err != nil {
 		return nil, err
 	}

@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package opcua implements a dependency-free OPC-UA (UA-TCP binary) client
-// suitable for Nodra adapters. Scope is deliberately narrow: SecurityPolicy
-// None only (no channel encryption/signing), an anonymous session, and the
-// Read and Write services, plus GetEndpoints/FindServers/Browse. No
-// SecurityPolicy beyond None, no Subscribe/MonitoredItems — see
-// docs/INDUSTRIAL_PROTOCOLS.md. The Poller connector only ever polls Read;
-// Write/Browse/discovery are exposed as Client/package-level Go API calls,
-// not poller configuration. The configured endpoint URL is dialed directly.
+// suitable for Nodra adapters. Default scope is SecurityPolicy None with an
+// anonymous session, plus Read, Write, Subscribe/MonitoredItems,
+// GetEndpoints/FindServers/Browse. Basic256Sha256 is accepted as config
+// scaffolding (security_policy / security_mode / cert paths) but establishing
+// a real Sign/SignAndEncrypt channel still needs crypto that this build does
+// not ship — see SecurityConfig and docs/INDUSTRIAL_PROTOCOLS.md. The Poller
+// connector polls Read or Subscribe; Write/Browse/discovery are Client /
+// package-level Go API calls, not poller-only surfaces. The configured
+// endpoint URL is dialed directly.
 package opcua
 
 import (
@@ -338,6 +340,7 @@ func readChunk(conn net.Conn) (msgType string, payload []byte, err error) {
 type session struct {
 	conn      net.Conn
 	timeout   time.Duration
+	security  *securityMaterial
 	channelID uint32
 	tokenID   uint32
 	seqNum    uint32
@@ -346,7 +349,11 @@ type session struct {
 	authToken []byte
 }
 
-func dial(ctx context.Context, endpoint string, timeout time.Duration) (*session, error) {
+func dial(ctx context.Context, endpoint string, timeout time.Duration, sec SecurityConfig) (*session, error) {
+	mat, err := resolveSecurity(sec)
+	if err != nil {
+		return nil, err
+	}
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("invalid opc-ua endpoint %q: %w", endpoint, err)
@@ -359,7 +366,7 @@ func dial(ctx context.Context, endpoint string, timeout time.Duration) (*session
 	if err != nil {
 		return nil, err
 	}
-	s := &session{conn: conn, timeout: timeout}
+	s := &session{conn: conn, timeout: timeout, security: mat}
 	if err := s.hello(endpoint); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("hello: %w", err)
@@ -517,18 +524,27 @@ func (s *session) openSecureChannel() error {
 	if err := s.setDeadline(); err != nil {
 		return err
 	}
+	mat := s.security
+	if mat == nil {
+		mat = &securityMaterial{PolicyURI: securityPolicyNone, Mode: messageSecurityModeNone}
+	}
+	if mat.PolicyURI != securityPolicyNone {
+		// Basic256Sha256 selection is validated in resolveSecurity; the
+		// asymmetric OPN + symmetric MSG crypto path is still scaffolding.
+		return fmt.Errorf("opcua: security policy %s is configured but secure-channel crypto is not implemented", mat.PolicyURI)
+	}
 	handle := s.nextHandle()
 	body := &bytes.Buffer{}
 	body.Write(typeIDBytes(idOpenSecureChannelRequest))
 	body.Write(s.requestHeader(nil, handle))
 	writeUint32(body, 0)             // ClientProtocolVersion
 	writeInt32(body, 0)              // RequestType = Issue
-	writeInt32(body, 1)              // SecurityMode = None
+	writeInt32(body, mat.Mode)       // SecurityMode
 	writeByteString(body, nil, true) // ClientNonce
 	writeUint32(body, 600000)        // RequestedLifetime (ms)
 
 	secHeader := &bytes.Buffer{}
-	writeString(secHeader, securityPolicyNone, false)
+	writeString(secHeader, mat.PolicyURI, false)
 	writeByteString(secHeader, nil, true) // SenderCertificate
 	writeByteString(secHeader, nil, true) // ReceiverCertificateThumbprint
 
@@ -718,6 +734,7 @@ func (s *session) closeSecureChannel() error {
 type Client struct {
 	Endpoint string
 	Timeout  time.Duration
+	Security SecurityConfig
 }
 
 func (c *Client) Read(ctx context.Context, nodeIDs []NodeID) ([]DataValue, error) {
@@ -728,7 +745,7 @@ func (c *Client) Read(ctx context.Context, nodeIDs []NodeID) ([]DataValue, error
 	if to <= 0 {
 		to = 5 * time.Second
 	}
-	s, err := dial(ctx, c.Endpoint, to)
+	s, err := dial(ctx, c.Endpoint, to, c.Security)
 	if err != nil {
 		return nil, err
 	}

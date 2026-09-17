@@ -205,11 +205,10 @@ func TestCleanSessionDiscardsPriorState(t *testing.T) {
 	}
 }
 
-// TestOutboundQoS2SubscribeStillRejected is a regression check: inbound
-// QoS2 PUBLISH support (TestInboundQoS2ExactlyOnceHandshake) must not loosen
-// SUBSCRIBE's existing QoS2 rejection — outbound QoS2 remains a separate,
-// unimplemented piece of work (see the package doc).
-func TestOutboundQoS2SubscribeStillRejected(t *testing.T) {
+// TestPersistentSessionReplaysQueuedQoS2WithHandshake queues a QoS2 message
+// while the subscriber is offline and, on reconnect, delivers it with DUP
+// and completes the outbound PUBREC/PUBREL/PUBCOMP handshake.
+func TestPersistentSessionReplaysQueuedQoS2WithHandshake(t *testing.T) {
 	addr := freeAddr(t)
 	dir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -217,17 +216,129 @@ func TestOutboundQoS2SubscribeStillRejected(t *testing.T) {
 	b := New(addr, func(context.Context, Message) error { return nil }).EnableSessions(dir, queue.Options{})
 	go func() { _ = b.Start(ctx) }()
 
+	c1, r1 := dial(t, addr)
+	writeAndReadConnack(t, c1, r1, connectPacket("qos2persist", false))
+	if _, err := c1.Write(subscribePacket(1, "a/b", 2)); err != nil {
+		t.Fatal(err)
+	}
+	suback := make([]byte, 5)
+	if _, err := io.ReadFull(r1, suback); err != nil {
+		t.Fatal(err)
+	}
+	if suback[4] != 2 {
+		t.Fatalf("granted qos=%d, want 2", suback[4])
+	}
+	if _, err := c1.Write(disconnectPacket()); err != nil {
+		t.Fatal(err)
+	}
+	_ = c1.Close()
+	waitDetached(t, b, "qos2persist")
+
+	b.Publish(Message{Topic: "a/b", Payload: []byte("queued"), QoS: 2})
+
+	c2, r2 := dial(t, addr)
+	defer c2.Close()
+	ack := writeAndReadConnack(t, c2, r2, connectPacket("qos2persist", false))
+	if ack[3] != 0x01 {
+		t.Fatalf("session-present=%d, want 1", ack[3])
+	}
+	typ, flags, payload, err := readPacket(r2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if typ != 3 || flags != 0x0C { // QoS2 + DUP
+		t.Fatalf("replayed publish type=%d flags=%#x, want type=3 flags=0x0c", typ, flags)
+	}
+	topic, body, qos, pid, err := parsePublish(flags, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if topic != "a/b" || string(body) != "queued" || qos != 2 || pid == 0 {
+		t.Fatalf("replay topic=%q body=%q qos=%d pid=%d", topic, body, qos, pid)
+	}
+	if _, err := c2.Write(pkt(0x50, []byte{byte(pid >> 8), byte(pid)})); err != nil {
+		t.Fatal(err)
+	}
+	pubrel := make([]byte, 4)
+	if _, err := io.ReadFull(r2, pubrel); err != nil {
+		t.Fatal(err)
+	}
+	if pubrel[0] != 0x62 || binary.BigEndian.Uint16(pubrel[2:]) != pid {
+		t.Fatalf("PUBREL %v, want pid %d", pubrel, pid)
+	}
+	if _, err := c2.Write(pkt(0x70, []byte{byte(pid >> 8), byte(pid)})); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestOutboundQoS2SubscribeAndPublishHandshake drives broker→subscriber
+// exactly-once delivery: SUBSCRIBE QoS2 is granted, Broker.Publish fans out
+// a QoS2 PUBLISH with a packet id, then PUBREC→PUBREL→PUBCOMP completes
+// asynchronously in the serve loop.
+func TestOutboundQoS2SubscribeAndPublishHandshake(t *testing.T) {
+	addr := freeAddr(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b := New(addr, func(context.Context, Message) error { return nil })
+	go func() { _ = b.Start(ctx) }()
+
 	c, r := dial(t, addr)
 	defer c.Close()
-	writeAndReadConnack(t, c, r, connectPacket("qos2subclient", true))
+	writeAndReadConnack(t, c, r, connectPacket("qos2sub", true))
 
 	if _, err := c.Write(subscribePacket(1, "a/b", 2)); err != nil {
 		t.Fatal(err)
 	}
-	_ = c.SetReadDeadline(time.Now().Add(time.Second))
-	buf := make([]byte, 1)
-	if _, err := r.Read(buf); err == nil {
-		t.Fatal("expected connection to close after a QoS2 subscribe, got data instead")
+	suback := make([]byte, 5)
+	if _, err := io.ReadFull(r, suback); err != nil {
+		t.Fatal(err)
+	}
+	if suback[0] != 0x90 || suback[4] != 2 {
+		t.Fatalf("SUBACK = %v, want granted QoS 2", suback)
+	}
+
+	b.Publish(Message{Topic: "a/b", Payload: []byte("hello"), QoS: 2})
+
+	typ, flags, payload, err := readPacket(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if typ != 3 || flags&0x06 != 0x04 {
+		t.Fatalf("outbound publish type=%d flags=%#x, want QoS2", typ, flags)
+	}
+	topic, body, qos, pid, err := parsePublish(flags, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if topic != "a/b" || string(body) != "hello" || qos != 2 || pid == 0 {
+		t.Fatalf("outbound publish topic=%q body=%q qos=%d pid=%d", topic, body, qos, pid)
+	}
+
+	if _, err := c.Write(pkt(0x50, []byte{byte(pid >> 8), byte(pid)})); err != nil { // PUBREC
+		t.Fatal(err)
+	}
+	pubrel := make([]byte, 4)
+	if _, err := io.ReadFull(r, pubrel); err != nil {
+		t.Fatal(err)
+	}
+	if pubrel[0] != 0x62 || binary.BigEndian.Uint16(pubrel[2:]) != pid {
+		t.Fatalf("expected PUBREL for pid %d, got %v", pid, pubrel)
+	}
+
+	// Retransmitted PUBREC (subscriber never saw PUBREL) must get another
+	// PUBREL while the message is still in-flight.
+	if _, err := c.Write(pkt(0x50, []byte{byte(pid >> 8), byte(pid)})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(r, pubrel); err != nil {
+		t.Fatal(err)
+	}
+	if pubrel[0] != 0x62 || binary.BigEndian.Uint16(pubrel[2:]) != pid {
+		t.Fatalf("expected PUBREL again for pid %d, got %v", pid, pubrel)
+	}
+
+	if _, err := c.Write(pkt(0x70, []byte{byte(pid >> 8), byte(pid)})); err != nil { // PUBCOMP
+		t.Fatal(err)
 	}
 }
 

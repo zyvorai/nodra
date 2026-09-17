@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS nodra_twins (device_id TEXT PRIMARY KEY, data JSONB N
 CREATE TABLE IF NOT EXISTS nodra_routes (id TEXT PRIMARY KEY, data JSONB NOT NULL);
 CREATE TABLE IF NOT EXISTS nodra_deployments (id TEXT PRIMARY KEY, data JSONB NOT NULL);
 CREATE TABLE IF NOT EXISTS nodra_policy_packs (id TEXT PRIMARY KEY, data JSONB NOT NULL);
+CREATE TABLE IF NOT EXISTS nodra_ota_campaigns (id TEXT PRIMARY KEY, data JSONB NOT NULL);
 CREATE TABLE IF NOT EXISTS nodra_orgs (id TEXT PRIMARY KEY, data JSONB NOT NULL);
 CREATE TABLE IF NOT EXISTS nodra_alerts (id TEXT PRIMARY KEY, data JSONB NOT NULL);
 CREATE TABLE IF NOT EXISTS nodra_events (id TEXT PRIMARY KEY, data JSONB NOT NULL, event_time TIMESTAMPTZ);
@@ -154,6 +155,16 @@ func (s *PostgresStore) load() error {
 			return err
 		}
 		s.state.PolicyPacks = append(s.state.PolicyPacks, v)
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := loadJSON(`SELECT data FROM nodra_ota_campaigns`, func(b []byte) error {
+		var v model.OTACampaign
+		if err := json.Unmarshal(b, &v); err != nil {
+			return err
+		}
+		s.state.OTACampaigns = append(s.state.OTACampaigns, v)
 		return nil
 	}); err != nil {
 		return err
@@ -464,6 +475,42 @@ func (s *PostgresStore) DeletePolicyPack(id string) error {
 	}
 	s.state.PolicyPacks = out
 	return nil
+}
+
+func (s *PostgresStore) AddOTACampaign(v model.OTACampaign) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.upsert("nodra_ota_campaigns", "id", v.ID, v); err != nil {
+		return err
+	}
+	s.state.OTACampaigns = append(s.state.OTACampaigns, v)
+	return nil
+}
+func (s *PostgresStore) OTACampaigns() []model.OTACampaign { return s.Snapshot().OTACampaigns }
+func (s *PostgresStore) OTACampaign(id string) (model.OTACampaign, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, v := range s.state.OTACampaigns {
+		if v.ID == id {
+			return v, true
+		}
+	}
+	return model.OTACampaign{}, false
+}
+func (s *PostgresStore) UpdateOTACampaign(id string, fn func(*model.OTACampaign)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, v := range s.state.OTACampaigns {
+		if v.ID == id {
+			fn(&v)
+			if err := s.upsert("nodra_ota_campaigns", "id", v.ID, v); err != nil {
+				return err
+			}
+			s.state.OTACampaigns[i] = v
+			return nil
+		}
+	}
+	return os.ErrNotExist
 }
 
 func (s *PostgresStore) AddOrg(v model.Org) error {

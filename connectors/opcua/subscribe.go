@@ -273,17 +273,13 @@ func (s *session) deleteSubscriptions(subIDs []uint32) error {
 // desired — see connectors/opcua/poller.go's "subscribe" mode for exactly
 // that reconnect-with-backoff wrapper.
 //
-// SecurityPolicy None and anonymous session only, matching the rest of this
-// package's v1/v2 scope. The numeric TypeIds this depends on
+// SecurityPolicy defaults to None with an anonymous session. Basic256Sha256
+// may be selected via Client.Security; without certs or channel crypto the
+// dial fails with an actionable error. The numeric TypeIds this depends on
 // (CreateSubscription, CreateMonitoredItems, Publish, DataChangeNotification)
 // are recalled from the OPC-UA Part 6 spec, not verified against a real
-// server: like Read/Write/Browse, this is proven self-consistent (this
-// package's own encoder and decoder agreeing with each other via a mock
-// server test) but not proven to interoperate with real OPC-UA server
-// software. Smoke-test against a real server (e.g. open62541) before
-// production use — this is the least-verified part of the whole package,
-// since Subscribe's long-lived, multi-step protocol has more surface for a
-// subtle wire-format mistake to hide than the single-request Read/Write did.
+// server: smoke-test against a real server (e.g. open62541) before
+// production use — this is the least-verified part of the package.
 func (c *Client) Subscribe(ctx context.Context, nodeIDs []NodeID, publishingInterval time.Duration, handler func(NodeID, DataValue)) error {
 	if len(nodeIDs) == 0 {
 		return errors.New("opcua: at least one NodeID is required")
@@ -292,7 +288,7 @@ func (c *Client) Subscribe(ctx context.Context, nodeIDs []NodeID, publishingInte
 	if to <= 0 {
 		to = 5 * time.Second
 	}
-	s, err := dial(ctx, c.Endpoint, to)
+	s, err := dial(ctx, c.Endpoint, to, c.Security)
 	if err != nil {
 		return err
 	}

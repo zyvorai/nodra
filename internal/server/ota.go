@@ -6,6 +6,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/zyvorai/nodra/internal/model"
@@ -58,6 +59,34 @@ func otaStatusFromReported(reported map[string]any) (ota.Status, bool, error) {
 	return st, true, nil
 }
 
+// setDeviceOTADesired writes req into the device's Twin.Desired["ota"] and
+// bumps DesiredVersion — the same durable path otaDeviceRequest and OTA
+// campaigns both use. Caller must have already authorized the device.
+// Validation failures are returned as-is (callers map them to HTTP 400);
+// store errors are returned as-is (callers map them to HTTP 507).
+func (s *Server) setDeviceOTADesired(dev model.Device, req ota.Request) (model.Twin, error) {
+	req.DeviceID = dev.ID
+	if req.SiteID == "" {
+		req.SiteID = dev.SiteID
+	}
+	if err := req.Validate(); err != nil {
+		return model.Twin{}, err
+	}
+	tw, _ := s.store.Twin(dev.ID)
+	tw.DeviceID = dev.ID
+	tw.SiteID = dev.SiteID
+	if tw.Desired == nil {
+		tw.Desired = map[string]any{}
+	}
+	tw.Desired[otaTwinKey] = req
+	tw.DesiredVersion++
+	tw.UpdatedAt = time.Now().UTC()
+	if err := s.store.SetTwin(tw); err != nil {
+		return model.Twin{}, err
+	}
+	return tw, nil
+}
+
 // otaDeviceRequest sets a device's desired OTA state (admin-only): the
 // control plane validates the request at the transport level (pkg/ota.
 // Request.Validate — required fields, manifest shape, sha256/signature
@@ -75,24 +104,12 @@ func (s *Server) otaDeviceRequest(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &req) {
 		return
 	}
-	req.DeviceID = dev.ID
-	if req.SiteID == "" {
-		req.SiteID = dev.SiteID
-	}
-	if err := req.Validate(); err != nil {
-		errorJSON(w, 400, err.Error())
-		return
-	}
-	tw, _ := s.store.Twin(dev.ID)
-	tw.DeviceID = dev.ID
-	tw.SiteID = dev.SiteID
-	if tw.Desired == nil {
-		tw.Desired = map[string]any{}
-	}
-	tw.Desired[otaTwinKey] = req
-	tw.DesiredVersion++
-	tw.UpdatedAt = time.Now().UTC()
-	if err := s.store.SetTwin(tw); err != nil {
+	tw, err := s.setDeviceOTADesired(dev, req)
+	if err != nil {
+		if strings.HasPrefix(err.Error(), "ota:") {
+			errorJSON(w, 400, err.Error())
+			return
+		}
 		errorJSON(w, 507, err.Error())
 		return
 	}
@@ -184,5 +201,6 @@ func (s *Server) agentOTAStatus(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.AddAlert(model.Alert{ID: id("alert"), SiteID: in.SiteID, Severity: "high", Type: "ota_" + string(in.Status.State), Message: "OTA update " + in.Status.UpdateID + " for device " + dev.ID + ": " + string(in.Status.State) + " (" + in.Status.LastError + ")", CreatedAt: time.Now().UTC()})
 	}
 	s.note("ok", "agent", in.SiteID, "", in.SiteID, dev.ID, "ota.status", "OTA status: "+string(in.Status.State), map[string]any{"device_id": dev.ID, "update_id": in.Status.UpdateID, "state": in.Status.State})
+	s.syncOTACampaignsForDevice(dev.ID, in.Status)
 	writeJSON(w, 200, tw)
 }
