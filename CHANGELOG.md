@@ -14,6 +14,14 @@
 
 ## Unreleased
 
+- **Outbound MQTT QoS 2** (broker → subscriber): `SUBSCRIBE` may grant QoS 2;
+  fan-out and persistent-session replay complete `PUBLISH`/`PUBREC`/`PUBREL`/
+  `PUBCOMP` with in-flight tracking (inbound QoS 2 was already present).
+- **OPC-UA Basic256Sha256 config scaffolding** (`security_policy` /
+  `security_mode` / client+server cert paths). None/anonymous path unchanged;
+  selecting Basic256Sha256 without certs (or without channel crypto) fails
+  closed with an actionable error — full RSA-OAEP / SignAndEncrypt framing
+  remains a follow-up.
 - Staged multi-site OTA canary campaigns (`model.OTACampaign`): create/list/get
   plus `start` / `promote` / `abort` under `/api/v1/ota/campaigns`. Waves select
   devices by cumulative `canary_percent` and write the same Twin.Desired["ota"]
@@ -147,9 +155,8 @@
   the local `Handler`/subscribers is deferred to `PUBREL`, so a retransmitted
   `PUBLISH` (lost `PUBREC`) never double-delivers, and a retransmitted
   `PUBREL` (lost `PUBCOMP`) is idempotent. Outbound QoS2 (broker → subscriber)
-  remains unsupported — `SUBSCRIBE` still caps at QoS1, since
-  `Broker.Publish`'s fanout has no ack-tracking even for QoS1 today; that's
-  a separate, larger piece of work tracked in `ROADMAP.md`.
+  was still open at this release; it later landed under Unreleased (SUBSCRIBE
+  may grant QoS2 with full PUBLISH/PUBREC/PUBREL/PUBCOMP tracking).
 
 - OPC-UA connector (`connectors/opcua`): dependency-free UA-TCP binary
   client and poller. SecurityPolicy None, anonymous session; Write,
