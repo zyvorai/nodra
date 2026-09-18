@@ -9,17 +9,18 @@ LDFLAGS = -s -w -X github.com/zyvorai/nodra/internal/version.Version=$(VERSION) 
 PORT ?= $(NODRA_PORT)
 HOST ?= $(NODRA_HOST)
 
-.PHONY: all test race vet fmt build clean release-check smoke smoke-relay-bridge demo-client demo-k8s test-all deploy qualify
-all: test build
-fmt:
+.PHONY: all test race vet fmt build clean release-check smoke smoke-relay-bridge demo-client demo-k8s test-all deploy qualify help ci status deploy-remote
+all: test build ## Test, then build
+
+fmt: ## Fail if any Go file needs gofmt
 	@test -z "$$(gofmt -l .)" || (echo "Run gofmt on:"; gofmt -l .; exit 1)
-vet:
+vet: ## go vet
 	go vet ./...
-test:
+test: ## Unit tests
 	go test ./...
-race:
+race: ## Tests with the race detector
 	go test -race ./...
-build:
+build: ## Build server, agent, ctl, sim, and relay bridge
 	mkdir -p bin
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/nodra-server ./cmd/nodra-server
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/nodrad ./cmd/nodrad
@@ -38,9 +39,21 @@ demo-k8s:
 	./scripts/demo-k8s.sh $(if $(PORT),--port $(PORT),)
 test-all:
 	./scripts/test-all.sh $(if $(HOST),--host $(HOST),) $(if $(PORT),--port $(PORT),)
-deploy:
+deploy: ## Deploy using HOST (default lab) and USER
 	./scripts/deploy-remote.sh $(or $(HOST),212.8.248.187) $(or $(USER),sus) $(if $(PORT),--port $(PORT),)
 release-check:
 	./scripts/release-check.sh
 clean:
 	rm -rf bin dist coverage.out
+
+ci: fmt vet race build ## Local gate: gofmt, vet, race tests, build
+
+status: build ## nodractl status (needs NODRA_ADMIN_TOKEN and a running server)
+	./bin/nodractl status
+
+deploy-remote: ## Deploy: make deploy-remote H=<host> [U=sus] [PORT=18447]
+	@test -n "$(H)" || (echo "Usage: make deploy-remote H=<host> [U=user] [PORT=18447]"; exit 1)
+	./scripts/deploy-remote.sh $(H) $(or $(U),sus) $(if $(PORT),--port $(PORT),) $(ARGS)
+
+help: ## Show targets
+	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | sort | awk -F':.*## ' '{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
