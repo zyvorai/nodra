@@ -35,6 +35,12 @@ func main() {
 	switch args[0] {
 	case "overview":
 		err = c.print("GET", "/api/v1/overview", nil)
+	case "status":
+		if len(args) > 1 && args[1] == "json" {
+			err = c.print("GET", "/api/v1/overview", nil)
+		} else {
+			err = c.status()
+		}
 	case "sites":
 		err = sites(c, args[1:])
 	case "devices":
@@ -72,6 +78,7 @@ func usage() {
 	fmt.Print(`nodractl — Nodra edge control plane CLI
 
 Usage:
+  nodractl [--server URL] [--token TOKEN] status [json]
   nodractl [--server URL] [--token TOKEN] overview
   nodractl sites list | sites revoke SITE_ID
   nodractl devices | events | version
@@ -395,6 +402,83 @@ func pretty(b []byte) error {
 	}
 	fmt.Print(string(b))
 	return nil
+}
+
+func (c client) status() error {
+	req, err := http.NewRequest(http.MethodGet, c.base+"/api/v1/overview", nil)
+	if err != nil {
+		return err
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		view := disabledNodra(err.Error())
+		fmt.Print(view.Format())
+		return err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode >= 300 {
+		view := disabledNodra(fmt.Sprintf("%s: %s", resp.Status, strings.TrimSpace(string(b))))
+		fmt.Print(view.Format())
+		return fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(b)))
+	}
+	var ov struct {
+		Sites       int `json:"sites"`
+		OnlineSites int `json:"online_sites"`
+		Devices     int `json:"devices"`
+		Twins       int `json:"twins"`
+		Routes      int `json:"routes"`
+		Deployments int `json:"deployments"`
+		OpenAlerts  int `json:"open_alerts"`
+		DeadLetters int `json:"dead_letters"`
+		Events      int `json:"events"`
+	}
+	_ = json.Unmarshal(b, &ov)
+	view := StatusView{Labels: [5]string{"Control plane", "Sites", "Devices", "Twins", "Routes"}}
+	if ov.Sites == 0 {
+		view.Components[1].Disabled = true
+	} else if ov.OnlineSites < ov.Sites {
+		view.Components[1].Warnings = ov.Sites - ov.OnlineSites
+	}
+	if ov.Devices == 0 {
+		view.Components[2].Disabled = true
+	}
+	if ov.Twins == 0 {
+		view.Components[3].Disabled = true
+	}
+	if ov.Routes == 0 {
+		view.Components[4].Disabled = true
+	}
+	view.Body = [][3]string{
+		{"🖥️  Sites:", fmt.Sprintf("%d/%d online", ov.OnlineSites, ov.Sites), ""},
+		{"📦 Devices:", fmt.Sprintf("%d", ov.Devices), ""},
+		{"🚀 Deployments:", fmt.Sprintf("%d", ov.Deployments), ""},
+		{"⚠️  Alerts:", fmt.Sprintf("%d open", ov.OpenAlerts), ""},
+		{"🔌 Dead letters:", fmt.Sprintf("%d", ov.DeadLetters), ""},
+	}
+	if ov.OpenAlerts > 0 {
+		view.Components[0].Warnings = ov.OpenAlerts
+	}
+	for _, name := range []string{"Sites", "Devices", "Twins", "Routes", "Deployments", "Alerts", "Dead letters", "Audit", "Policy", "Events"} {
+		view.Features = append(view.Features, okFeature(name, true))
+	}
+	fmt.Print(view.Format())
+	return nil
+}
+
+func disabledNodra(msg string) StatusView {
+	view := StatusView{Labels: [5]string{"Control plane", "Sites", "Devices", "Twins", "Routes"}}
+	for i := range view.Components {
+		view.Components[i].Disabled = true
+	}
+	view.Collection = []string{msg}
+	return view
 }
 func env(k, d string) string {
 	if v := os.Getenv(k); v != "" {

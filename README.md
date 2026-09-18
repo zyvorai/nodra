@@ -381,6 +381,8 @@ Auth uses the admin bearer as the session token returned by login. See [docs/DEM
 ## CLI
 
 ```text
+nodractl status
+nodractl status json
 nodractl overview
 nodractl sites list
 nodractl sites revoke SITE_ID
