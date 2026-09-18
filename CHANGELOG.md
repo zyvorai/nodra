@@ -14,6 +14,10 @@
 
 ## Unreleased
 
+- `nodractl status` prints the Cilium-style logo from `/api/v1/overview`. `nodractl status json` is the raw overview.
+- `make help`, `make ci`, `make status`, and `make deploy-remote H=<host> U=sus`. The older `make deploy` target is unchanged.
+- Short-soak memory bound is 3× so a cold Go heap is not treated as a leak. Go 1.27 `gofmt` is clean.
+
 - **Outbound MQTT QoS 2** (broker → subscriber): `SUBSCRIBE` may grant QoS 2;
   fan-out and persistent-session replay complete `PUBLISH`/`PUBREC`/`PUBREL`/
   `PUBCOMP` with in-flight tracking (inbound QoS 2 was already present).

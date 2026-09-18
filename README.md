@@ -98,6 +98,10 @@ operational issues with their documented fix.
 git clone https://github.com/zyvorai/nodra.git
 cd nodra
 make build
+make help
+make ci                       # gofmt, vet, race tests, build
+make status                   # needs NODRA_ADMIN_TOKEN and a running server
+make deploy-remote H=<host> U=sus
 ```
 
 The repository has few runtime Go module dependencies (optional Postgres driver via pgx when `NODRA_STORE=postgres`).
