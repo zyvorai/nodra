@@ -40,13 +40,13 @@ func (s *Server) otaCampaignGet(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) otaCampaignCreate(w http.ResponseWriter, r *http.Request) {
 	var raw struct {
-		Name                      string                   `json:"name"`
-		SiteIDs                   []string                 `json:"site_ids"`
-		DeviceIDs                 []string                 `json:"device_ids"`
-		Stages                    []model.OTACampaignStage `json:"stages"`
-		Manifest                  ota.Manifest             `json:"manifest"`
-		Policy                    ota.Policy               `json:"policy"`
-		FailureThresholdPercent   *int                     `json:"failure_threshold_percent"`
+		Name                    string                   `json:"name"`
+		SiteIDs                 []string                 `json:"site_ids"`
+		DeviceIDs               []string                 `json:"device_ids"`
+		Stages                  []model.OTACampaignStage `json:"stages"`
+		Manifest                ota.Manifest             `json:"manifest"`
+		Policy                  ota.Policy               `json:"policy"`
+		FailureThresholdPercent *int                     `json:"failure_threshold_percent"`
 	}
 	if !s.decode(w, r, &raw) {
 		return
@@ -478,7 +478,7 @@ func (s *Server) refreshOTACampaign(c model.OTACampaign) model.OTACampaign {
 			changed = true
 			_ = s.store.AddAlert(model.Alert{
 				ID: id("alert"), SiteID: firstSite(c), Severity: "high", Type: "ota_campaign_aborted",
-				Message: fmt.Sprintf("OTA campaign %s aborted: failure threshold %d%% exceeded (%d/%d)", c.Name, c.FailureThresholdPercent, failed, n),
+				Message:   fmt.Sprintf("OTA campaign %s aborted: failure threshold %d%% exceeded (%d/%d)", c.Name, c.FailureThresholdPercent, failed, n),
 				CreatedAt: time.Now().UTC(),
 			})
 		}

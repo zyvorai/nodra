@@ -1160,9 +1160,9 @@ func TestOTACampaignCreateStartPromoteAbort(t *testing.T) {
 			{"canary_percent": 50},
 			{"canary_percent": 100},
 		},
-		"manifest":                    otaCampaignManifest(),
-		"policy":                      map[string]any{"reboot_required": true, "rollback_on_failure": true},
-		"failure_threshold_percent":   100, // never auto-abort during this happy-path test
+		"manifest":                  otaCampaignManifest(),
+		"policy":                    map[string]any{"reboot_required": true, "rollback_on_failure": true},
+		"failure_threshold_percent": 100, // never auto-abort during this happy-path test
 	}
 	code, b := c.req("POST", "/api/v1/ota/campaigns", body, "adm")
 	if code != 201 {
@@ -1372,4 +1372,3 @@ func TestOTACampaignCompletesAndFailureThreshold(t *testing.T) {
 		t.Fatalf("expected ota_campaign_aborted alert, got %s", b)
 	}
 }
-

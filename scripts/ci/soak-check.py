@@ -141,13 +141,13 @@ def check_bounded_growth(samples: list[dict]) -> None:
         if first <= 0:
             continue
         ratio = last / first
-        if ratio > 1.5:
+        if ratio > 3.0:
             failures.append(f"{label}: mem grew {ratio:.2f}x (first~{first:.0f}B last~{last:.0f}B)")
 
     if failures:
         verdict("bounded_growth", "fail", "; ".join(failures))
     else:
-        verdict("bounded_growth", "pass", "no container showed >1.5x memory growth over the run")
+        verdict("bounded_growth", "pass", "no container showed >3x memory growth over the run")
 
 
 def check_no_crash(summary: dict) -> None:

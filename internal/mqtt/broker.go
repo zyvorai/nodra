@@ -60,6 +60,7 @@ type subscription struct {
 	filter string
 	qos    byte
 }
+
 // outQoS2 phases for broker→subscriber exactly-once delivery.
 const (
 	outAwaitPubrec  byte = iota // PUBLISH sent; waiting for PUBREC

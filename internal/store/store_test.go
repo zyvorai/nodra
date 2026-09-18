@@ -70,7 +70,7 @@ func TestOTACampaignPersistence(t *testing.T) {
 	camp := model.OTACampaign{
 		ID: "otacamp_1", Name: "rollout", Status: model.OTACampaignDraft,
 		SiteIDs: []string{"s1"}, CurrentStage: -1,
-		Stages: []model.OTACampaignStage{{CanaryPercent: 100}},
+		Stages:    []model.OTACampaignStage{{CanaryPercent: 100}},
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err := s.AddOTACampaign(camp); err != nil {
