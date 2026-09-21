@@ -199,7 +199,7 @@ func (a *Agent) configureClient() error {
 		}
 		tr.TLSClientConfig.Certificates = []tls.Certificate{cert}
 	}
-	a.client = &http.Client{Transport: tr, Timeout: 15 * time.Second}
+	a.client = &http.Client{Transport: tr, Timeout: 60 * time.Second}
 	return nil
 }
 func (a *Agent) Run(ctx context.Context) error {
@@ -576,7 +576,7 @@ func (a *Agent) flush(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	const batchSize = 100
+	const batchSize = 50
 	for start := 0; start < len(items); start += batchSize {
 		end := start + batchSize
 		if end > len(items) {
