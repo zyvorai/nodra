@@ -30,6 +30,22 @@ Heap profiles are written to the evidence directory as `heap-start.pprof`, `heap
 `NODRA_SOAK_LAB=1` drives the same WAN/disk/ingest loops against a systemd
 `nodra-server` / `nodrad` install (HTTPS control plane supported).
 
+## Four-hour lab soak (passed)
+
+| Field | Value |
+|---|---|
+| Host | `80.79.5.173` (bare metal, `NODRA_SOAK_LAB=1`) |
+| Window | 2026-09-21T18:48:46Z → 2026-09-21T22:49:56Z (14400s) |
+| Commit / build | lab CP near `967c574` / `f7c49d4` line |
+| Judge | `scripts/ci/soak-check.py` — all required criteria **PASS** |
+| Ingest | http_accepted=6196, mqtt_published=6198 |
+| Integrity | events_persisted=45981, deliveries_forwarded=18389, duplicates=1682, dead_letters=7, spool_end=3280, pending_end=5 |
+| WAN | 15 cycles in `wan-cycles.jsonl`; max time_to_ready=3s (ceiling 30s) |
+| Evidence | `evidence/qualification/lab/soak-4h-20260921T184846Z-summary.json`, `…-wan-cycles.jsonl` |
+
+This closes the multi-hour soak gate for lab file-mode. It is not a multi-day
+soak and not a multi-replica HA claim.
+
 ## Published ingress observation
 
 `scripts/bench-ingress.py` posts to a running edge agent's `/v1/publish` for a short window and prints `accepted_per_sec`. Record the host, duration, commit, workers, and that JSON before treating the number as evidence. It is a local observation, not a certified multi-site rating.

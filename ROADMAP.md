@@ -24,14 +24,15 @@ Offline WAL, backpressure, local routes, MQTT QoS 0/1/2 (optional broker TLS and
   Aes256Sha256RsaPss), channel-token renewal on a long-lived channel, and
   multi-chunk messages.
 - ~~staged, multi-site OTA campaigns with canary rollout on top of the now-wired `pkg/ota` single-device request/status path~~ — Have (`model.OTACampaign`, `/api/v1/ota/campaigns` create/list/get/start/promote/pause/resume/abort; cumulative canary waves write Twin.Desired["ota"]; abort clears in-flight desired OTA; twin-tracked outcomes; auto-complete / failure-threshold abort).
-- Short-lived console sessions, enrollment token rotate/TTL, custom roles, ZTP bootstrap, OTLP/HTTP metrics export, org-scoped audit/overview queue filtering, operator PITR runbook, and `scripts/bench-ingress.py` — Have (see CHANGELOG Unreleased). With `NODRA_STORE=postgres`, console sessions and custom roles are shared across live replicas (`nodra_console_sessions` / `nodra_custom_roles`). Multi-hour/multi-day soak pass and a published measured throughput claim remain open.
+- Short-lived console sessions, enrollment token rotate/TTL, custom roles, ZTP bootstrap, OTLP/HTTP metrics export, org-scoped audit/overview queue filtering, operator PITR runbook, and `scripts/bench-ingress.py` — Have (see CHANGELOG Unreleased). With `NODRA_STORE=postgres`, console sessions and custom roles are shared across live replicas (`nodra_console_sessions` / `nodra_custom_roles`). Lab loopback ingress observation published in `docs/SCALE.md` (~3.7–6.9 accepts/s at `f7c49d4`). Four-hour lab soak (`NODRA_SOAK_LAB=1` on `80.79.5.173`, 2026-09-21) passed `soak-check.py` — evidence under `evidence/qualification/lab/soak-4h-20260921T184846Z-*`. Multi-day (24h/72h/7d) soaks remain open.
+
 - ~~outbound MQTT QoS 2 (subscriber-side exactly-once delivery)~~ — Have (`SUBSCRIBE` may request QoS2; broker→subscriber PUBLISH/PUBREC/PUBREL/PUBCOMP with in-flight tracking)
 
 ## v1.0 criteria
 
 - stable API compatibility policy
-- HA control plane — not met. Postgres delivery workers claim concurrently, and fleet state is read from the database with revision checks (cross-replica test). File mode remains one replica. A passing multi-day soak, PITR, and a measured throughput number are still required before this is an HA claim. Configured limits are in `docs/SCALE.md`
+- HA control plane — not met. Postgres delivery workers claim concurrently, and fleet state is read from the database with revision checks (cross-replica test). File mode remains one replica. A four-hour lab soak has passed; multi-day soak and Nodra-built-in PITR are still required before this is an HA claim. Configured limits and lab ingress observations are in `docs/SCALE.md`
 - upgrade/migration guarantees — Have ([docs/UPGRADE.md](docs/UPGRADE.md)): upgrade from v0.2.0 and v0.2.1 to current, additive config table, numbered Postgres migrations with downgrade refusal, and file/Postgres rollback procedures. Automatic down-migration SQL is not provided.
-- multi-day soak tests under WAN loss and disk pressure — the repaired soak is in CI and has not passed a four-hour run. 24h, 72h, and seven days need a self-hosted runner
+- multi-day soak tests under WAN loss and disk pressure — four-hour lab soak passed 2026-09-21 (`evidence/qualification/lab/soak-4h-20260921T184846Z-*`). 24h, 72h, and seven days need a self-hosted runner
 - protocol conformance suites
-- recovery runbooks. Configured limits are published in `docs/SCALE.md`. A measured events-per-second envelope is not
+- recovery runbooks. Configured limits and a lab ingress observation are published in `docs/SCALE.md`.
