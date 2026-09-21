@@ -33,18 +33,21 @@ for the trust-boundary model.
 ## Production readiness
 
 **Is this production-ready?** Current release is **v0.2.1**: a serious
-single-control-plane product. Edge sites are offline-first. The control plane
-uses an embedded append-only WAL and intentionally runs as one writer/replica.
-Horizontal HA is a future storage mode, not a claim in this release. Run
-`make qualify` and sign [`docs/QUALIFICATION.md`](QUALIFICATION.md) /
+single-control-plane product. Edge sites are offline-first. File mode is a
+tested single-replica deployment. PostgreSQL fleet state is read from the
+database, with revision checks so replicas cannot silently overwrite each
+other, and delivery workers already claim concurrently. A cross-replica test
+covers that consistency. Multi-day soak, PITR, and the rest of the 1.0 gates
+are still open. Helm defaults to one replica and refuses to scale file mode.
+Run `make qualify` and sign [`docs/QUALIFICATION.md`](QUALIFICATION.md) /
 [`evidence/qualification/ops-checklist.md`](https://github.com/zyvorai/nodra/blob/main/evidence/qualification/ops-checklist.md)
 before go-live. See [`docs/PRODUCTION.md`](PRODUCTION.md).
 [`ROADMAP.md`](https://github.com/zyvorai/nodra/blob/main/ROADMAP.md)
 lists what's still required before v1.0: a stable API compatibility policy,
-an HA control plane including delivery workers, upgrade/migration
-guarantees, multi-day soak tests under WAN loss and disk pressure, protocol
-conformance suites, and published recovery runbooks/scale envelope. If your
-deployment needs HA today, it isn't there yet.
+a full HA control plane, upgrade/migration guarantees, multi-day soak tests
+under WAN loss and disk pressure, protocol conformance suites, and published
+recovery runbooks/scale envelope. If your deployment needs full HA today, it
+isn't there yet.
 
 **What's the current version?** v0.2.1 (adds Modbus RTU and J1939 industrial
 transports) — see `CHANGELOG.md`.
@@ -52,8 +55,9 @@ transports) — see `CHANGELOG.md`.
 ## Protocol support
 
 **What protocols does it actually speak today?** Implemented: MQTT 3.1.1
-(QoS 0/1 — persistent sessions and QoS 2 are explicitly not claimed in
-v0.2), HTTP ingress, Modbus TCP and RTU. **Roadmap, not shipped**: OPC-UA,
+(QoS 0/1/2 in both directions; persistent sessions replay queued QoS 1 and
+QoS 2; subscription lists do not survive a broker restart), HTTP ingress,
+Modbus TCP and RTU. **Roadmap, not shipped**: OPC-UA,
 serial, NATS, Zenoh, a Kafka bridge — the connector registry
 (`pkg/connector`) has scaffolding for these but they are not built. Check
 `docs/INDUSTRIAL_PROTOCOLS.md` and `ROADMAP.md` before assuming a protocol

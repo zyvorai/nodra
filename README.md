@@ -4,7 +4,7 @@
 
 Nodra is an Apache-2.0 edge runtime and control plane from Zyvor. It gives remote sites a local MQTT/HTTP ingress, durable store-and-forward, local routes, device twins, edge application reconciliation, fleet health, replayable dead letters and a clean web control plane.
 
-> **v0.2.2** is a serious single-control-plane release. Edge sites are offline-first. The control plane uses an embedded append-only WAL and intentionally runs as one writer/replica. Horizontal HA is a future storage mode, not a claim in this release. Lab reference host runs HTTPS (`:18447`) with signed abbreviated WAN/disk drills, plus a CI-gated multi-hour automated soak on every scheduled run (`.github/workflows/soak.yml`) — multi-day continuous soak is tracked separately and still needs a self-hosted runner against the lab host.
+> **v0.2.2** is a serious single-control-plane release. Edge sites are offline-first. File mode is a tested single-replica deployment. PostgreSQL fleet state is read from the database, with revision checks so replicas cannot silently overwrite each other, and delivery workers already claim concurrently. A cross-replica test covers that consistency. Multi-day soak, PITR, and the rest of the 1.0 gates are still open. Helm defaults to one replica and refuses to scale file mode. Lab reference host runs HTTPS (`:18447`) with signed abbreviated WAN/disk drills, plus a CI-gated multi-hour automated soak on every scheduled run (`.github/workflows/soak.yml`) — multi-day continuous soak is tracked separately and still needs a self-hosted runner against the lab host.
 
 ## Why Nodra
 
@@ -35,8 +35,7 @@ Nodra is a small, open-source (Apache-2.0), offline-first edge runtime: local
 MQTT/HTTP ingress, a durable store-and-forward WAL, local routes, device
 twins, and edge app reconciliation, running on a single site's own hardware.
 It is not a no-code automation platform, not a managed cloud IoT service,
-and not a distributed/HA data store today (the single-writer caveat above is
-load-bearing, not a footnote).
+and not a full HA platform today (file mode is one replica; Postgres sharing is described above).
 
 | | **Nodra** | Node-RED | EMQX/HiveMQ Edge | AWS IoT Greengrass | Azure IoT Edge |
 |---|---|---|---|---|---|
@@ -44,18 +43,19 @@ load-bearing, not a footnote).
 | Cloud dependency | None required — WAN-loss is a first-class operating mode, not a degraded one | None required | Usually paired with a cloud broker/console | AWS IoT Core | Azure IoT Hub |
 | License | Apache-2.0 | Apache-2.0 | Apache-2.0 core (EMQX) / proprietary (HiveMQ Edge) | Proprietary (free tier) | Proprietary (free tier) |
 | Industrial protocol decoding | Modbus TCP + RTU implemented; OPC-UA/serial/NATS/Zenoh/Kafka are roadmap, not shipped (`docs/INDUSTRIAL_PROTOCOLS.md`) | Via community nodes | Not built-in | Via custom components | Via custom modules |
-| HA / clustering | Not yet — v0.2 is intentionally single-writer; see `ROADMAP.md`'s v1.0 criteria | N/A (single instance) | Yes (broker clustering) | Managed by AWS | Managed by Azure |
+| HA / clustering | File mode is one replica. Postgres shares fleet state with revision checks and claims deliveries concurrently; full HA is still open (`ROADMAP.md`) | N/A (single instance) | Yes (broker clustering) | Managed by AWS | Managed by Azure |
 
 *(General characterizations as of writing — verify current features against
 each project's own docs.)*
 
 **Maturity, stated honestly**: current release is v0.2.1. The project's own
 `ROADMAP.md` lists what's still required before v1.0 — stable API
-compatibility, an HA control plane, upgrade/migration guarantees, multi-day
-soak tests, protocol conformance suites, and published recovery runbooks/
-scale envelope. If you need HA or a stability guarantee today, this isn't
-there yet; if you need a single-site, offline-resilient edge runtime, this
-is exactly the scope.
+compatibility, a full HA control plane, upgrade/migration guarantees,
+multi-day soak tests, protocol conformance suites, and published recovery
+runbooks/scale envelope. Postgres fleet reads are consistent across replicas
+and delivery workers claim concurrently; that is not the HA bar. If you need
+full HA or a stability guarantee today, this isn't there yet; if you need a
+single-site, offline-resilient edge runtime, this is exactly the scope.
 
 New here? [`docs/FAQ.md`](docs/FAQ.md) covers licensing, support,
 production-readiness and protocol-support questions;
@@ -64,7 +64,7 @@ operational issues with their documented fix.
 
 ## v0.2 highlights
 
-- **Real MQTT 3.1.1 edge ingress**: CONNECT, SUBSCRIBE, PUBLISH QoS 0/1/2 (exactly-once in both directions), PUBACK/PUBREC/PUBREL/PUBCOMP, PINGREQ, persistent sessions and local subscriber fan-out.
+- **Real MQTT 3.1.1 edge ingress**: CONNECT, SUBSCRIBE, PUBLISH QoS 0/1/2 (exactly-once in both directions), PUBACK/PUBREC/PUBREL/PUBCOMP, PINGREQ, persistent sessions (queued QoS 1 and QoS 2 are replayed; subscription lists are in-memory and do not survive a broker restart) and local subscriber fan-out.
 - **HTTP ingress**: `POST /v1/publish` with optional local bearer protection.
 - **Offline-first WAL spool**: append-only, fsynced, replayed after restart and compacted automatically.
 - **Explicit backpressure**: cap edge spool by bytes and event count; choose `reject`, `drop-oldest` or `drop-newest` deliberately.
@@ -84,7 +84,7 @@ operational issues with their documented fix.
 - **Live activity Logs** and A–Z `nodra-sim`.
 - **Connector SDK + Modbus poller**: registry factories; Modbus TCP poller publishes into nodrad ingest.
 - **Viewer/admin RBAC**: optional viewer token; console write actions gated by role.
-- **Optional Postgres fleet store**: `NODRA_STORE=postgres` for sites/routes/twins/apps; delivery/DLQ are also Postgres-backed in this mode, with single-active-writer failover across replicas (not multi-writer HA — see `docs/ARCHITECTURE.md`).
+- **Optional Postgres fleet store**: `NODRA_STORE=postgres` reads sites, routes, twins, and the rest of the fleet from PostgreSQL on every call, with revision checks. Delivery and DLQ workers claim concurrently. File mode stays one replica. This is not a full HA claim — see `docs/ARCHITECTURE.md`.
 - **Configurable ports**: `--port` / `NODRA_PORT` / Compose / Helm NodePort / smoke ports share one convention.
 - **Apple-inspired Zyvor UX**: embedded, no CDN, no external fonts, orange Zyvor accent.
 - **Kubernetes-ready**: raw manifests, Kustomize, Helm, Restricted Pod Security defaults, no service-account token.
@@ -364,7 +364,7 @@ helm upgrade --install nodra ./charts/nodra \
 
 If tokens are omitted, Helm creates long random values and preserves them across upgrades. Enable live fleet simulation with `--set simulation.enabled=true`.
 
-The v0.2 control plane is intentionally **one replica** because its embedded WAL is single-writer. The PDB allows the single pod to be drained instead of blocking node maintenance.
+Helm defaults to one replica. File mode fails the render when `replicaCount` is above 1, because the data volume is `ReadWriteOnce`. Postgres mode may set `replicaCount` above 1 and then uses a rolling update; that shares fleet state, and it is not a full HA claim. The PDB allows a single pod to be drained instead of blocking node maintenance.
 
 ## Web console
 
@@ -403,7 +403,7 @@ nodractl publish ...
 
 ## Architecture
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Core persistence uses append-only fsynced WALs with in-memory indexes and periodic compaction. There is no file-per-event spool in v0.2.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). File mode uses append-only fsynced WALs with in-memory indexes and periodic compaction. Postgres mode reads fleet state from the database. There is no file-per-event spool in v0.2.
 
 ## Protocol strategy
 
@@ -412,7 +412,7 @@ Nodra does not try to invent a new universal wire protocol. The core provides lo
 Included:
 
 - HTTP ingress
-- MQTT 3.1.1 ingress/local subscription (QoS 0/1/2 inbound, QoS 0/1 outbound/subscribe, persistent sessions)
+- MQTT 3.1.1 ingress/local subscription (QoS 0/1/2 in both directions; persistent sessions replay queued QoS 1 and QoS 2; subscription lists do not survive a broker restart)
 - Modbus TCP/RTU, J1939, OPC-UA, NATS, generic serial/USB connectors
 - Connector SDK
 

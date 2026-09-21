@@ -5,6 +5,8 @@ metadata:
   namespace: nodra-system
   labels: {app.kubernetes.io/name: nodra, app.kubernetes.io/component: control-plane}
 spec:
+  # File mode is a single replica (ReadWriteOnce). This static manifest stays at one.
+  # The Helm chart honors replicaCount and allows Postgres above 1; full HA is still open.
   replicas: 1
   strategy:
     type: Recreate

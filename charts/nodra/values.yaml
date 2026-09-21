@@ -3,7 +3,7 @@ image:
   tag: "0.2.2"
   pullPolicy: IfNotPresent
 
-replicaCount: 1 # v0.2 embedded WAL state is single-writer by design.
+replicaCount: 1 # File mode refuses a value above 1. Postgres may scale; full HA is still unqualified.
 service:
   type: ClusterIP
   port: 8080
@@ -40,7 +40,7 @@ containerSecurityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesyst
 networkPolicy: {enabled: true}
 podDisruptionBudget:
   enabled: true
-  maxUnavailable: 1 # avoids blocking node drains for the intentionally single-replica v0.2 server
+  maxUnavailable: 1 # one replica is the default, so a node drain is not blocked by the budget
 nodeSelector: {}
 tolerations: []
 affinity: {}

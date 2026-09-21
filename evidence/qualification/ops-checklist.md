@@ -26,3 +26,5 @@ Evidence: `evidence/qualification/lab/20260914T155128Z/`, `…/20260914T162245Z/
 deployment. Backup/restore, TLS, and abbreviated WAN/disk drills are signed for this lab host.
 
 Signature: lab-ops-drill  Date: 2026-09-14
+
+The signed claim above is the 2026-09-14 lab drill. Current readiness language is in `docs/PRODUCTION.md` and `docs/QUALIFICATION.md`.

@@ -21,8 +21,8 @@ docs/QUALIFICATION.md's "Multi-hour WAN / disk soak" row:
   - readiness_bound:   every WAN-loss cycle's time-to-ready stays under the
                         configured ceiling (no cycle timed out).
 
-Usage: soak-check.py <path/to/summary.json>
-Exits 0 if every non-skipped criterion passes, 1 otherwise.
+Exits 0 if every criterion passes, 1 otherwise. A skipped data-integrity
+check is a failure: no_data_loss does not pass when the run accepted nothing.
 """
 from __future__ import annotations
 
@@ -62,16 +62,53 @@ def check_no_data_loss(summary: dict) -> None:
     failures_gained = m.get("delivery_failures_end", 0) - m.get("delivery_failures_start", 0)
     pending_end = m.get("pending_deliveries_end", 0)
 
-    regressions = [
-        k for k in ("events", "deliveries", "dead_letters", "delivery_failures")
-        if m.get(f"{k}_end", 0) < m.get(f"{k}_start", 0)
-    ]
-    if regressions:
-        verdict("no_data_loss", "fail", f"counters went backwards: {regressions}")
-        return
+    # Raw start/end counters reset when the control plane process restarts.
+    # integrity.* is accumulated across those resets. Without it, a drop is a failure.
+    if not summary.get("integrity"):
+        regressions = [
+            k for k in ("events", "deliveries", "dead_letters", "delivery_failures")
+            if m.get(f"{k}_end", 0) < m.get(f"{k}_start", 0)
+        ]
+        if regressions:
+            verdict("no_data_loss", "fail", f"counters went backwards: {regressions}")
+            return
+        if events_gained <= 0:
+            verdict("no_data_loss", "fail", "no events accepted during the run")
+            return
 
-    if events_gained <= 0:
-        verdict("no_data_loss", "skip", "no events accepted during the run")
+    ing = summary.get("integrity") or {}
+    accepted = int(ing.get("http_accepted", 0)) + int(ing.get("mqtt_published", 0))
+    if ing:
+        persisted = int(ing.get("events_persisted", 0))
+        forwarded = int(ing.get("deliveries_forwarded", 0))
+        dupes = int(ing.get("duplicates", 0))
+        spool_end = int(ing.get("spool_end", 0))
+        dead = int(ing.get("dead_letters", 0))
+        if accepted <= 0 and persisted <= 0:
+            verdict("no_data_loss", "fail", "no HTTP or MQTT events were accepted during the run")
+            return
+        # A persisted event, a duplicate replay of one, or a message still in the
+        # edge spool accounts for an accept. Anything else was lost.
+        accounted = persisted + dupes + spool_end
+        if accepted > 0 and accounted < accepted:
+            verdict(
+                "no_data_loss", "fail",
+                f"accepted={accepted} accounted={accounted} "
+                f"(persisted={persisted} duplicates={dupes} spool_end={spool_end})",
+            )
+            return
+        if accepted > 0 and forwarded + dead + pending_end <= 0:
+            verdict(
+                "no_data_loss", "fail",
+                f"accepted={accepted} but nothing was forwarded, dead-lettered, or pending",
+            )
+            return
+        verdict(
+            "no_data_loss", "pass",
+            f"http_accepted={ing.get('http_accepted', 0)} mqtt_published={ing.get('mqtt_published', 0)} "
+            f"events_persisted={persisted} deliveries_forwarded={forwarded} "
+            f"duplicates={dupes} dead_letters={dead} pending_end={pending_end} spool_end={spool_end}",
+        )
         return
 
     handled = deliveries_gained + deadletters_gained + pending_end
@@ -206,7 +243,7 @@ def main() -> int:
     if failed:
         print(f"\n{len(failed)} criterion(criteria) failed")
         return 1
-    print("\nall soak criteria passed (or were skipped for lack of data)")
+    print("\nall required soak criteria passed")
     return 0
 
 

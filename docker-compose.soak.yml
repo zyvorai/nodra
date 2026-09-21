@@ -1,0 +1,30 @@
+# Soak overlay. Not the demo stack: the simulator is left stopped so its
+# routes to 127.0.0.1:9 do not fill the delivery queue for hours.
+# Ingest during the soak goes through the edge agent, and deliveries land
+# on this sink.
+services:
+  control-plane:
+    environment:
+      NODRA_PPROF: 0.0.0.0:6060
+    ports:
+      - "127.0.0.1:6060:6060"
+
+  sink:
+    image: python:3.13-alpine
+    command:
+      - python3
+      - -c
+      - |
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        class H(BaseHTTPRequestHandler):
+            def do_POST(self):
+                n = int(self.headers.get("Content-Length") or 0)
+                if n:
+                    self.rfile.read(n)
+                self.send_response(204)
+                self.end_headers()
+            def log_message(self, fmt, *args):
+                return
+        ThreadingHTTPServer(("0.0.0.0", 8080), H).serve_forever()
+    expose:
+      - "8080"

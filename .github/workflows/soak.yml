@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       duration:
-        description: 'soak duration (e.g. 4h)'
+        description: '10m, 4h, 24h, 72h, or 168h. Hosted runners cannot exceed the 330 minute job timeout; 24h and longer need a self-hosted runner.'
         default: '4h'
 permissions: {contents: read}
 jobs:

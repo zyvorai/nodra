@@ -33,10 +33,9 @@ CREATE INDEX IF NOT EXISTS nodra_audit_log_site_idx ON nodra_audit_log (site_id,
 `
 
 // PostgresLog persists audit entries directly in Postgres and queries them
-// with real SQL — deliberately NOT loaded into memory at open time, unlike
-// store.PostgresStore's fleet-state tables. An audit trail is unbounded and
-// grows forever; the rest of the Postgres backend is bounded fleet state
-// that's cheap to cache in full.
+// with real SQL. Fleet state in store.PostgresStore is also read from SQL
+// on every call; an audit trail stays in its own table because it is an
+// append-only log rather than fleet documents.
 type PostgresLog struct {
 	db   *sql.DB
 	opts Options

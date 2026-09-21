@@ -58,6 +58,24 @@ func TestTwinPersistence(t *testing.T) {
 	if !ok || tw.DesiredVersion != 1 {
 		t.Fatalf("%+v %v", tw, ok)
 	}
+	if err := s.UpdateTwin("d1", func(cur *model.Twin) {
+		cur.DesiredVersion++
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tw, ok = s.Twin("d1")
+	if !ok || tw.DesiredVersion != 2 || tw.SiteID != "s1" {
+		t.Fatalf("update twin: %+v %v", tw, ok)
+	}
+	if err := s.UpdateTwin("d2", func(cur *model.Twin) {
+		cur.SiteID = "s1"
+		cur.DesiredVersion = 1
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok = s.Twin("d2"); !ok {
+		t.Fatal("missing created twin")
+	}
 }
 
 func TestOTACampaignPersistence(t *testing.T) {

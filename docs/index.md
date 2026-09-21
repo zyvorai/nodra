@@ -21,7 +21,7 @@ hero:
     - {icon: "❓", title: "FAQ", description: "Questions people evaluating Nodra actually ask, before they've decided to adopt it.", href: "FAQ.md"}
     - {icon: "🛠️", title: "Troubleshooting", description: "Real operational issues, with the documented fix — not a generic checklist.", href: "TROUBLESHOOTING.md"}
     - {icon: "▶️", title: "Demo and user walkthrough", description: "A full user-demo path: control plane console, A–Z fleet simulation, and verification scripts.", href: "DEMO.md"}
-    - {icon: "🏭", title: "Production", description: "Single-writer production runbook: TLS, backup/restore, metrics, and known v0.2.x limits.", href: "PRODUCTION.md"}
+    - {icon: "🏭", title: "Production", description: "Single-replica file mode, Postgres revision checks, TLS, backup/restore, and known limits.", href: "PRODUCTION.md"}
     - {icon: "✅", title: "Qualification", description: "Software matrix via make qualify versus operator-signed soak and restore drills.", href: "QUALIFICATION.md"}
     - {icon: "🧩", title: "Architecture", description: "nodra-server is the management/control plane, nodrad is the edge runtime, nodractl is the operator CLI.", href: "ARCHITECTURE.md"}
     - {icon: "🔌", title: "API guide", description: "Base path /api/v1 — admin bearer auth for management, site tokens or mTLS for agents.", href: "API.md"}

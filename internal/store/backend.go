@@ -25,6 +25,9 @@ type Backend interface {
 	Twin(deviceID string) (model.Twin, bool)
 	TwinsForSite(siteID string) []model.Twin
 	SetTwin(v model.Twin) error
+	// UpdateTwin applies fn to the current twin, creating one when none
+	// exists. Postgres retries the callback when the row's revision changed.
+	UpdateTwin(deviceID string, fn func(*model.Twin)) error
 	AddRoute(v model.Route) error
 	Routes() []model.Route
 	DeleteRoute(id string) error
@@ -68,3 +71,8 @@ func OpenBackend(driver, filePath, databaseURL string) (Backend, error) {
 		return nil, errUnsupportedDriver(driver)
 	}
 }
+
+var (
+	_ Backend = (*Store)(nil)
+	_ Backend = (*PostgresStore)(nil)
+)

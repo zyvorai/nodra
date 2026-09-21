@@ -889,6 +889,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		eventID = id("evt")
 	}
 	if s.store.HasEvent(eventID) {
+		s.metrics.Duplicates.Add(1)
 		writeJSON(w, 202, map[string]any{"accepted": true, "event_id": eventID, "duplicate": true, "matched_routes": 0})
 		return
 	}
@@ -1354,13 +1355,15 @@ func (s *Server) twinDesired(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &in) {
 		return
 	}
-	tw, _ := s.store.Twin(dev.ID)
-	tw.DeviceID = dev.ID
-	tw.SiteID = dev.SiteID
-	tw.Desired = in.Desired
-	tw.DesiredVersion++
-	tw.UpdatedAt = time.Now().UTC()
-	if err := s.store.SetTwin(tw); err != nil {
+	var tw model.Twin
+	if err := s.store.UpdateTwin(dev.ID, func(cur *model.Twin) {
+		cur.DeviceID = dev.ID
+		cur.SiteID = dev.SiteID
+		cur.Desired = in.Desired
+		cur.DesiredVersion++
+		cur.UpdatedAt = time.Now().UTC()
+		tw = *cur
+	}); err != nil {
 		errorJSON(w, 507, err.Error())
 		return
 	}
@@ -1391,13 +1394,15 @@ func (s *Server) agentTwinReported(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 404, "device not found")
 		return
 	}
-	tw, _ := s.store.Twin(dev.ID)
-	tw.DeviceID = dev.ID
-	tw.SiteID = in.SiteID
-	tw.Reported = in.Reported
-	tw.ReportedVersion++
-	tw.UpdatedAt = time.Now().UTC()
-	if err := s.store.SetTwin(tw); err != nil {
+	var tw model.Twin
+	if err := s.store.UpdateTwin(dev.ID, func(cur *model.Twin) {
+		cur.DeviceID = dev.ID
+		cur.SiteID = in.SiteID
+		cur.Reported = in.Reported
+		cur.ReportedVersion++
+		cur.UpdatedAt = time.Now().UTC()
+		tw = *cur
+	}); err != nil {
 		errorJSON(w, 507, err.Error())
 		return
 	}

@@ -80,7 +80,7 @@ export NODRA_DATABASE_URL='postgres://user:pass@host:5432/nodra?sslmode=require'
 ./bin/nodra-server --listen :8080 --data ./data
 ```
 
-Delivery and DLQ queues remain local WAL on the control-plane pod (single writer). Postgres holds sites/devices/twins/routes/deployments/alerts/events.
+Delivery and DLQ queues stay on the local WAL when `NODRA_STORE=file`. With `NODRA_STORE=postgres` they live in Postgres and every replica claims work concurrently. Fleet documents (sites, devices, twins, routes, deployments, alerts, events) are read from Postgres on every call.
 
 CI covers the Postgres path with `go test ./internal/store/ -run Postgres` against a
 Postgres 16 service (`NODRA_DATABASE_URL`). Locally the same test skips unless the
@@ -88,7 +88,7 @@ DSN is set.
 
 ## Upgrades
 
-v0.2 is single-writer. Scale the control-plane Deployment to zero, update the image, then return to one replica, or use the Helm `Recreate` strategy already provided. Edge agents continue local operation and spool cloud-bound events during the interruption.
+File mode and the default Helm install stay at one replica and use `Recreate`, because the data volume is `ReadWriteOnce`. Postgres mode may set `replicaCount` above 1, which selects `RollingUpdate`. Edge agents continue local operation and spool cloud-bound events during a control-plane interruption. Schema changes apply as numbered migrations at startup; a database newer than the binary refuses to start.
 
 ## Demo / simulation
 

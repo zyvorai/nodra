@@ -380,6 +380,25 @@ func (s *Store) SetTwin(v model.Twin) error {
 	defer s.mu.Unlock()
 	return s.mutate(op{Type: "twin.set", Data: mustJSON(v)})
 }
+func (s *Store) UpdateTwin(deviceID string, fn func(*model.Twin)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, v := range s.state.Twins {
+		if v.DeviceID == deviceID {
+			fn(&v)
+			if v.DeviceID == "" {
+				v.DeviceID = deviceID
+			}
+			return s.mutate(op{Type: "twin.set", Data: mustJSON(v)})
+		}
+	}
+	v := model.Twin{DeviceID: deviceID}
+	fn(&v)
+	if v.DeviceID == "" {
+		v.DeviceID = deviceID
+	}
+	return s.mutate(op{Type: "twin.set", Data: mustJSON(v)})
+}
 func (s *Store) AddRoute(v model.Route) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

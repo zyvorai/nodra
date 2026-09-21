@@ -8,6 +8,8 @@ import (
 	"flag"
 	"github.com/zyvorai/nodra/internal/server"
 	"log/slog"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strconv"
@@ -68,6 +70,14 @@ func main() {
 		defer cancel()
 		_ = srv.Shutdown(c)
 	}()
+	if addr := os.Getenv("NODRA_PPROF"); addr != "" {
+		go func() {
+			slog.Info("pprof listening", "addr", addr)
+			if err := http.ListenAndServe(addr, nil); err != nil {
+				slog.Error("pprof stopped", "error", err)
+			}
+		}()
+	}
 	slog.Info("Nodra control plane starting", "listen", *listen, "workers", *workers, "pki", *pkiEnabled)
 	if err = srv.Start(context.Background()); err != nil {
 		slog.Error("server stopped", "error", err)

@@ -25,9 +25,12 @@
 #   NODRA_SOAK_DISK_TARGET_MB  peak fill size per disk-pressure ramp (default 256)
 #   NODRA_SOAK_SAMPLE_INTERVAL background sampler cadence (default 5s)
 #   NODRA_SOAK_READY_CEILING   max acceptable time-to-ready in seconds (default 30)
+#   NODRA_SOAK_INGEST_INTERVAL seconds between HTTP and MQTT publishes (default 2s)
 #   NODRA_SOAK_LAB             1 = bare-metal/systemctl mode instead of compose
 #   NODRA_SOAK_CP_BASE         control-plane base URL (default http://127.0.0.1:8080)
 #   NODRA_SOAK_AGENT_BASE      edge-agent base URL (default http://127.0.0.1:9091)
+#   NODRA_MQTT_PORT            host port of the edge MQTT listener (default 1883)
+#   NODRA_LOCAL_TOKEN          edge local bearer (default nodra-demo-local)
 #
 # Output: $OUTDIR/{samples.jsonl,wan-cycles.jsonl,disk-cycles.jsonl,summary.json}
 # Pass/fail is judged separately by scripts/ci/soak-check.py against summary.json
@@ -64,7 +67,13 @@ DISK_CYCLE=$(to_seconds "${NODRA_SOAK_DISK_CYCLE:-60s}")
 DISK_TARGET_MB=${NODRA_SOAK_DISK_TARGET_MB:-256}
 SAMPLE_INTERVAL=$(to_seconds "${NODRA_SOAK_SAMPLE_INTERVAL:-5s}")
 READY_CEILING=${NODRA_SOAK_READY_CEILING:-30}
+INGEST_INTERVAL=$(to_seconds "${NODRA_SOAK_INGEST_INTERVAL:-2s}")
 LAB_MODE=${NODRA_SOAK_LAB:-0}
+MQTT_PORT=${NODRA_MQTT_PORT:-1883}
+LOCAL_TOKEN=${NODRA_LOCAL_TOKEN:-nodra-demo-local}
+ADMIN_TOKEN=${NODRA_ADMIN_TOKEN:-nodra-demo-admin}
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+MQTT_PUBLISH="$ROOT/scripts/ci/mqtt_publish.py"
 
 CP_BASE=${NODRA_SOAK_CP_BASE:-http://127.0.0.1:8080}
 AGENT_BASE=${NODRA_SOAK_AGENT_BASE:-http://127.0.0.1:9091}
@@ -79,6 +88,10 @@ SUMMARY="$OUTDIR/summary.json"
 : >"$DISK_LOG"
 
 log() { echo "[soak] $*" >&2; }
+
+compose() {
+  docker compose -f "$ROOT/docker-compose.yml" -f "$ROOT/docker-compose.soak.yml" "$@"
+}
 
 # --- helpers over the running stack ---
 
@@ -99,7 +112,7 @@ agent_healthz_json() {
 
 container_id() {
   local service="$1"
-  docker compose ps -q "$service" 2>/dev/null || true
+  compose ps -q "$service" 2>/dev/null || true
 }
 
 restart_count() {
@@ -155,13 +168,13 @@ data_volume_path() {
 
 cp_stop() {
   if [ "$LAB_MODE" = "1" ]; then sudo systemctl stop nodra-server
-  else docker compose stop control-plane >/dev/null
+  else compose stop control-plane >/dev/null
   fi
 }
 
 cp_start() {
   if [ "$LAB_MODE" = "1" ]; then sudo systemctl start nodra-server
-  else docker compose start control-plane >/dev/null
+  else compose start control-plane >/dev/null
   fi
 }
 
@@ -170,7 +183,7 @@ fill_disk() {
   if [ "$LAB_MODE" = "1" ]; then
     dd if=/dev/zero of=/var/lib/nodra/.soak-fill.bin bs=1M count="$mb" status=none 2>/dev/null || true
   else
-    docker compose exec -T control-plane sh -c "dd if=/dev/zero of=/var/lib/nodra/.soak-fill.bin bs=1M count=$mb status=none" >/dev/null 2>&1 || true
+    compose exec -T control-plane sh -c "dd if=/dev/zero of=/var/lib/nodra/.soak-fill.bin bs=1M count=$mb status=none" >/dev/null 2>&1 || true
   fi
 }
 
@@ -178,7 +191,7 @@ release_disk() {
   if [ "$LAB_MODE" = "1" ]; then
     rm -f /var/lib/nodra/.soak-fill.bin
   else
-    docker compose exec -T control-plane sh -c 'rm -f /var/lib/nodra/.soak-fill.bin' >/dev/null 2>&1 || true
+    compose exec -T control-plane sh -c 'rm -f /var/lib/nodra/.soak-fill.bin' >/dev/null 2>&1 || true
   fi
 }
 
@@ -199,11 +212,12 @@ wait_ready() {
 
 STACK_STARTED_HERE=0
 if [ "$LAB_MODE" != "1" ]; then
-  log "starting compose stack"
+  log "starting compose stack (control-plane, edge-agent, sink; simulator stays stopped)"
   export NODRA_ADMIN_TOKEN=${NODRA_ADMIN_TOKEN:-nodra-demo-admin}
   export NODRA_ADMIN_PASSWORD=${NODRA_ADMIN_PASSWORD:-nodra-demo-admin}
   export NODRA_ENROLLMENT_TOKEN=${NODRA_ENROLLMENT_TOKEN:-nodra-demo-enroll}
-  docker compose up --build -d
+  export NODRA_LOCAL_TOKEN="$LOCAL_TOKEN"
+  compose up --build -d control-plane edge-agent sink
   STACK_STARTED_HERE=1
   for i in $(seq 1 60); do
     [ "$(cp_ready)" = "200" ] && break
@@ -236,8 +250,49 @@ write_summary() {
   restarts_cp_end=$( [ "$LAB_MODE" != "1" ] && restart_count control-plane || echo 0)
   restarts_agent_end=$( [ "$LAB_MODE" != "1" ] && restart_count edge-agent || echo 0)
 
-  python3 - "$SUMMARY" <<PYEOF
+  python3 - "$SUMMARY" "$SAMPLES" "$OUTDIR/ingest.ok" <<PYEOF
 import json, sys
+from pathlib import Path
+
+def monotonic(vals):
+    # Counters are process-local and drop to 0 when the control plane restarts.
+    # Seed from 0 so the first sample is counted, and add the new value after a reset.
+    gained = 0
+    prev = 0
+    for v in vals:
+        if v >= prev:
+            gained += v - prev
+        else:
+            gained += v
+        prev = v
+    return gained
+
+def series(samples, key):
+    return [int(s.get(key) or 0) for s in samples]
+
+samples = []
+sample_path = Path(sys.argv[2])
+if sample_path.exists():
+    for line in sample_path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            samples.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+ingest = Path(sys.argv[3])
+http_accepted = mqtt_published = 0
+if ingest.exists():
+    for line in ingest.read_text().splitlines():
+        if line.strip() == "http":
+            http_accepted += 1
+        elif line.strip() == "mqtt":
+            mqtt_published += 1
+spool_end = 0
+if samples:
+    health = samples[-1].get("agent_healthz") or {}
+    spool_end = int(((health.get("spool") or {}).get("items")) or 0)
 out = {
     "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
     "duration_s": $DURATION,
@@ -255,6 +310,16 @@ out = {
         "dead_letters_start": $DEADLETTERS_START, "dead_letters_end": $deadletters_end,
         "delivery_failures_start": $FAILURES_START, "delivery_failures_end": $failures_end,
         "pending_deliveries_end": $pending_end,
+    },
+    "integrity": {
+        "http_accepted": http_accepted,
+        "mqtt_published": mqtt_published,
+        "events_persisted": monotonic(series(samples, "events")),
+        "deliveries_forwarded": monotonic(series(samples, "deliveries")),
+        "dead_letters": monotonic(series(samples, "dead_letters")),
+        "duplicates": monotonic(series(samples, "duplicates")),
+        "pending_end": $pending_end,
+        "spool_end": spool_end,
     },
     "restarts": {
         "control_plane_start": $RESTARTS_CP_START, "control_plane_end": $restarts_cp_end,
@@ -278,13 +343,69 @@ cleanup() {
   done
   wait 2>/dev/null || true
   release_disk || true
+  capture_heap heap-end || true
   write_summary "$( [ "$ec" != "0" ] && echo 1 || echo 0 )"
   if [ "$STACK_STARTED_HERE" = "1" ]; then
-    docker compose down -v --remove-orphans >/dev/null 2>&1 || true
+    compose down -v --remove-orphans >/dev/null 2>&1 || true
   fi
   exit "$ec"
 }
 trap cleanup EXIT INT TERM
+
+capture_heap() {
+  local name="$1"
+  if [ "$LAB_MODE" = "1" ]; then
+    return 0
+  fi
+  if curl -fsS "http://127.0.0.1:6060/debug/pprof/heap" -o "$OUTDIR/${name}.pprof"; then
+    log "wrote $OUTDIR/${name}.pprof"
+  else
+    log "heap profile $name unavailable"
+    rm -f "$OUTDIR/${name}.pprof"
+  fi
+}
+
+prepare_sink_route() {
+  local i code=000
+  for i in $(seq 1 30); do
+    code=$(curl -sS -o /dev/null -w '%{http_code}' \
+      -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+      -d '{"name":"soak-sink","topic":"soak/ingest","target_url":"http://sink:8080/hook","method":"POST","enabled":true,"retry_max":3,"timeout_seconds":5}' \
+      "$CP_BASE/api/v1/routes" || true)
+    if [ "$code" = "201" ]; then
+      log "soak ingest route created"
+      return 0
+    fi
+    sleep 2
+  done
+  log "soak ingest route was not created (last HTTP $code)"
+}
+
+ingest_loop() {
+  local end=$((SECONDS + DURATION)) n=0 code
+  : >"$OUTDIR/ingest.ok"
+  while [ "$SECONDS" -lt "$end" ]; do
+    n=$((n + 1))
+    code=$(curl -sS -o /dev/null -w '%{http_code}' \
+      -H "Authorization: Bearer $LOCAL_TOKEN" -H 'Content-Type: application/json' \
+      -d "{\"topic\":\"soak/ingest\",\"payload\":{\"n\":$n,\"via\":\"http\"}}" \
+      "$AGENT_BASE/v1/publish" || true)
+    if [ "$code" = "202" ]; then
+      echo http >>"$OUTDIR/ingest.ok"
+    fi
+    if python3 "$MQTT_PUBLISH" 127.0.0.1 "$MQTT_PORT" soak/ingest "{\"n\":$n,\"via\":\"mqtt\"}"; then
+      echo mqtt >>"$OUTDIR/ingest.ok"
+    fi
+    sleep "$INGEST_INTERVAL"
+  done
+}
+
+heap_loop() {
+  capture_heap heap-start
+  sleep $((DURATION / 2))
+  [ "$SECONDS" -lt "$DURATION" ] || return 0
+  capture_heap heap-mid
+}
 
 # --- background sampler: runs for the whole soak, independent of the two drill loops ---
 
@@ -293,11 +414,16 @@ sampler_loop() {
   local vol
   vol=$(data_volume_path)
   while [ "$SECONDS" -lt "$end" ]; do
-    local ts ready spool cp_stats agent_stats disk_pct
+    local ts ready spool cp_stats agent_stats disk_pct events deliveries dead dupes pending
     ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     ready=$(cp_ready)
     spool=$(agent_healthz_json)
     disk_pct=$(disk_usage_pct "$vol")
+    events=$(cp_metric nodra_events_total)
+    deliveries=$(cp_metric nodra_deliveries_total)
+    dead=$(cp_metric nodra_dead_letters)
+    dupes=$(cp_metric nodra_events_duplicate_total)
+    pending=$(cp_metric nodra_pending_deliveries)
     if [ "$LAB_MODE" != "1" ]; then
       cp_stats=$(container_stats_json control-plane)
       agent_stats=$(container_stats_json edge-agent)
@@ -305,8 +431,9 @@ sampler_loop() {
       cp_stats='{"mem_bytes":0,"cpu_pct":0}'
       agent_stats='{"mem_bytes":0,"cpu_pct":0}'
     fi
-    printf '{"ts":"%s","cp_ready_code":"%s","disk_pct":%s,"agent_healthz":%s,"cp_stats":%s,"agent_stats":%s}\n' \
-      "$ts" "$ready" "${disk_pct:-0}" "$spool" "$cp_stats" "$agent_stats" >>"$SAMPLES"
+    printf '{"ts":"%s","cp_ready_code":"%s","disk_pct":%s,"agent_healthz":%s,"cp_stats":%s,"agent_stats":%s,"events":%s,"deliveries":%s,"dead_letters":%s,"duplicates":%s,"pending":%s}\n' \
+      "$ts" "$ready" "${disk_pct:-0}" "$spool" "$cp_stats" "$agent_stats" \
+      "${events:-0}" "${deliveries:-0}" "${dead:-0}" "${dupes:-0}" "${pending:-0}" >>"$SAMPLES"
     sleep "$SAMPLE_INTERVAL"
   done
 }
@@ -363,8 +490,11 @@ disk_loop() {
   done
 }
 
+if [ "$LAB_MODE" != "1" ]; then
+  prepare_sink_route
+fi
 SECONDS=0
-log "soak starting: duration=${DURATION}s wan_cycle=${WAN_CYCLE}s wan_downtime=${WAN_DOWNTIME}s disk_cycle=${DISK_CYCLE}s sample_interval=${SAMPLE_INTERVAL}s lab_mode=${LAB_MODE}"
+log "soak starting: duration=${DURATION}s wan_cycle=${WAN_CYCLE}s wan_downtime=${WAN_DOWNTIME}s disk_cycle=${DISK_CYCLE}s ingest_interval=${INGEST_INTERVAL}s sample_interval=${SAMPLE_INTERVAL}s lab_mode=${LAB_MODE}"
 
 sampler_loop &
 BG_PIDS+=("$!")
@@ -372,11 +502,19 @@ wan_loop &
 BG_PIDS+=("$!")
 disk_loop &
 BG_PIDS+=("$!")
+if [ "$LAB_MODE" != "1" ]; then
+  ingest_loop &
+  BG_PIDS+=("$!")
+  heap_loop &
+  BG_PIDS+=("$!")
+fi
 
-# Controller: block until the soak duration elapses, then fall through to cleanup.
+# Controller: block until the soak duration elapses, then drain and fall through to cleanup.
 while [ "$SECONDS" -lt "$DURATION" ]; do
   sleep 1
 done
 
-log "soak duration elapsed, tearing down"
+log "soak duration elapsed, draining edge spool"
+sleep "${NODRA_SOAK_DRAIN:-15}"
+log "tearing down"
 # cleanup() runs via the EXIT trap.

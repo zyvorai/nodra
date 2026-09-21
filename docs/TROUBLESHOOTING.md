@@ -39,17 +39,13 @@ expected, not a sign the restore failed.
 
 ## Control plane won't start a second replica
 
-By design — v0.2's control plane intentionally runs as a single
-writer/replica because its embedded WAL is single-writer (see the README's
-maturity banner and `ROADMAP.md`'s v1.0 criteria). There is no supported HA
-mode yet; running a second instance against the same data directory is not
-a configuration you should attempt.
+File mode will not. The data directory is a single-writer WAL on a `ReadWriteOnce` volume, and Helm fails the render when `replicaCount` is above 1 in that mode. Do not point two processes at the same data directory.
+
+Postgres mode may run more than one control-plane process against the same database: fleet reads come from SQL, updates check `revision`, and delivery workers claim concurrently. That is still not full HA. Multi-day soak, PITR, and the rest of the 1.0 gates are open. See the README maturity banner and `ROADMAP.md`.
 
 ## A device using QoS 2 or persistent MQTT sessions doesn't behave as expected
 
-Expected — v0.2 explicitly does not claim QoS 2 or persistent-session
-support. Use QoS 0/1 and design your device logic accordingly, or check
-`ROADMAP.md`/`CHANGELOG.md` for whether a later release has added it.
+QoS 2 is implemented in both directions, and persistent sessions replay queued QoS 1 (with `DUP`) and QoS 2. Subscription lists are in-memory and do not survive a broker restart: after a restart the client must subscribe again before new messages are queued for it. QoS 1 publishes from the broker do not wait for `PUBACK`. See `internal/mqtt` and `ROADMAP.md`.
 
 ## J1939/CAN data isn't showing up in Nodra
 

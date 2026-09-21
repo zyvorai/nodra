@@ -78,8 +78,8 @@ The repository includes GitHub Actions jobs for container build, Helm/Kustomize/
 
 ## v0.2.0 intentional boundaries
 
-- MQTT supports the documented v0.2 subset; QoS 2 and persistent MQTT sessions are not implemented yet.
-- The control plane remains intentionally single-writer; horizontal HA is not claimed for the embedded WAL state engine.
+- MQTT supports QoS 0/1/2 in both directions. Persistent sessions replay queued QoS 1 and QoS 2. Subscription lists are in-memory and do not survive a broker restart.
+- File mode is a tested single-replica deployment. Postgres fleet state is read from the database with revision checks, and delivery workers claim concurrently. Full HA is not claimed.
 - OPC-UA, NATS and Zenoh are roadmap connectors, not v0.2 claims.
 - Docker workload reconciliation requires a Docker runtime on the edge node and is opt-in.
 - Console activity Logs are in-memory only (not part of durable backup).

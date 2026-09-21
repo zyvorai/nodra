@@ -5,9 +5,20 @@ metadata:
   labels:
     {{- include "nodra.labels" . | nindent 4 }}
 spec:
-  # v0.2 uses an embedded WAL state store. Keep this at one replica until HA storage lands.
-  replicas: 1
-  strategy: {type: Recreate}
+  {{- if and (eq .Values.server.store "file") (gt (int .Values.replicaCount) 1) }}
+  {{- fail "nodra file store requires replicaCount 1 because the data volume is ReadWriteOnce" }}
+  {{- end }}
+  # Default is one replica. File mode cannot scale. Postgres may set replicaCount
+  # above 1: fleet state is read from the database with revision checks. That is
+  # not a full HA claim (soak, PITR, and the remaining 1.0 gates are still open).
+  replicas: {{ .Values.replicaCount }}
+  {{- if and (eq .Values.server.store "postgres") (gt (int .Values.replicaCount) 1) }}
+  strategy:
+    type: RollingUpdate
+  {{- else }}
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "nodra.selectorLabels" . | nindent 6 }}

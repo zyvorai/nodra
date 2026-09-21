@@ -59,6 +59,23 @@ func TestQueueDropOldest(t *testing.T) {
 		t.Fatalf("%#v", v)
 	}
 }
+func TestQueueDropNewest(t *testing.T) {
+	q, _ := OpenWithOptions[item](t.TempDir(), Options{MaxItems: 2, Policy: "drop-newest"})
+	defer q.Close()
+	if err := q.Put("1", item{"1", 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.Put("2", item{"2", 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.Put("3", item{"3", 3}); err != ErrFull {
+		t.Fatalf("want ErrFull got %v", err)
+	}
+	v, _ := q.List()
+	if len(v) != 2 || v[0].ID != "1" || v[1].ID != "2" {
+		t.Fatalf("%#v", v)
+	}
+}
 func TestQueueByteQuota(t *testing.T) {
 	q, _ := OpenWithOptions[item](t.TempDir(), Options{MaxBytes: 10, Policy: "reject"})
 	defer q.Close()

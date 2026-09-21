@@ -14,6 +14,9 @@
 
 ## Unreleased
 
+- Postgres fleet state is read from the database on every call. Updates use a `revision` column (`UPDATE ... WHERE revision = ?`) so two control-plane processes cannot silently overwrite each other. Numbered schema migrations (`nodra_schema_migrations`) refuse a database newer than the binary. Helm `replicaCount` is honored; file mode fails the render above 1; Postgres above 1 uses `RollingUpdate`. This is not a v1.0 HA claim: multi-day soak, PITR, and the remaining gates stay open.
+- The soak publishes through the edge agent over HTTP and MQTT while the control plane is stopped, accumulates counters across control-plane restarts, writes heap profiles at the start, middle, and end, and fails when no events were accepted. The simulator is not started for that run, because its routes to a closed port retained every failed delivery in memory. See `docs/SCALE.md`.
+
 - `nodractl status` prints the Cilium-style logo from `/api/v1/overview`. `nodractl status json` is the raw overview.
 - `make help`, `make ci`, `make status`, and `make deploy-remote H=<host> U=sus`. The older `make deploy` target is unchanged.
 - Short-soak memory bound is 3× so a cold Go heap is not treated as a leak. Go 1.27 `gofmt` is clean.
@@ -89,7 +92,7 @@
   deployment revert, not a staged/canary campaign — that remains on
   `ROADMAP.md`'s Next list.
 
-- True multi-writer delivery/DLQ HA on Postgres
+- Concurrent delivery and DLQ claiming on Postgres
   (`internal/queue.PostgresQueue`): with `NODRA_STORE=postgres`, every
   replica pointed at the same database now claims and processes deliveries
   concurrently instead of routing through a single elected leader.

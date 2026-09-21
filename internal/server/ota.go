@@ -72,19 +72,22 @@ func (s *Server) setDeviceOTADesired(dev model.Device, req ota.Request) (model.T
 	if err := req.Validate(); err != nil {
 		return model.Twin{}, err
 	}
-	tw, _ := s.store.Twin(dev.ID)
-	tw.DeviceID = dev.ID
-	tw.SiteID = dev.SiteID
-	if tw.Desired == nil {
-		tw.Desired = map[string]any{}
-	}
-	tw.Desired[otaTwinKey] = req
-	tw.DesiredVersion++
-	tw.UpdatedAt = time.Now().UTC()
-	if err := s.store.SetTwin(tw); err != nil {
+	var out model.Twin
+	err := s.store.UpdateTwin(dev.ID, func(tw *model.Twin) {
+		tw.DeviceID = dev.ID
+		tw.SiteID = dev.SiteID
+		if tw.Desired == nil {
+			tw.Desired = map[string]any{}
+		}
+		tw.Desired[otaTwinKey] = req
+		tw.DesiredVersion++
+		tw.UpdatedAt = time.Now().UTC()
+		out = *tw
+	})
+	if err != nil {
 		return model.Twin{}, err
 	}
-	return tw, nil
+	return out, nil
 }
 
 // otaDeviceRequest sets a device's desired OTA state (admin-only): the
@@ -178,22 +181,31 @@ func (s *Server) agentOTAStatus(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 400, err.Error())
 		return
 	}
-	tw, _ := s.store.Twin(dev.ID)
-	if prev, ok, err := otaStatusFromReported(tw.Reported); err == nil && ok {
-		if err := ota.ValidateTransition(prev.State, in.Status.State); err != nil {
-			errorJSON(w, 409, err.Error())
-			return
+	var tw model.Twin
+	var transitionErr error
+	err := s.store.UpdateTwin(dev.ID, func(cur *model.Twin) {
+		transitionErr = nil
+		if prev, ok, err := otaStatusFromReported(cur.Reported); err == nil && ok {
+			if err := ota.ValidateTransition(prev.State, in.Status.State); err != nil {
+				transitionErr = err
+				return
+			}
 		}
+		if cur.Reported == nil {
+			cur.Reported = map[string]any{}
+		}
+		cur.DeviceID = dev.ID
+		cur.SiteID = in.SiteID
+		cur.Reported[otaTwinKey] = in.Status
+		cur.ReportedVersion++
+		cur.UpdatedAt = time.Now().UTC()
+		tw = *cur
+	})
+	if transitionErr != nil {
+		errorJSON(w, 409, transitionErr.Error())
+		return
 	}
-	if tw.Reported == nil {
-		tw.Reported = map[string]any{}
-	}
-	tw.DeviceID = dev.ID
-	tw.SiteID = in.SiteID
-	tw.Reported[otaTwinKey] = in.Status
-	tw.ReportedVersion++
-	tw.UpdatedAt = time.Now().UTC()
-	if err := s.store.SetTwin(tw); err != nil {
+	if err != nil {
 		errorJSON(w, 507, err.Error())
 		return
 	}
