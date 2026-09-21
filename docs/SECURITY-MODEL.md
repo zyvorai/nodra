@@ -6,8 +6,8 @@ hero:
 
 ## Trust boundaries
 
-1. **Local device/app -> nodrad**: protect HTTP ingress with `local_token`; use a network boundary/TLS termination for MQTT where required.
-2. **nodrad -> control plane**: bearer site credentials are supported; optional client certificates provide mTLS identity.
+1. **Local device/app -> nodrad**: local HTTP ingest requires `local_token` unless `allow_unauthenticated_local` is set. MQTT is anonymous unless `mqtt_username` and `mqtt_password` are set, or `mqtt_clients` lists per-device usernames. Each client in that list may publish and subscribe only to its granted topic filters; an empty list denies that direction. `mqtt_max_clients` and `mqtt_max_publish_per_minute` close extra connections and disconnect a client that publishes too fast. Zero means no cap. Set `mqtt_cert_file` and `mqtt_key_file` to terminate TLS 1.2 or newer on the broker. `mqtt_client_ca_file` verifies a presented client certificate; `mqtt_require_client_cert` refuses a client that presents none. With those fields empty the listener stays cleartext.
+2. **nodrad -> control plane**: bearer site credentials are supported; optional client certificates provide mTLS identity. `NODRA_REQUIRE_CLIENT_CERT` switches that listener to `RequireAndVerifyClientCert` when a client CA is configured. Console login and site enrollment each return 429 after five failures from the same address in five minutes.
 3. **operator -> management API**: admin bearer token (`NODRA_ADMIN_TOKEN`) or optional viewer bearer (`NODRA_VIEWER_TOKEN`, GET-only).
 4. **operator -> web console**: username/password for admin or viewer. Successful login returns the matching bearer; the token and role are held in `sessionStorage`.
 5. **control plane -> webhook destination**: HTTPS is recommended. Route headers may carry destination credentials; protect the control-plane data volume.
@@ -15,7 +15,7 @@ hero:
 
 ## Enrollment
 
-The enrollment token is a bootstrap secret. Site bearer tokens are random and only their SHA-256 hash is persisted centrally.
+The enrollment token is a bootstrap secret. Site bearer tokens are random and only their SHA-256 hash is persisted centrally. Five wrong enrollment tokens from the same address within five minutes return 429.
 
 When PKI enrollment is enabled, the edge generates an ECDSA P-256 private key and CSR. Only the CSR is sent. The control plane signs it; the private key never leaves the site.
 

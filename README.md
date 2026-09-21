@@ -4,7 +4,7 @@
 
 Nodra is an Apache-2.0 edge runtime and control plane from Zyvor. It gives remote sites a local MQTT/HTTP ingress, durable store-and-forward, local routes, device twins, edge application reconciliation, fleet health, replayable dead letters and a clean web control plane.
 
-> **v0.2.2** is a serious single-control-plane release. Edge sites are offline-first. File mode is a tested single-replica deployment. PostgreSQL fleet state is read from the database, with revision checks so replicas cannot silently overwrite each other, and delivery workers already claim concurrently. A cross-replica test covers that consistency. Multi-day soak, PITR, and the rest of the 1.0 gates are still open. Helm defaults to one replica and refuses to scale file mode. Lab reference host runs HTTPS (`:18447`) with signed abbreviated WAN/disk drills, plus a CI-gated multi-hour automated soak on every scheduled run (`.github/workflows/soak.yml`) — multi-day continuous soak is tracked separately and still needs a self-hosted runner against the lab host.
+> **v0.2.2** is a serious single-control-plane release. Edge sites are offline-first. File mode is a tested single-replica deployment. PostgreSQL fleet state is read from the database, with revision checks so replicas cannot silently overwrite each other, and delivery workers already claim concurrently. A cross-replica test covers that consistency. Helm defaults to one replica and refuses to scale file mode. Configured limits are in [`docs/SCALE.md`](docs/SCALE.md). The soak workflow publishes through the edge and fails when nothing was accepted; the repaired four-hour run has not passed, and 24-hour, 72-hour, and seven-day runs need a self-hosted runner. PITR and the rest of the 1.0 gates are still open. The lab reference host runs HTTPS (`:18447`) with signed abbreviated WAN/disk drills.
 
 ## Why Nodra
 
@@ -42,18 +42,19 @@ and not a full HA platform today (file mode is one replica; Postgres sharing is 
 | Primary scope | Edge ingress + durable store-and-forward + device twins + app reconciliation | Visual flow-based automation | MQTT broker (edge-deployed) | Cloud-connected edge runtime | Cloud-connected edge runtime |
 | Cloud dependency | None required — WAN-loss is a first-class operating mode, not a degraded one | None required | Usually paired with a cloud broker/console | AWS IoT Core | Azure IoT Hub |
 | License | Apache-2.0 | Apache-2.0 | Apache-2.0 core (EMQX) / proprietary (HiveMQ Edge) | Proprietary (free tier) | Proprietary (free tier) |
-| Industrial protocol decoding | Modbus TCP + RTU implemented; OPC-UA/serial/NATS/Zenoh/Kafka are roadmap, not shipped (`docs/INDUSTRIAL_PROTOCOLS.md`) | Via community nodes | Not built-in | Via custom components | Via custom modules |
+| Industrial protocol decoding | Modbus TCP + RTU, J1939 via Device Agent capture, OPC-UA (None/anonymous), Linux serial, and a NATS subscribe bridge. Zenoh and Kafka are not shipped (`docs/INDUSTRIAL_PROTOCOLS.md`, `docs/NATS_BRIDGE.md`) | Via community nodes | Not built-in | Via custom components | Via custom modules |
 | HA / clustering | File mode is one replica. Postgres shares fleet state with revision checks and claims deliveries concurrently; full HA is still open (`ROADMAP.md`) | N/A (single instance) | Yes (broker clustering) | Managed by AWS | Managed by Azure |
 
 *(General characterizations as of writing — verify current features against
 each project's own docs.)*
 
-**Maturity, stated honestly**: current release is v0.2.1. The project's own
+**Maturity, stated honestly**: current release is v0.2.2. The project's own
 `ROADMAP.md` lists what's still required before v1.0 — stable API
-compatibility, a full HA control plane, upgrade/migration guarantees,
-multi-day soak tests, protocol conformance suites, and published recovery
-runbooks/scale envelope. Postgres fleet reads are consistent across replicas
-and delivery workers claim concurrently; that is not the HA bar. If you need
+compatibility, a full HA control plane, upgrade and rollback procedure,
+multi-day soak tests, protocol conformance suites, and recovery runbooks.
+Configured limits are in `docs/SCALE.md`; a measured events-per-second
+number is not. Postgres fleet reads are consistent across replicas and
+delivery workers claim concurrently; that is not the HA bar. If you need
 full HA or a stability guarantee today, this isn't there yet; if you need a
 single-site, offline-resilient edge runtime, this is exactly the scope.
 
@@ -191,13 +192,15 @@ docker compose up --build
 
 ### Publish over MQTT
 
-Any MQTT 3.1.1 client can publish QoS 0/1/2:
+Any MQTT 3.1.1 client can publish QoS 0/1/2. Cleartext is the default:
 
 ```bash
 mosquitto_pub -h 127.0.0.1 -p 1883 \
   -t factory/line-1/temperature \
   -q 2 -m '{"c":31.2}'
 ```
+
+To terminate TLS on the broker, set `mqtt_cert_file` and `mqtt_key_file` (or `nodrad init --mqtt-tls-cert` / `--mqtt-tls-key`). Clients then use MQTT over TLS (often port 8883). Optional `mqtt_client_ca_file` and `mqtt_require_client_cert` require a client certificate. Username/password and per-device `mqtt_clients` topic grants are independent of TLS.
 
 Nodra's embedded MQTT broker is deliberately focused on edge ingress/local fan-out. Persistent sessions (`CleanSession=0`) are supported for QoS 0/1/2 subscribers — a durable per-client queue replays missed messages (with `DUP` set) on reconnect, though in-memory subscription lists don't survive a broker restart. QoS 2 works for **both** publishing clients and subscribers (full `PUBLISH`/`PUBREC`/`PUBREL`/`PUBCOMP` exactly-once handshake in each direction).
 
@@ -298,7 +301,7 @@ nodra-server --pki --data /var/lib/nodra ...
 nodrad init ... --request-certificate
 ```
 
-The edge private key is generated locally and never sent to the control plane. Enrollment returns only the signed client certificate and CA certificate. To enforce mTLS on the server, configure HTTPS plus `--client-ca` using the Nodra CA or your enterprise CA. Bearer credentials remain supported for bootstrap and non-mTLS deployments.
+The edge private key is generated locally and never sent to the control plane. Enrollment returns only the signed client certificate and CA certificate. To enforce mTLS on the server, configure HTTPS plus `--client-ca` using the Nodra CA or your enterprise CA. `--require-client-cert` / `NODRA_REQUIRE_CLIENT_CERT` refuses clients that present no certificate. Bearer credentials remain supported for bootstrap and non-mTLS deployments.
 
 ## Docker app reconciliation
 
@@ -358,13 +361,15 @@ kubectl kustomize --load-restrictor LoadRestrictionsNone deployments/kustomize/d
 
 ```bash
 helm upgrade --install nodra ./charts/nodra \
-  --namespace nodra-system --create-namespace \
-  --set secrets.adminToken=... --set secrets.enrollmentToken=...
+  --namespace nodra --create-namespace \
+  -f charts/nodra/values-production.yaml
 ```
 
-If tokens are omitted, Helm creates long random values and preserves them across upgrades. Enable live fleet simulation with `--set simulation.enabled=true`.
+Create Secret `nodra-production` first (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)). The production values file stays at one replica, uses Postgres, cert-manager TLS, and a restricted NetworkPolicy. It is not HA and does not configure PITR. Demo installs can omit that file and pass `--set secrets.adminToken=... --set secrets.enrollmentToken=...`; if tokens are omitted on a chart-managed Secret, Helm creates long random values and preserves them across upgrades.
 
 Helm defaults to one replica. File mode fails the render when `replicaCount` is above 1, because the data volume is `ReadWriteOnce`. Postgres mode may set `replicaCount` above 1 and then uses a rolling update; that shares fleet state, and it is not a full HA claim. The PDB allows a single pod to be drained instead of blocking node maintenance.
+
+For MQTT TLS on the optional in-cluster agent, set `agent.mqtt.tls.existingSecret` to a Secret with `tls.crt` and `tls.key` (`ca.crt` when `requireClientCert` is true).
 
 ## Web console
 
@@ -387,6 +392,9 @@ Auth uses the admin bearer as the session token returned by login. See [docs/DEM
 ```text
 nodractl status
 nodractl status json
+nodractl preflight
+nodractl doctor
+nodractl support-bundle --out DIR
 nodractl overview
 nodractl sites list
 nodractl sites revoke SITE_ID
@@ -401,6 +409,8 @@ nodractl events
 nodractl publish ...
 ```
 
+`preflight` checks `/healthz`, `/readyz`, and `/api/v1/version`. `doctor` also probes overview when a token is set. `support-bundle` writes those responses under a directory and does not write tokens. Use `--insecure` for lab self-signed HTTPS.
+
 ## Architecture
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). File mode uses append-only fsynced WALs with in-memory indexes and periodic compaction. Postgres mode reads fleet state from the database. There is no file-per-event spool in v0.2.
@@ -412,7 +422,7 @@ Nodra does not try to invent a new universal wire protocol. The core provides lo
 Included:
 
 - HTTP ingress
-- MQTT 3.1.1 ingress/local subscription (QoS 0/1/2 in both directions; persistent sessions replay queued QoS 1 and QoS 2; subscription lists do not survive a broker restart)
+- MQTT 3.1.1 ingress/local subscription (QoS 0/1/2 in both directions; optional TLS and client certificates; persistent sessions replay queued QoS 1 and QoS 2; subscription lists do not survive a broker restart)
 - Modbus TCP/RTU, J1939, OPC-UA, NATS, generic serial/USB connectors
 - Connector SDK
 
@@ -421,9 +431,11 @@ Planned/community adapters: Zenoh, Kafka bridge. See `pkg/connector` and [ROADMA
 ## Security defaults
 
 - management API requires an admin bearer token (optional viewer token is GET-only)
-- console login uses admin or viewer credentials (`NODRA_ADMIN_*` / `NODRA_VIEWER_*`)
+- console login uses admin or viewer credentials (`NODRA_ADMIN_*` / `NODRA_VIEWER_*`); five failed logins or enrollments from one address in five minutes return 429
+- local HTTP ingest requires `local_token` unless `allow_unauthenticated_local`
+- MQTT may require username/password or per-device `mqtt_clients` grants; optional broker TLS (`mqtt_cert_file` / `mqtt_key_file`) and client certificates
 - per-site random credentials are stored as SHA-256 hashes centrally
-- optional CSR certificate enrollment
+- optional CSR certificate enrollment; `NODRA_REQUIRE_CLIENT_CERT` for control-plane mTLS
 - site revocation
 - no Kubernetes service-account token
 - non-root UID/GID 65532
@@ -482,8 +494,16 @@ GitHub CI additionally runs:
 | [docs/API.md](docs/API.md) | HTTP API summary |
 | [docs/openapi.yaml](docs/openapi.yaml) | OpenAPI schemas |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Backup, upgrades, ports, stores, disk pressure |
+| [docs/PRODUCTION.md](docs/PRODUCTION.md) | Production runbook and current maturity |
+| [docs/QUALIFICATION.md](docs/QUALIFICATION.md) | Software matrix and lab checklist |
+| [docs/SCALE.md](docs/SCALE.md) | Configured limits and how to run the soak |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production Helm profile and GitOps |
+| [docs/RECOVERY.md](docs/RECOVERY.md) | File and PostgreSQL backup; PITR is not shipped |
 | [docs/SECURITY-MODEL.md](docs/SECURITY-MODEL.md) | Trust boundaries + RBAC |
 | [docs/SUPPLY_CHAIN.md](docs/SUPPLY_CHAIN.md) | Release / SBOM / signing |
+| [docs/POLICY_PACKS.md](docs/POLICY_PACKS.md) | Fleet image allowlists |
+| [docs/INDUSTRIAL_PROTOCOLS.md](docs/INDUSTRIAL_PROTOCOLS.md) | Modbus, J1939, OPC-UA, serial |
+| [docs/NATS_BRIDGE.md](docs/NATS_BRIDGE.md) | NATS subscribe bridge |
 | [ROADMAP.md](ROADMAP.md) | Next milestones |
 
 Product page: [https://zyvor.dev/nodra](https://zyvor.dev/nodra).

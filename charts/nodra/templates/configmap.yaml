@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nodra.fullname" . }}-config
+  labels:
+    {{- include "nodra.labels" . | nindent 4 }}
+data:
+  NODRA_DATA_DIR: /var/lib/nodra
+  NODRA_LISTEN: ":8080"
+  NODRA_DELIVERY_WORKERS: {{ .Values.server.deliveryWorkers | quote }}
+  NODRA_PKI_ENABLED: {{ .Values.server.pkiEnabled | quote }}
+  NODRA_STORE: {{ .Values.server.store | default "file" | quote }}

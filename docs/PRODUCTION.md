@@ -9,21 +9,22 @@ For a multi-product evaluation host (Fleet + OTA + Device Agent + Nodra), see
 sibling repos' `docs/LAB.md` — that path is not a multi-replica production
 control plane.
 
-## Current maturity (2026-09-15)
+## Current maturity (2026-09-21)
 
 | Claim | Status |
 |---|---|
-| Software matrix + CI lab substitutes | green (`make qualify`, bridge/compose/backup CI) |
+| Software matrix + CI lab substitutes | green (`make qualify`, bridge/compose/backup CI, postgres dump/restore, production Helm kubeconform) |
 | Ops checklist (backup/restore/single-replica) | **signed** — [ops-checklist.md](https://github.com/zyvorai/nodra/blob/main/evidence/qualification/ops-checklist.md) |
 | TLS on lab CP | **done** — `NODRA_TLS_CERT`/`KEY` HTTPS on `:18447` |
+| MQTT broker TLS | **done** — optional `mqtt_cert_file` / `mqtt_key_file`; optional client certificates |
 | Abbreviated WAN + disk drills | **signed** — `lab/20260914T162245Z/nodra-soak/` |
-| HA / multi-writer | **partial** — Postgres fleet state is read from the database with revision checks, and delivery workers claim concurrently. Full HA (multi-day soak, PITR, remaining 1.0 gates) is **open**. File mode stays one replica |
-| Multi-hour WAN / disk soak | **pass** — CI-automated, `.github/workflows/soak.yml` + `.github/workflows/ci.yml`'s `soak-short` job (`scripts/ci/soak.sh`, judged by `scripts/ci/soak-check.py`) |
-| Multi-day WAN / disk soak | **open** — needs a self-hosted runner against the lab host; hosted GitHub runners cap out around 6h |
+| HA / multi-writer | **partial** — Postgres fleet state is read from the database with revision checks, and delivery workers claim concurrently. Full HA (a passing multi-day soak, PITR, remaining 1.0 gates) is **open**. File mode stays one replica. Configured limits: [SCALE.md](SCALE.md) |
+| Multi-hour WAN / disk soak | **open** — `.github/workflows/soak.yml` runs the repaired job (edge HTTP and MQTT ingest, counters accumulated across restarts, fail when nothing was accepted). The last published four-hour run failed. That repaired run has not passed |
+| Multi-day WAN / disk soak | **open** — 24h, 72h, and 168h need a self-hosted runner. The hosted job timeout is 330 minutes |
 
 **Verdict:** file mode is **production-capable** as a tested single-replica deployment when TLS + spool policy are set
 per this runbook and the ops checklist is signed on the target host. PostgreSQL shares fleet state and lets delivery workers claim concurrently; that is not a full HA claim. Lab
-reference host already runs HTTPS `:18447`.
+reference host already runs HTTPS `:18447`. Use [values-production.yaml](../charts/nodra/values-production.yaml) for a single-replica Postgres install ([DEPLOYMENT.md](DEPLOYMENT.md)).
 
 ## Preconditions
 
@@ -31,8 +32,9 @@ reference host already runs HTTPS `:18447`.
 2. Ops checklist signed: `evidence/qualification/ops-checklist.md`.
 3. One control-plane replica for file mode. Helm refuses `replicaCount` above 1 in that mode. Postgres may run more than one replica; the default remains 1 until full HA is qualified.
 4. Strong `NODRA_ADMIN_TOKEN` / passwords; rotate `NODRA_ENROLLMENT_TOKEN` after bootstrap.
-5. TLS at Ingress or direct `--tls-cert`/`--tls-key`. Never expose `--public-read` or demo tokens on shared networks.
+5. TLS at Ingress or direct `--tls-cert`/`--tls-key`. On the edge, set MQTT TLS when the broker is reachable beyond a trusted LAN. Never expose `--public-read` or demo tokens on shared networks.
 6. Choose spool policy deliberately (`reject` for loss-sensitive telemetry).
+7. Prefer `charts/nodra/values-production.yaml` for Kubernetes installs that need Postgres, existing Secret, cert-manager, and egress NetworkPolicy.
 
 ## Day-2 monitoring
 
@@ -55,14 +57,14 @@ Do **not** dual-mount the same WAL directory on two live processes.
 
 ## Needs attention (known v0.2.x limits)
 
-- File mode has no multi-replica delivery plane — failover is restore-from-backup. Postgres delivery workers claim concurrently, and fleet updates use `revision`; soak, PITR, and the rest of the 1.0 gates are still open.
+- File mode has no multi-replica delivery plane — failover is restore-from-backup. Postgres delivery workers claim concurrently, and fleet updates use `revision`. The repaired four-hour soak has not passed. PITR and the rest of the 1.0 gates are still open. Limits are in [SCALE.md](SCALE.md).
 - The console's live Activity/Logs tail is in-memory (cap 2000) and is **not**
   in backups — but every actor-attributable action it shows is durably
   written to `audit/` (or Postgres) under the data directory, **is** in
   backups, and is queryable/exportable via `GET /api/v1/audit` and
   `nodractl audit export`.
 - MQTT QoS 0/1/2 works in both directions. Persistent sessions replay queued QoS 1 and QoS 2. Subscription lists are in-memory and do not survive a broker restart.
-- Compose / Helm demo values are evaluation-only.
+- Compose / Helm demo values are evaluation-only. `charts/nodra/values-production.yaml` is the single-replica PostgreSQL profile (existing Secret, cert-manager, egress policy, startup probe). It is not HA and it does not configure PITR. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Release artifacts
 

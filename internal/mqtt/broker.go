@@ -25,6 +25,7 @@ package mqtt
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -55,6 +56,18 @@ type Broker struct {
 	sessionOpts queue.Options
 	sessMu      sync.Mutex
 	sessions    map[string]*persistentSession
+	// Authenticate, when set, requires CONNECT username and password.
+	// A nil function allows anonymous clients, which is the demo default.
+	Authenticate func(username, password string) bool
+	// Authorize, when set, allows publish (write) and subscribe for that username.
+	// A nil function allows every topic.
+	Authorize func(username, topic string, write bool) bool
+	// MaxClients closes new connections once this many are open. Zero means no cap.
+	MaxClients int
+	// MaxPublishPerMinute disconnects a client that publishes faster. Zero means no cap.
+	MaxPublishPerMinute int
+	// TLSConfig, when set, wraps the listener. Nil keeps cleartext MQTT.
+	TLSConfig *tls.Config
 }
 type subscription struct {
 	filter string
@@ -79,6 +92,9 @@ type client struct {
 	outMu       sync.Mutex
 	nextOutID   uint16
 	qos2Out     map[uint16]byte // outbound broker→subscriber inflight state
+	username    string
+	pubWindow   time.Time
+	pubCount    int
 }
 
 func New(addr string, h Handler) *Broker {
@@ -88,7 +104,13 @@ func (b *Broker) Start(ctx context.Context) error {
 	if b.Addr == "" {
 		return nil
 	}
-	ln, err := net.Listen("tcp", b.Addr)
+	var ln net.Listener
+	var err error
+	if b.TLSConfig != nil {
+		ln, err = tls.Listen("tcp", b.Addr, b.TLSConfig)
+	} else {
+		ln, err = net.Listen("tcp", b.Addr)
+	}
 	if err != nil {
 		return err
 	}
@@ -104,6 +126,11 @@ func (b *Broker) Start(ctx context.Context) error {
 		}
 		cl := &client{c: c, closed: make(chan struct{})}
 		b.mu.Lock()
+		if b.MaxClients > 0 && len(b.clients) >= b.MaxClients {
+			b.mu.Unlock()
+			_ = c.Close()
+			continue
+		}
 		b.clients[cl] = struct{}{}
 		b.mu.Unlock()
 		go b.serve(ctx, cl)
@@ -192,6 +219,11 @@ func (b *Broker) serve(ctx context.Context, cl *client) {
 			if err != nil {
 				return
 			}
+			if b.Authenticate != nil && !b.Authenticate(info.username, info.password) {
+				_ = cl.write([]byte{0x20, 0x02, 0x00, 0x04})
+				return
+			}
+			cl.username = info.username
 			sessionPresent := byte(0)
 			if b.sessionDir != "" {
 				if info.cleanSession {
@@ -229,6 +261,9 @@ func (b *Broker) serve(ctx context.Context, cl *client) {
 				return
 			}
 			msg := Message{Topic: topic, Payload: body, QoS: qos, Retain: flags&1 != 0}
+			if !b.underPublishCap(cl) || !b.permit(cl, topic, true) {
+				return
+			}
 			switch qos {
 			case 0, 1:
 				if b.Handler != nil {
@@ -285,6 +320,9 @@ func (b *Broker) serve(ctx context.Context, cl *client) {
 			delete(cl.qos2Pending, pid)
 			cl.qos2Mu.Unlock()
 			if ok {
+				if !b.permit(cl, msg.Topic, true) {
+					return
+				}
 				if b.Handler != nil {
 					_ = b.Handler(ctx, msg)
 				}
@@ -315,16 +353,22 @@ func (b *Broker) serve(ctx context.Context, cl *client) {
 			if er != nil {
 				return
 			}
+			var granted []subscription
+			ack := []byte{0x90, byte(2 + len(subs)), byte(pid >> 8), byte(pid)}
+			for _, s := range subs {
+				if b.permit(cl, s.filter, false) {
+					granted = append(granted, s)
+					ack = append(ack, s.qos)
+				} else {
+					ack = append(ack, 0x80)
+				}
+			}
 			cl.subsMu.Lock()
-			cl.subs = append(cl.subs, subs...)
+			cl.subs = append(cl.subs, granted...)
 			all := append([]subscription(nil), cl.subs...)
 			cl.subsMu.Unlock()
 			if cl.session != nil {
 				cl.session.setSubs(all)
-			}
-			ack := []byte{0x90, byte(2 + len(subs)), byte(pid >> 8), byte(pid)}
-			for _, s := range subs {
-				ack = append(ack, s.qos)
 			}
 			if err = cl.write(ack); err != nil {
 				return
@@ -338,6 +382,24 @@ func (b *Broker) serve(ctx context.Context, cl *client) {
 		default: /* ignore unsupported packets */
 		}
 	}
+}
+func (b *Broker) permit(cl *client, topic string, write bool) bool {
+	if b.Authorize == nil {
+		return true
+	}
+	return b.Authorize(cl.username, topic, write)
+}
+func (b *Broker) underPublishCap(cl *client) bool {
+	if b.MaxPublishPerMinute <= 0 {
+		return true
+	}
+	now := time.Now()
+	if cl.pubWindow.IsZero() || now.Sub(cl.pubWindow) >= time.Minute {
+		cl.pubWindow = now
+		cl.pubCount = 0
+	}
+	cl.pubCount++
+	return cl.pubCount <= b.MaxPublishPerMinute
 }
 func (c *client) write(p []byte) error {
 	c.wmu.Lock()
@@ -465,6 +527,8 @@ func appendString(dst []byte, s string) []byte {
 type connectInfo struct {
 	cleanSession bool
 	clientID     string
+	username     string
+	password     string
 }
 
 // parseConnect validates the protocol name/level (as validateConnect always
@@ -482,11 +546,34 @@ func parseConnect(p []byte) (connectInfo, error) {
 	}
 	flags := rest[1]
 	// rest[2:4] is Keep Alive — not enforced by this broker.
-	clientID, _, err := readString(rest[4:])
+	payload := rest[4:]
+	clientID, payload, err := readString(payload)
 	if err != nil {
 		return connectInfo{}, err
 	}
-	info := connectInfo{cleanSession: flags&0x02 != 0, clientID: clientID}
+	if flags&0x04 != 0 {
+		if _, payload, err = readString(payload); err != nil {
+			return connectInfo{}, err
+		}
+		if _, payload, err = readString(payload); err != nil {
+			return connectInfo{}, err
+		}
+	}
+	var username, password string
+	if flags&0x80 != 0 {
+		if username, payload, err = readString(payload); err != nil {
+			return connectInfo{}, err
+		}
+	}
+	if flags&0x40 != 0 {
+		if flags&0x80 == 0 {
+			return connectInfo{}, errors.New("password flag set without username")
+		}
+		if password, _, err = readString(payload); err != nil {
+			return connectInfo{}, err
+		}
+	}
+	info := connectInfo{cleanSession: flags&0x02 != 0, clientID: clientID, username: username, password: password}
 	if !info.cleanSession && info.clientID == "" {
 		return connectInfo{}, errors.New("persistent session requires a non-empty client id")
 	}

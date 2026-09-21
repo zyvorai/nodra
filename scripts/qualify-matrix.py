@@ -105,6 +105,7 @@ def main():
 
     for name, env_key, detail in [
         ("backup_restore_drill", "NODRA_CI_BACKUP", "scripts/ci/backup-restore.sh + CI backup-restore"),
+        ("postgres_dump_restore", "NODRA_CI_POSTGRES_BACKUP", "scripts/backup-postgres.sh + scripts/restore-postgres.sh"),
         ("ci_relay_bridge_smoke", "NODRA_CI_RELAY_BRIDGE", "scripts/smoke-relay-bridge.sh"),
         ("ci_compose_stack", "NODRA_CI_COMPOSE", "scripts/ci/compose-smoke.sh"),
         ("ci_compose_relay_bridge", "NODRA_CI_COMPOSE_BRIDGE", "examples/relay/docker-compose.bridge.yml"),

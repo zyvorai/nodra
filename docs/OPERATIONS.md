@@ -12,6 +12,16 @@ Stop the single control-plane writer or take a storage snapshot. Back up the Nod
 ./scripts/backup-state.sh /var/lib/nodra /var/backups/nodra-$(date -u +%Y%m%d).tar.gz
 ```
 
+For PostgreSQL, use the logical dump scripts instead of the file tarball:
+
+```bash
+./scripts/backup-postgres.sh /var/backups/nodra-$(date -u +%Y%m%d).dump
+# writer stopped
+NODRA_RESTORE_FORCE=1 ./scripts/restore-postgres.sh /var/backups/nodra-….dump
+```
+
+Neither path is point-in-time recovery. See [RECOVERY.md](RECOVERY.md).
+
 The live console's Activity/Logs tail is an **in-memory ring** (cap 2000) and
 is not part of the durable backup set — but every action it shows that has
 an identifiable actor is also durably written to `audit/` (daily-rotated
@@ -65,10 +75,27 @@ Shared resolution: CLI `--port` → `NODRA_PORT` → `.deploy-last` → random h
 | `NODRA_VIEWER_TOKEN` | Optional read-only bearer |
 | `NODRA_VIEWER_USER` / `NODRA_VIEWER_PASSWORD` | Optional viewer console login (password defaults to viewer token) |
 | `NODRA_ENROLLMENT_TOKEN` | Site bootstrap |
+| `NODRA_TLS_CERT` / `NODRA_TLS_KEY` | Control-plane HTTPS |
+| `NODRA_CLIENT_CA` | Optional client CA for mTLS |
+| `NODRA_REQUIRE_CLIENT_CERT` | Refuse clients without a certificate when a client CA is set |
 | `NODRA_STORE` | `file` (default) or `postgres` |
 | `NODRA_DATABASE_URL` | Postgres DSN when store is postgres |
 
 Viewer tokens can list fleet data; mutating methods return 403. Rotate admin/enrollment tokens after exposure. Revoke lost sites from the control plane.
+
+## Edge MQTT TLS
+
+Agent config fields `mqtt_cert_file` and `mqtt_key_file` wrap the MQTT listener in TLS 1.2 or newer. `mqtt_client_ca_file` verifies a presented client certificate; `mqtt_require_client_cert` refuses a client that presents none. Empty certificate fields leave cleartext MQTT. Helm mounts those files from `agent.mqtt.tls.existingSecret` when set.
+
+## Operator checks
+
+```bash
+nodractl --url https://… --insecure preflight
+nodractl --url https://… --token "$NODRA_ADMIN_TOKEN" --insecure doctor
+nodractl --url https://… --insecure support-bundle --out /tmp/nodra-bundle
+```
+
+`preflight` checks health, readiness, and version. `doctor` also tries overview when a token is set. The bundle does not write tokens.
 
 ## Fleet store
 
@@ -80,7 +107,7 @@ export NODRA_DATABASE_URL='postgres://user:pass@host:5432/nodra?sslmode=require'
 ./bin/nodra-server --listen :8080 --data ./data
 ```
 
-Delivery and DLQ queues stay on the local WAL when `NODRA_STORE=file`. With `NODRA_STORE=postgres` they live in Postgres and every replica claims work concurrently. Fleet documents (sites, devices, twins, routes, deployments, alerts, events) are read from Postgres on every call.
+Delivery and DLQ queues stay on the local WAL when `NODRA_STORE=file`. With `NODRA_STORE=postgres` they live in Postgres and every replica claims work concurrently. Fleet documents (sites, devices, twins, routes, deployments, alerts, events) are read from Postgres on every call and updated only when `revision` matches. Numbered migrations run at startup and refuse a database newer than the binary. Caps, spool policies, and the soak that checks them are in [SCALE.md](SCALE.md). The soak does not start `nodra-sim`.
 
 CI covers the Postgres path with `go test ./internal/store/ -run Postgres` against a
 Postgres 16 service (`NODRA_DATABASE_URL`). Locally the same test skips unless the

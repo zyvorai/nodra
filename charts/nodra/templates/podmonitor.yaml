@@ -1,0 +1,40 @@
+{{- if .Values.monitoring.podMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "nodra.fullname" . }}
+  labels:
+    {{- include "nodra.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "nodra.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+{{- end }}
+{{- if .Values.monitoring.prometheusRule.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "nodra.fullname" . }}
+  labels:
+    {{- include "nodra.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: nodra
+      rules:
+        - alert: NodraDeadLetters
+          expr: nodra_dead_letters > 0
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: Nodra has dead letters
+        - alert: NodraPendingDeliveries
+          expr: nodra_pending_deliveries > 1000
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: Nodra delivery backlog is above 1000
+{{- end }}

@@ -32,35 +32,54 @@ type ConnectorSpec struct {
 	Config json.RawMessage `json:"config"`
 }
 
+// MQTTClient is one device credential and its topic grants.
+// Empty publish or subscribe lists deny that direction.
+type MQTTClient struct {
+	Username  string   `json:"username"`
+	Password  string   `json:"password"`
+	Publish   []string `json:"publish,omitempty"`
+	Subscribe []string `json:"subscribe,omitempty"`
+}
+
 type Config struct {
-	ServerURL            string            `json:"server_url"`
-	SiteName             string            `json:"site_name"`
-	EnrollmentToken      string            `json:"enrollment_token,omitempty"`
-	SiteID               string            `json:"site_id,omitempty"`
-	AgentToken           string            `json:"agent_token,omitempty"`
-	DataDir              string            `json:"data_dir"`
-	Listen               string            `json:"listen"`
-	MQTTListen           string            `json:"mqtt_listen,omitempty"`
-	LocalToken           string            `json:"local_token,omitempty"`
-	Heartbeat            time.Duration     `json:"-"`
-	HeartbeatText        string            `json:"heartbeat"`
-	Flush                time.Duration     `json:"-"`
-	FlushText            string            `json:"flush_interval"`
-	Metadata             map[string]string `json:"metadata,omitempty"`
-	Runner               string            `json:"runner"`
-	MaxSpoolBytes        int64             `json:"max_spool_bytes"`
-	MaxSpoolEvents       int               `json:"max_spool_events"`
-	SpoolPolicy          string            `json:"spool_policy"`
-	LocalRoutes          []LocalRoute      `json:"local_routes,omitempty"`
-	Connectors           []ConnectorSpec   `json:"connectors,omitempty"`
-	RequestCertificate   bool              `json:"request_certificate,omitempty"`
-	ClientCertFile       string            `json:"client_cert_file,omitempty"`
-	ClientKeyFile        string            `json:"client_key_file,omitempty"`
-	CAFile               string            `json:"ca_file,omitempty"`
-	InsecureSkipVerify   bool              `json:"insecure_skip_verify,omitempty"`
-	AuditRetentionDays   int               `json:"audit_retention_days,omitempty"`
-	CertRotateBefore     time.Duration     `json:"-"`
-	CertRotateBeforeText string            `json:"cert_rotate_before,omitempty"`
+	ServerURL                 string            `json:"server_url"`
+	SiteName                  string            `json:"site_name"`
+	EnrollmentToken           string            `json:"enrollment_token,omitempty"`
+	SiteID                    string            `json:"site_id,omitempty"`
+	AgentToken                string            `json:"agent_token,omitempty"`
+	DataDir                   string            `json:"data_dir"`
+	Listen                    string            `json:"listen"`
+	MQTTListen                string            `json:"mqtt_listen,omitempty"`
+	LocalToken                string            `json:"local_token,omitempty"`
+	AllowUnauthenticatedLocal bool              `json:"allow_unauthenticated_local,omitempty"`
+	MQTTUsername              string            `json:"mqtt_username,omitempty"`
+	MQTTPassword              string            `json:"mqtt_password,omitempty"`
+	MQTTClients               []MQTTClient      `json:"mqtt_clients,omitempty"`
+	MQTTMaxClients            int               `json:"mqtt_max_clients,omitempty"`
+	MQTTMaxPublishPerMinute   int               `json:"mqtt_max_publish_per_minute,omitempty"`
+	MQTTCertFile              string            `json:"mqtt_cert_file,omitempty"`
+	MQTTKeyFile               string            `json:"mqtt_key_file,omitempty"`
+	MQTTClientCAFile          string            `json:"mqtt_client_ca_file,omitempty"`
+	MQTTRequireClientCert     bool              `json:"mqtt_require_client_cert,omitempty"`
+	Heartbeat                 time.Duration     `json:"-"`
+	HeartbeatText             string            `json:"heartbeat"`
+	Flush                     time.Duration     `json:"-"`
+	FlushText                 string            `json:"flush_interval"`
+	Metadata                  map[string]string `json:"metadata,omitempty"`
+	Runner                    string            `json:"runner"`
+	MaxSpoolBytes             int64             `json:"max_spool_bytes"`
+	MaxSpoolEvents            int               `json:"max_spool_events"`
+	SpoolPolicy               string            `json:"spool_policy"`
+	LocalRoutes               []LocalRoute      `json:"local_routes,omitempty"`
+	Connectors                []ConnectorSpec   `json:"connectors,omitempty"`
+	RequestCertificate        bool              `json:"request_certificate,omitempty"`
+	ClientCertFile            string            `json:"client_cert_file,omitempty"`
+	ClientKeyFile             string            `json:"client_key_file,omitempty"`
+	CAFile                    string            `json:"ca_file,omitempty"`
+	InsecureSkipVerify        bool              `json:"insecure_skip_verify,omitempty"`
+	AuditRetentionDays        int               `json:"audit_retention_days,omitempty"`
+	CertRotateBefore          time.Duration     `json:"-"`
+	CertRotateBeforeText      string            `json:"cert_rotate_before,omitempty"`
 	// SignatureMode is the default cosign verification mode applied before
 	// docker pull: "enforce" refuses an unverifiable image, "warn" logs and
 	// continues (the default, so existing unsigned deployments keep
@@ -97,6 +116,26 @@ func LoadConfig(path string) (Config, error) {
 func (c *Config) normalize() error {
 	if c.ServerURL == "" || c.SiteName == "" || c.DataDir == "" {
 		return errors.New("server_url, site_name and data_dir are required")
+	}
+	if (c.MQTTUsername == "") != (c.MQTTPassword == "") {
+		return errors.New("mqtt_username and mqtt_password must both be set")
+	}
+	if len(c.MQTTClients) > 0 && c.MQTTUsername != "" {
+		return errors.New("set mqtt_username or mqtt_clients, not both")
+	}
+	for _, cl := range c.MQTTClients {
+		if cl.Username == "" || cl.Password == "" {
+			return errors.New("each mqtt client needs a username and password")
+		}
+	}
+	if (c.MQTTCertFile == "") != (c.MQTTKeyFile == "") {
+		return errors.New("mqtt_cert_file and mqtt_key_file must both be set")
+	}
+	if c.MQTTClientCAFile != "" && c.MQTTCertFile == "" {
+		return errors.New("mqtt_client_ca_file requires mqtt_cert_file")
+	}
+	if c.MQTTRequireClientCert && c.MQTTClientCAFile == "" {
+		return errors.New("mqtt_require_client_cert requires mqtt_client_ca_file")
 	}
 	var err error
 	c.Heartbeat, err = time.ParseDuration(c.HeartbeatText)

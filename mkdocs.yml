@@ -50,12 +50,16 @@ nav:
       - Operations: OPERATIONS.md
       - Production: PRODUCTION.md
       - Qualification: QUALIFICATION.md
+      - Scale: SCALE.md
+      - Deployment: DEPLOYMENT.md
+      - Recovery: RECOVERY.md
       - Integrations: INTEGRATIONS.md
       - OTA integration: OTA_INTEGRATION.md
       - Hardware permissions: HARDWARE_PERMISSIONS.md
       - Relay bridge: RELAY.md
       - Industrial protocols: INDUSTRIAL_PROTOCOLS.md
       - NATS bridge: NATS_BRIDGE.md
+      - Policy packs: POLICY_PACKS.md
   - Security & supply chain:
       - Security model: SECURITY-MODEL.md
       - Supply chain: SUPPLY_CHAIN.md

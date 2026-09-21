@@ -64,6 +64,10 @@ jobs:
       - run: helm lint charts/nodra --set secrets.adminToken=test-admin --set secrets.enrollmentToken=test-enroll
       - run: helm template nodra charts/nodra --namespace nodra-system --set secrets.adminToken=test-admin --set secrets.enrollmentToken=test-enroll > /tmp/nodra.yaml
       - run: helm template nodra charts/nodra -f charts/nodra/values-demo.yaml --namespace nodra-demo --set image.repository=nodra --set image.tag=demo > /tmp/nodra-demo.yaml
+      - run: helm template nodra charts/nodra -f charts/nodra/values-production.yaml --namespace nodra > /tmp/nodra-production.yaml
+      - run: grep -q 'kind: Certificate' /tmp/nodra-production.yaml && grep -q 'kind: PodMonitor' /tmp/nodra-production.yaml && grep -q 'helm.sh/hook: test' /tmp/nodra-production.yaml && grep -q 'existingSecret' charts/nodra/values-production.yaml && ! grep -q 'kind: Secret' /tmp/nodra-production.yaml
+      - run: helm template nodra charts/nodra --namespace nodra --set backup.enabled=true --set backup.host=10.8.0.10 --set backup.existingClaim=nodra-dumps --set secrets.adminToken=test-admin --set secrets.enrollmentToken=test-enroll > /tmp/nodra-backup.yaml
+      - run: grep -q 'kind: CronJob' /tmp/nodra-backup.yaml
       - run: kubectl kustomize --load-restrictor LoadRestrictionsNone deployments/kustomize/base > /tmp/kustomized.yaml
       - run: kubectl kustomize --load-restrictor LoadRestrictionsNone deployments/kustomize/demo > /tmp/kustomized-demo.yaml
       # kubectl apply --dry-run=client still requires live API discovery (it needs
@@ -71,6 +75,9 @@ jobs:
       # cannot validate manifests without a real cluster. kubeconform validates
       # structure against the upstream Kubernetes OpenAPI schemas entirely offline.
       - run: kubeconform -summary -strict /tmp/nodra.yaml /tmp/nodra-demo.yaml /tmp/kustomized.yaml /tmp/kustomized-demo.yaml
+      # Production adds cert-manager Certificate and Prometheus PodMonitor/PrometheusRule.
+      # Those CRDs are not in the stock Kubernetes schemas; core objects stay strict.
+      - run: kubeconform -summary -strict -ignore-missing-schemas /tmp/nodra-production.yaml /tmp/nodra-backup.yaml
 
   postgres:
     runs-on: ubuntu-latest
@@ -99,6 +106,26 @@ jobs:
         env:
           NODRA_DATABASE_URL: postgres://nodra:nodra@127.0.0.1:5432/nodra?sslmode=disable
         run: go test ./internal/queue/... ./internal/leader/... -count=1 -run Postgres -v
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Postgres dump and restore
+        env:
+          NODRA_DATABASE_URL: postgres://nodra:nodra@127.0.0.1:5432/nodra?sslmode=disable
+        run: |
+          set -euo pipefail
+          chmod +x scripts/backup-postgres.sh scripts/restore-postgres.sh
+          psql "$NODRA_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE TABLE nodra_backup_probe(id int); INSERT INTO nodra_backup_probe VALUES (7);'
+          out=$(mktemp -d)
+          scripts/backup-postgres.sh "$out"
+          dump=$(python3 -c 'import glob,sys; print(sorted(glob.glob(sys.argv[1]))[-1])' "$out"/nodra-*.dump)
+          if scripts/restore-postgres.sh "$dump"; then
+            echo "restore without NODRA_RESTORE_FORCE must fail"
+            exit 1
+          fi
+          psql "$NODRA_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'DROP TABLE nodra_backup_probe;'
+          NODRA_RESTORE_FORCE=1 scripts/restore-postgres.sh "$dump"
+          got=$(psql "$NODRA_DATABASE_URL" -tAc 'SELECT id FROM nodra_backup_probe' | tr -d '[:space:]')
+          test "$got" = "7"
 
   relay-bridge-smoke:
     runs-on: ubuntu-latest
@@ -200,6 +227,7 @@ jobs:
         env:
           NODRA_QUALIFY_FAST: "1"
           NODRA_CI_BACKUP: "1"
+          NODRA_CI_POSTGRES_BACKUP: "1"
           NODRA_CI_RELAY_BRIDGE: "1"
           NODRA_CI_COMPOSE: "1"
           NODRA_CI_COMPOSE_BRIDGE: "1"

@@ -7,12 +7,12 @@ hero:
 Software rows are automated by `make qualify`. Lab ops for host `80.79.5.173`
 are **signed** in
 [`evidence/qualification/ops-checklist.md`](https://github.com/zyvorai/nodra/blob/main/evidence/qualification/ops-checklist.md)
-(backup/TLS/HTTPS `:18447`/abbreviated WAN+disk). Multi-hour WAN/disk soak is
-now CI-automated. The soak publishes through the edge over HTTP and MQTT for the
-whole run, including WAN loss, and a skipped data-loss check is a failure.
-Multi-day soak (24h, 72h, seven days) and full HA remain open; those durations
-need a self-hosted runner. Postgres fleet consistency across replicas is covered
-by `TestPostgresCrossReplicaConsistency`. See [SCALE.md](SCALE.md).
+(backup/TLS/HTTPS `:18447`/abbreviated WAN+disk). The soak publishes through
+the edge over HTTP and MQTT for the whole run, including WAN loss, and a
+skipped data-loss check is a failure. The repaired four-hour run has not
+passed. Multi-day soak (24h, 72h, seven days) and full HA remain open; those
+durations need a self-hosted runner. Postgres fleet consistency across replicas
+is covered by `TestPostgresCrossReplicaConsistency`. See [SCALE.md](SCALE.md).
 
 ## Software (host) rows — `make qualify`
 
@@ -26,6 +26,7 @@ by `TestPostgresCrossReplicaConsistency`. See [SCALE.md](SCALE.md).
 | `build_binaries` | `nodra-server`, `nodrad`, `nodractl`, `nodra-sim`, `nodra-relay-bridge` |
 | `local_smoke` | `./scripts/smoke.sh` |
 | `postgres_store_ci` | `go test -run Postgres` with `NODRA_DATABASE_URL` (CI job; skip locally without DSN) |
+| `postgres_dump_restore` | `pg_dump` / `pg_restore` round-trip in the CI postgres job (`NODRA_CI_POSTGRES_BACKUP`) |
 
 These prove the file-mode control plane, OpenAPI coverage, and (in CI) Postgres
 fleet reads, revision checks, and cross-replica consistency. They **do not**
@@ -46,9 +47,9 @@ Evidence: `ops-checklist.md`, `lab/20260914T162245Z/nodra-soak/`.
 | Single-replica discipline (file mode) | **pass** (signed) — `NODRA_STORE=file` remains single-process by construction |
 | Concurrent delivery claiming and fleet revisions (postgres mode) | **pass** — `internal/queue.PostgresQueue` claims deliveries concurrently; `store.PostgresStore` reads SQL and updates with `revision` (`TestPostgresCrossReplicaConsistency`) |
 | Suite wiring | see [INTEGRATIONS.md](INTEGRATIONS.md) |
-| Multi-hour WAN / disk soak | **pass** — CI-automated (see below), no longer operator-only |
-| Multi-day WAN / disk soak | **open** — needs a self-hosted runner on the lab host |
-| Full HA | **open** — concurrent delivery claiming and revision-checked fleet state are not multi-day soak, PITR, or a published scale envelope |
+| Multi-hour WAN / disk soak | **open** — the repaired job publishes through the edge and fails when nothing was accepted. The last published four-hour run failed. A passing repaired run is not in evidence |
+| Multi-day WAN / disk soak | **open** — 24h, 72h, and seven days need a self-hosted runner. Hosted jobs stop at 330 minutes |
+| Full HA | **open** — concurrent delivery claiming and revision-checked fleet state are not a passing multi-day soak or PITR. Configured limits are in [SCALE.md](SCALE.md); measured throughput is not |
 
 ## Maturity note
 
@@ -65,9 +66,10 @@ and [PRODUCTION.md](PRODUCTION.md).
 CI runs relay-bridge smoke, compose stack, compose relay-bridge, backup/restore,
 and a WAN-loss + disk-pressure soak (`scripts/ci/soak.sh`, judged by
 `scripts/ci/soak-check.py`): a ~10-minute `soak-short` job on every PR
-(`.github/workflows/ci.yml`) and a scheduled multi-hour `soak-long` job
-(`.github/workflows/soak.yml`, nightly, ~4h against a hosted runner). These
-complement the signed lab ops checklist. CI still does **not** claim full HA or a
-true multi-day soak — that tier stays tracked as open until it runs on a
-self-hosted runner against the lab host, since GitHub-hosted runners cap job
-time at roughly 6 hours.
+(`.github/workflows/ci.yml`) and a scheduled four-hour `soak-long` job
+(`.github/workflows/soak.yml`, nightly, against a hosted runner). The judge
+fails a run that accepted nothing. The last published four-hour run failed on
+memory growth and a skipped data-loss check; the repaired job has not passed.
+These jobs complement the signed lab ops checklist. CI still does **not**
+claim full HA or a multi-day soak — 24h, 72h, and seven days stay open until
+they run on a self-hosted runner. The hosted job timeout is 330 minutes.

@@ -5,6 +5,9 @@ metadata:
   name: {{ include "nodra.fullname" . }}-data
   labels:
     {{- include "nodra.labels" . | nindent 4 }}
+  {{- with .Values.persistence.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   accessModes: ["ReadWriteOnce"]
   {{- if .Values.persistence.storageClass }}

@@ -76,13 +76,16 @@ The following binaries are not installed locally, so their native commands were 
 
 The repository includes GitHub Actions jobs for container build, Helm/Kustomize/Kubernetes validation and kind end-to-end deployment. Tagged releases also wire SBOM/provenance and keyless signing. These jobs must pass in GitHub CI before calling a tagged artifact production-validated.
 
-## v0.2.0 intentional boundaries
+## Current boundaries (main)
 
-- MQTT supports QoS 0/1/2 in both directions. Persistent sessions replay queued QoS 1 and QoS 2. Subscription lists are in-memory and do not survive a broker restart.
+The checks above are the 2026-09-06 v0.2.0 gate. Current main also has:
+
+- MQTT QoS 0/1/2 in both directions. Persistent sessions replay queued QoS 1 and QoS 2. Subscription lists are in-memory and do not survive a broker restart.
 - File mode is a tested single-replica deployment. Postgres fleet state is read from the database with revision checks, and delivery workers claim concurrently. Full HA is not claimed.
-- OPC-UA, NATS and Zenoh are roadmap connectors, not v0.2 claims.
+- Modbus TCP and RTU, J1939 via Device Agent capture, OPC-UA (None/anonymous; Basic256Sha256 channel crypto is not implemented), Linux serial, and a NATS subscribe bridge. Zenoh and Kafka are not implemented.
 - Docker workload reconciliation requires a Docker runtime on the edge node and is opt-in.
 - Console activity Logs are in-memory only (not part of durable backup).
+- The repaired four-hour soak has not passed. Configured limits are in [docs/SCALE.md](docs/SCALE.md).
 
 ## Exact ZIP verification
 

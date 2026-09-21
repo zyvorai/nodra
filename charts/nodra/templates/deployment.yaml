@@ -31,32 +31,43 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints: {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: nodra-server
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+            - configMapRef: {name: {{ include "nodra.fullname" . }}-config}
           env:
-            - {name: NODRA_DATA_DIR, value: /var/lib/nodra}
             - name: NODRA_ADMIN_TOKEN
-              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: admin-token}}
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.secretName" . }}, key: admin-token}}
             - name: NODRA_ADMIN_USER
-              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: admin-user}}
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.secretName" . }}, key: admin-user}}
             - name: NODRA_ADMIN_PASSWORD
-              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: admin-password}}
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.secretName" . }}, key: admin-password}}
             - name: NODRA_VIEWER_TOKEN
-              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: viewer-token, optional: true}}
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.secretName" . }}, key: viewer-token, optional: true}}
             - name: NODRA_VIEWER_USER
-              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: viewer-user, optional: true}}
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.secretName" . }}, key: viewer-user, optional: true}}
             - name: NODRA_VIEWER_PASSWORD
-              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: viewer-password, optional: true}}
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.secretName" . }}, key: viewer-password, optional: true}}
             - name: NODRA_ENROLLMENT_TOKEN
-              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: enrollment-token}}
-            - {name: NODRA_DELIVERY_WORKERS, value: {{ .Values.server.deliveryWorkers | quote }}}
-            - {name: NODRA_PKI_ENABLED, value: {{ .Values.server.pkiEnabled | quote }}}
-            - {name: NODRA_STORE, value: {{ .Values.server.store | default "file" | quote }}}
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.secretName" . }}, key: enrollment-token}}
             {{- if eq (.Values.server.store | default "file") "postgres" }}
             - name: NODRA_DATABASE_URL
-              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: database-url}}
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.secretName" . }}, key: database-url}}
+            {{- end }}
+            {{- if .Values.server.tls.existingSecret }}
+            - {name: NODRA_TLS_CERT, value: /tls/tls.crt}
+            - {name: NODRA_TLS_KEY, value: /tls/tls.key}
             {{- end }}
           ports: [{name: http, containerPort: 8080}]
           securityContext:
@@ -65,9 +76,18 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           readinessProbe: {httpGet: {path: /readyz, port: http}, initialDelaySeconds: 2, periodSeconds: 5}
           livenessProbe: {httpGet: {path: /healthz, port: http}, initialDelaySeconds: 5, periodSeconds: 10}
+          {{- if .Values.probes.startup.enabled }}
+          startupProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          {{- end }}
           volumeMounts:
             - {name: data, mountPath: /var/lib/nodra}
             - {name: tmp, mountPath: /tmp}
+            {{- if .Values.server.tls.existingSecret }}
+            - {name: tls, mountPath: /tls, readOnly: true}
+            {{- end }}
       volumes:
         - name: data
           {{- if .Values.persistence.enabled }}
@@ -76,6 +96,10 @@ spec:
           emptyDir: {}
           {{- end }}
         - {name: tmp, emptyDir: {}}
+        {{- if .Values.server.tls.existingSecret }}
+        - name: tls
+          secret: {secretName: {{ .Values.server.tls.existingSecret }}}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector: {{- toYaml . | nindent 8 }}
       {{- end }}

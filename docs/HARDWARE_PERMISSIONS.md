@@ -21,9 +21,9 @@ production operators — it is not a board qualification checklist.
 
 | Resource | Why | Notes |
 |---|---|---|
-| MQTT listen | Device Agent / sensors | Prefer loopback or site LAN; terminate TLS at a broker frontier if required (native MQTTS not claimed) |
-| HTTP publish | local ingress | Bearer when exposed beyond loopback |
-| Docker socket | app reconciliation | Mount only where intended; prefer digest-pinned images; no signature verify yet |
+| MQTT listen | Device Agent / sensors | Prefer loopback or site LAN. Set `mqtt_cert_file` / `mqtt_key_file` (or Helm `agent.mqtt.tls.existingSecret`) so the broker terminates TLS 1.2+. Optional `mqtt_require_client_cert` with `mqtt_client_ca_file` |
+| HTTP publish | local ingress | Bearer `local_token` required unless `allow_unauthenticated_local` |
+| Docker socket | app reconciliation | Mount only where intended; prefer digest-pinned images; cosign verify is opt-in via `signature_mode` |
 | Serial / RS485 | Modbus RTU | Linux only; needs device node access (`dialout` or udev). Framing tests use `socat` PTYs — not board baud fidelity |
 | Outbound HTTPS | cloud routes / Relay bridge | System CA or custom trust |
 

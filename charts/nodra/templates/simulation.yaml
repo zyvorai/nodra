@@ -34,9 +34,9 @@ spec:
             - --state=/tmp/nodra-sim-state.json
           env:
             - name: NODRA_ADMIN_TOKEN
-              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: admin-token}}
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.secretName" . }}, key: admin-token}}
             - name: NODRA_ENROLLMENT_TOKEN
-              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: enrollment-token}}
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.secretName" . }}, key: enrollment-token}}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           resources:

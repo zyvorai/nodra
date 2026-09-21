@@ -32,36 +32,39 @@ for the trust-boundary model.
 
 ## Production readiness
 
-**Is this production-ready?** Current release is **v0.2.1**: a serious
+**Is this production-ready?** Current release is **v0.2.2**: a serious
 single-control-plane product. Edge sites are offline-first. File mode is a
 tested single-replica deployment. PostgreSQL fleet state is read from the
 database, with revision checks so replicas cannot silently overwrite each
 other, and delivery workers already claim concurrently. A cross-replica test
-covers that consistency. Multi-day soak, PITR, and the rest of the 1.0 gates
-are still open. Helm defaults to one replica and refuses to scale file mode.
+covers that consistency. Configured limits are in [`docs/SCALE.md`](SCALE.md).
+The repaired four-hour soak has not passed. Multi-day soak, PITR, and the
+rest of the 1.0 gates are still open. Helm defaults to one replica and
+refuses to scale file mode.
 Run `make qualify` and sign [`docs/QUALIFICATION.md`](QUALIFICATION.md) /
 [`evidence/qualification/ops-checklist.md`](https://github.com/zyvorai/nodra/blob/main/evidence/qualification/ops-checklist.md)
 before go-live. See [`docs/PRODUCTION.md`](PRODUCTION.md).
 [`ROADMAP.md`](https://github.com/zyvorai/nodra/blob/main/ROADMAP.md)
 lists what's still required before v1.0: a stable API compatibility policy,
-a full HA control plane, upgrade/migration guarantees, multi-day soak tests
-under WAN loss and disk pressure, protocol conformance suites, and published
-recovery runbooks/scale envelope. If your deployment needs full HA today, it
-isn't there yet.
+a full HA control plane, an upgrade and rollback procedure, multi-day soak
+tests under WAN loss and disk pressure, protocol conformance suites, and
+recovery runbooks. Configured limits are published; a measured throughput
+number is not. If your deployment needs full HA today, it isn't there yet.
 
-**What's the current version?** v0.2.1 (adds Modbus RTU and J1939 industrial
-transports) — see `CHANGELOG.md`.
+**What's the current version?** v0.2.2 — see `VERSION` and `CHANGELOG.md`.
+v0.2.1 added Modbus RTU and J1939.
 
 ## Protocol support
 
 **What protocols does it actually speak today?** Implemented: MQTT 3.1.1
-(QoS 0/1/2 in both directions; persistent sessions replay queued QoS 1 and
-QoS 2; subscription lists do not survive a broker restart), HTTP ingress,
-Modbus TCP and RTU. **Roadmap, not shipped**: OPC-UA,
-serial, NATS, Zenoh, a Kafka bridge — the connector registry
-(`pkg/connector`) has scaffolding for these but they are not built. Check
-`docs/INDUSTRIAL_PROTOCOLS.md` and `ROADMAP.md` before assuming a protocol
-is supported.
+(QoS 0/1/2 in both directions; optional TLS and client certificates on the
+edge broker; persistent sessions replay queued QoS 1 and QoS 2;
+subscription lists do not survive a broker restart), HTTP ingress,
+Modbus TCP and RTU, J1939 from a Device Agent CAN-capture stream, OPC-UA
+(SecurityPolicy None and anonymous sessions; Basic256Sha256 channel crypto
+is not implemented), a Linux serial connector, and a NATS subscribe bridge.
+Zenoh and a Kafka bridge are not implemented. See
+`docs/INDUSTRIAL_PROTOCOLS.md`, `docs/NATS_BRIDGE.md`, and `ROADMAP.md`.
 
 **How does it relate to Zyvor Device Agent?** They have a deliberate
 boundary: "This increment keeps protocol semantics in Nodra while Zyvor
@@ -93,6 +96,11 @@ README's Kubernetes section.
 ## Security
 
 **What's the trust model?** See [`docs/SECURITY-MODEL.md`](SECURITY-MODEL.md)
-for the three trust boundaries (device→nodrad, nodrad→control plane,
-operator→API/console) and RBAC. There is no compliance certification
-(SOC2/ISO) claimed in this repository as of writing.
+for the six trust boundaries (device→nodrad, nodrad→control plane,
+operator→API, operator→console, control plane→webhook, simulator→control
+plane) and RBAC. Local HTTP requires `local_token` by default. MQTT can
+require passwords, topic ACLs, connection and publish caps, and optional
+broker TLS or client certificates. Control-plane HTTPS can require client
+certificates. Login and enrollment return 429 after five failures from one
+address in five minutes. There is no compliance certification (SOC2/ISO)
+claimed in this repository as of writing.

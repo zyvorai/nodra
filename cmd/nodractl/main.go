@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -24,13 +25,18 @@ type client struct {
 func main() {
 	server := flag.String("server", env("NODRA_SERVER", "http://127.0.0.1:8080"), "control-plane URL")
 	token := flag.String("token", os.Getenv("NODRA_ADMIN_TOKEN"), "admin token")
+	insecure := flag.Bool("insecure", false, "skip TLS verification for --server")
 	flag.Parse()
 	args := flag.Args()
 	if len(args) == 0 {
 		usage()
 		os.Exit(2)
 	}
-	c := client{strings.TrimRight(*server, "/"), *token, http.DefaultClient}
+	hc := http.DefaultClient
+	if *insecure {
+		hc = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	}
+	c := client{strings.TrimRight(*server, "/"), *token, hc}
 	var err error
 	switch args[0] {
 	case "overview":
@@ -63,6 +69,12 @@ func main() {
 		err = audit(c, args[1:])
 	case "version":
 		err = c.print("GET", "/api/v1/version", nil)
+	case "preflight":
+		err = preflight(c, false)
+	case "doctor":
+		err = preflight(c, true)
+	case "support-bundle":
+		err = supportBundle(c, args[1:])
 	case "publish":
 		err = publish(args[1:])
 	default:
@@ -97,6 +109,9 @@ Usage:
   nodractl dlq list | dlq replay DELIVERY_ID | dlq delete DELIVERY_ID
   nodractl audit list [--since RFC3339] [--until RFC3339] [--site ID] [--action A] [--actor A] [--limit N] [--cursor C]
   nodractl audit export --out FILE [--since RFC3339] [--until RFC3339] [--site ID] [--action A] [--actor A]
+  nodractl preflight
+  nodractl doctor
+  nodractl support-bundle --out DIR
   nodractl publish --agent URL --topic TOPIC --data JSON [--token LOCAL_TOKEN]
 `)
 }

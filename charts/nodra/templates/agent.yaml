@@ -32,17 +32,21 @@ spec:
           args:
             - |
               if [ ! -f /data/nodrad.json ]; then
-                nodrad init --config /data/nodrad.json --server "$NODRA_SERVER" --site "$NODRA_SITE" --enrollment-token "$NODRA_ENROLLMENT_TOKEN" --data /data/spool --listen 0.0.0.0:9091 --mqtt-listen {{ .Values.agent.mqttListen }} --max-spool-bytes {{ .Values.agent.maxSpoolBytes }} --max-spool-events {{ .Values.agent.maxSpoolEvents }} --spool-policy {{ .Values.agent.spoolPolicy }} --local-token "$NODRA_LOCAL_TOKEN"
+                nodrad init --config /data/nodrad.json --server "$NODRA_SERVER" --site "$NODRA_SITE" --enrollment-token "$NODRA_ENROLLMENT_TOKEN" --data /data/spool --listen 0.0.0.0:9091 --mqtt-listen {{ .Values.agent.mqttListen }} --max-spool-bytes {{ .Values.agent.maxSpoolBytes }} --max-spool-events {{ .Values.agent.maxSpoolEvents }} --spool-policy {{ .Values.agent.spoolPolicy }} --local-token "$NODRA_LOCAL_TOKEN"{{- if .Values.agent.mqtt.tls.existingSecret }} --mqtt-tls-cert /mqtt-tls/tls.crt --mqtt-tls-key /mqtt-tls/tls.key{{- if .Values.agent.mqtt.tls.requireClientCert }} --mqtt-client-ca /mqtt-tls/ca.crt --mqtt-require-client-cert{{- end }}{{- end }}
               fi
           env:
             - {name: NODRA_SERVER, value: {{ .Values.agent.serverURL | quote }}}
             - {name: NODRA_SITE, value: {{ .Values.agent.siteName | quote }}}
             - name: NODRA_ENROLLMENT_TOKEN
-              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: enrollment-token}}
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.secretName" . }}, key: enrollment-token}}
             - name: NODRA_LOCAL_TOKEN
-              valueFrom: {secretKeyRef: {name: {{ include "nodra.fullname" . }}-secrets, key: agent-local-token}}
+              valueFrom: {secretKeyRef: {name: {{ include "nodra.secretName" . }}, key: agent-local-token}}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
-          volumeMounts: [{name: data, mountPath: /data}]
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            {{- if .Values.agent.mqtt.tls.existingSecret }}
+            - {name: mqtt-tls, mountPath: /mqtt-tls, readOnly: true}
+            {{- end }}
       containers:
         - name: nodrad
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -51,7 +55,11 @@ spec:
           ports: [{name: ingest, containerPort: 9091}, {name: mqtt, containerPort: 1883}]
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
           resources: {{- toYaml .Values.agent.resources | nindent 12 }}
-          volumeMounts: [{name: data, mountPath: /data}]
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            {{- if .Values.agent.mqtt.tls.existingSecret }}
+            - {name: mqtt-tls, mountPath: /mqtt-tls, readOnly: true}
+            {{- end }}
       volumes:
         - name: data
           {{- if .Values.agent.persistence.enabled }}
@@ -59,6 +67,10 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- if .Values.agent.mqtt.tls.existingSecret }}
+        - name: mqtt-tls
+          secret: {secretName: {{ .Values.agent.mqtt.tls.existingSecret }}}
+        {{- end }}
 {{- if .Values.agent.service.enabled }}
 ---
 apiVersion: v1

@@ -77,6 +77,7 @@ func TestAgentOfflineQueueSurvives(t *testing.T) {
 	cfg.SiteID = "site-test"
 	cfg.AgentToken = "agent-test"
 	cfg.DataDir = t.TempDir()
+	cfg.AllowUnauthenticatedLocal = true
 	a, _ := New(cfg, "")
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/v1/publish", bytes.NewBufferString(`{"topic":"offline/data","payload":{"x":1}}`))
@@ -106,6 +107,17 @@ func TestLocalTokenRequired(t *testing.T) {
 	if rr.Code != 401 {
 		t.Fatalf("want 401 got %d", rr.Code)
 	}
+	open := DefaultConfig()
+	open.SiteID = "s"
+	open.AgentToken = "t"
+	open.DataDir = t.TempDir()
+	a3, _ := New(open, "")
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/v1/publish", bytes.NewBufferString(`{"topic":"x","payload":1}`))
+	a3.Handler().ServeHTTP(rr, req)
+	if rr.Code != 401 {
+		t.Fatalf("empty token want 401 got %d", rr.Code)
+	}
 }
 func TestConfigRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "cfg.json")
@@ -133,6 +145,7 @@ func TestSpoolFlushOrderUsesAcceptanceOrder(t *testing.T) {
 	cfg.SiteID = "s"
 	cfg.AgentToken = "t"
 	cfg.DataDir = t.TempDir()
+	cfg.AllowUnauthenticatedLocal = true
 	a, _ := New(cfg, "")
 	for _, topic := range []string{"first", "second", "third"} {
 		rr := httptest.NewRecorder()
@@ -156,6 +169,7 @@ func TestSpoolQuotaRejectsWithoutSilentLoss(t *testing.T) {
 	cfg.SiteID = "s"
 	cfg.AgentToken = "t"
 	cfg.DataDir = t.TempDir()
+	cfg.AllowUnauthenticatedLocal = true
 	cfg.MaxSpoolEvents = 1
 	cfg.SpoolPolicy = "reject"
 	a, err := New(cfg, "")
@@ -187,6 +201,7 @@ func TestLocalRouteWorksWhileCloudIsDown(t *testing.T) {
 	cfg.SiteID = "s"
 	cfg.AgentToken = "t"
 	cfg.DataDir = t.TempDir()
+	cfg.AllowUnauthenticatedLocal = true
 	cfg.LocalRoutes = []LocalRoute{{Name: "MES", Topic: "factory/+/temp", TargetURL: local.URL, Method: "POST"}}
 	a, err := New(cfg, "")
 	if err != nil {
@@ -223,6 +238,7 @@ func TestLocalRouteFilterAndTransform(t *testing.T) {
 	cfg.SiteID = "s"
 	cfg.AgentToken = "t"
 	cfg.DataDir = t.TempDir()
+	cfg.AllowUnauthenticatedLocal = true
 	cfg.LocalRoutes = []LocalRoute{{
 		Name: "MES", Topic: "factory/+/temp", TargetURL: local.URL, Method: "POST",
 		Headers:   map[string]string{"X-Nodra-Topic": "will-rewrite"},

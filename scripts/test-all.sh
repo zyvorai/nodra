@@ -70,7 +70,8 @@ helm template nodra charts/nodra -f charts/nodra/values-demo.yaml \
 helm template nodra charts/nodra \
   --set secrets.adminToken=t --set secrets.enrollmentToken=t \
   --set service.type=NodePort --set service.port=8080 --set service.nodePort=30059 >/dev/null
-pass "helm lint/template (ClusterIP + NodePort)"
+helm template nodra charts/nodra -f charts/nodra/values-production.yaml --namespace nodra >/dev/null
+pass "helm lint/template (ClusterIP + NodePort + production)"
 
 if [ "$SKIP_REMOTE" = 1 ]; then
   echo "  ⏭ skipped remote deploy/smoke (--skip-remote)"

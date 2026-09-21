@@ -213,19 +213,23 @@ BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 (
     cd "$REPO_DIR"
+    LDFLAGS="-s -w -X github.com/zyvorai/nodra/internal/version.Commit=${NODRA_GIT_COMMIT} -X github.com/zyvorai/nodra/internal/version.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" \
-        go build -trimpath -ldflags="-s -w" -o "$BUILD_DIR/nodra-server" ./cmd/nodra-server
+        go build -trimpath -ldflags="$LDFLAGS" -o "$BUILD_DIR/nodra-server" ./cmd/nodra-server
     CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" \
-        go build -trimpath -ldflags="-s -w" -o "$BUILD_DIR/nodractl" ./cmd/nodractl
+        go build -trimpath -ldflags="$LDFLAGS" -o "$BUILD_DIR/nodractl" ./cmd/nodractl
 )
 info "Built nodra-server + nodractl"
 
 step "Installing nodra-server on ${HOST}"
 # Reuse existing tokens from remote env when present
-EXISTING_ADMIN="$(_ssh_batch "grep -E '^NODRA_ADMIN_TOKEN=' $REMOTE_ENV 2>/dev/null | cut -d= -f2- || true" | tr -d '\r' || true)"
-EXISTING_ENROLL="$(_ssh_batch "grep -E '^NODRA_ENROLLMENT_TOKEN=' $REMOTE_ENV 2>/dev/null | cut -d= -f2- || true" | tr -d '\r' || true)"
+EXISTING_ADMIN="$(_ssh_batch "$SUDO grep -E '^NODRA_ADMIN_TOKEN=' $REMOTE_ENV 2>/dev/null | cut -d= -f2- || true" | tr -d '\r' || true)"
+EXISTING_ENROLL="$(_ssh_batch "$SUDO grep -E '^NODRA_ENROLLMENT_TOKEN=' $REMOTE_ENV 2>/dev/null | cut -d= -f2- || true" | tr -d '\r' || true)"
 ADMIN_TOKEN="${NODRA_ADMIN_TOKEN:-${EXISTING_ADMIN:-nodra-lab-admin}}"
 ENROLL_TOKEN="${NODRA_ENROLLMENT_TOKEN:-${EXISTING_ENROLL:-nodra-lab-enroll}}"
+# Keep an already-installed TLS listener. Rewriting the env without these
+# lines would turn the lab HTTPS port into plain HTTP. The env file is root-only.
+TLS_LINES="$(_ssh_batch "$SUDO grep -E '^NODRA_TLS_CERT=|^NODRA_TLS_KEY=|^NODRA_CLIENT_CA=' $REMOTE_ENV 2>/dev/null || true" | tr -d '\r' || true)"
 
 _scp "$BUILD_DIR/nodra-server" "${USER}@${HOST}:/tmp/nodra-server.new"
 _scp "$BUILD_DIR/nodractl" "${USER}@${HOST}:/tmp/nodractl.new"
@@ -239,6 +243,9 @@ NODRA_ADMIN_USER=admin
 NODRA_ADMIN_PASSWORD=${ADMIN_TOKEN}
 NODRA_ENROLLMENT_TOKEN=${ENROLL_TOKEN}
 ENVEOF
+if [ -n "$TLS_LINES" ]; then
+    printf '%s\n' "$TLS_LINES" >> "$BUILD_DIR/nodra.env"
+fi
 _scp "$BUILD_DIR/nodra.env" "${USER}@${HOST}:/tmp/nodra.env.new"
 
 _ssh "
@@ -277,16 +284,22 @@ _ssh "
 info "nodra-server.service active"
 
 step "Verifying deployment"
-BASE_URL="http://${HOST}:${NODRA_PORT}"
-DEPLOY_UI_SCHEME="http"
-_ssh "curl -fsS http://127.0.0.1:${NODRA_PORT}/healthz >/dev/null" \
-    && info "Health check OK (http://127.0.0.1:${NODRA_PORT}/healthz, on-host)"
+SCHEME="http"
+CURL_TLS=()
+if printf '%s\n' "$TLS_LINES" | grep -q '^NODRA_TLS_CERT='; then
+    SCHEME="https"
+    CURL_TLS=(-k)
+fi
+BASE_URL="${SCHEME}://${HOST}:${NODRA_PORT}"
+DEPLOY_UI_SCHEME="$SCHEME"
+_ssh "curl -fsS ${CURL_TLS[*]} ${SCHEME}://127.0.0.1:${NODRA_PORT}/healthz >/dev/null" \
+    && info "Health check OK (${SCHEME}://127.0.0.1:${NODRA_PORT}/healthz, on-host)"
 
 nodra_save_deploy_last "$REPO_DIR" "$HOST" "$USER" "full"
 
 deploy_ui_highlight "📋 Final checklist"
 deploy_ui_checklist "service" "$(_ssh_batch "$SUDO systemctl is-active nodra-server.service" | tr -d '\r')"
-deploy_ui_checklist "health"  "$(_ssh_batch "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${NODRA_PORT}/healthz" | tr -d '\r')"
+deploy_ui_checklist "health"  "$(_ssh_batch "curl -s ${CURL_TLS[*]} -o /dev/null -w '%{http_code}' ${SCHEME}://127.0.0.1:${NODRA_PORT}/healthz" | tr -d '\r')"
 
 nodra_print_success "$HOST" 0
 info "Admin login: admin / ${ADMIN_TOKEN}"
@@ -295,5 +308,7 @@ if $SKIP_SMOKE; then
     info "Skipped smoke-remote.sh (--skip-smoke)"
 else
     step "Running scripts/smoke-remote.sh against ${BASE_URL}"
-    ( cd "$REPO_DIR" && NODRA_URL="$BASE_URL" NODRA_ADMIN_TOKEN="$ADMIN_TOKEN" ./scripts/smoke-remote.sh )
+    SMOKE_INSECURE=""
+    [ "$SCHEME" = "https" ] && SMOKE_INSECURE=1
+    ( cd "$REPO_DIR" && NODRA_URL="$BASE_URL" NODRA_ADMIN_TOKEN="$ADMIN_TOKEN" NODRA_TLS_INSECURE="$SMOKE_INSECURE" ./scripts/smoke-remote.sh )
 fi

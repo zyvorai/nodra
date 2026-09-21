@@ -16,6 +16,7 @@ import (
 	"io"
 	"log/slog"
 	"math/big"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -78,6 +79,7 @@ type Config struct {
 	TLSCertFile        string
 	TLSKeyFile         string
 	ClientCAFile       string
+	RequireClientCert  bool
 	StoreDriver        string // file|postgres
 	DatabaseURL        string
 	AuditRetentionDays int
@@ -127,6 +129,8 @@ type Server struct {
 	crlNextUpdate time.Time
 	oidc          oidc.Config
 	oidcDiscMu    sync.Mutex
+	loginMu       sync.Mutex
+	loginFails    map[string][]time.Time
 	oidcDisc      *oidc.Discovery
 	oidcJWKS      *oidc.JWKSet
 	oidcStatesMu  sync.Mutex
@@ -263,6 +267,9 @@ func New(cfg Config) (*Server, error) {
 			return nil, errors.New("invalid client CA")
 		}
 		s.http.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12, ClientCAs: pool, ClientAuth: tls.VerifyClientCertIfGiven}
+		if cfg.RequireClientCert {
+			s.http.TLSConfig.ClientAuth = tls.RequireAndVerifyClientCert
+		}
 	}
 	return s, nil
 }
@@ -588,10 +595,15 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &in) {
 		return
 	}
+	if s.attemptLimited("login", r) {
+		errorJSON(w, 429, "too many login attempts")
+		return
+	}
 	user := strings.TrimSpace(in.Username)
 	if s.cfg.AdminToken != "" && s.cfg.AdminPassword != "" &&
 		auth.EqualToken(user, s.cfg.AdminUser) && auth.EqualToken(in.Password, s.cfg.AdminPassword) {
 		s.note("ok", "control-plane", s.cfg.AdminUser, "", "", "", "login", "console login", map[string]any{"role": "admin"})
+		s.clearAttempts("login", r)
 		writeJSON(w, 200, map[string]any{
 			"token": s.cfg.AdminToken,
 			"user":  map[string]string{"username": s.cfg.AdminUser, "role": "admin"},
@@ -601,6 +613,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.ViewerToken != "" && s.cfg.ViewerPassword != "" &&
 		auth.EqualToken(user, s.cfg.ViewerUser) && auth.EqualToken(in.Password, s.cfg.ViewerPassword) {
 		s.note("ok", "control-plane", s.cfg.ViewerUser, "", "", "", "login", "console login", map[string]any{"role": "viewer"})
+		s.clearAttempts("login", r)
 		writeJSON(w, 200, map[string]any{
 			"token": s.cfg.ViewerToken,
 			"user":  map[string]string{"username": s.cfg.ViewerUser, "role": "viewer"},
@@ -614,7 +627,50 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if user != "" {
 		s.note("warn", "control-plane", user, "", "", "", "login", "invalid username or password", nil)
 	}
+	s.recordAttempt("login", r)
 	errorJSON(w, 401, "invalid username or password")
+}
+
+func attemptKey(bucket string, r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil || host == "" {
+		host = r.RemoteAddr
+	}
+	return bucket + "\x00" + host
+}
+
+func (s *Server) attemptLimited(bucket string, r *http.Request) bool {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	cutoff := time.Now().Add(-5 * time.Minute)
+	key := attemptKey(bucket, r)
+	var kept []time.Time
+	for _, ts := range s.loginFails[key] {
+		if ts.After(cutoff) {
+			kept = append(kept, ts)
+		}
+	}
+	if s.loginFails == nil {
+		s.loginFails = map[string][]time.Time{}
+	}
+	s.loginFails[key] = kept
+	return len(kept) >= 5
+}
+
+func (s *Server) recordAttempt(bucket string, r *http.Request) {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	if s.loginFails == nil {
+		s.loginFails = map[string][]time.Time{}
+	}
+	key := attemptKey(bucket, r)
+	s.loginFails[key] = append(s.loginFails[key], time.Now())
+}
+
+func (s *Server) clearAttempts(bucket string, r *http.Request) {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	delete(s.loginFails, attemptKey(bucket, r))
 }
 
 func (s *Server) authMe(w http.ResponseWriter, r *http.Request) {
@@ -781,6 +837,10 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &in) {
 		return
 	}
+	if s.attemptLimited("enroll", r) {
+		errorJSON(w, 429, "too many enrollment attempts")
+		return
+	}
 	orgID := ""
 	switch {
 	case s.cfg.EnrollmentToken != "" && auth.EqualToken(in.EnrollmentToken, s.cfg.EnrollmentToken):
@@ -794,6 +854,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !matched {
+			s.recordAttempt("enroll", r)
 			errorJSON(w, 401, "invalid enrollment token")
 			return
 		}
@@ -826,6 +887,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.metrics.Enrollments.Add(1)
+	s.clearAttempts("enroll", r)
 	out["site_id"] = site.ID
 	publicSite := site
 	publicSite.TokenHash = ""

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
@@ -100,9 +101,78 @@ func New(cfg Config, configPath string) (*Agent, error) {
 			_, err := a.ingest(ctx, m.Topic, p, map[string]string{"x-nodra-ingress": "mqtt"})
 			return err
 		}).EnableSessions(filepath.Join(cfg.DataDir, "mqtt-sessions"), queue.Options{MaxItems: cfg.MQTTSessionMaxItems, MaxBytes: cfg.MQTTSessionMaxBytes, Policy: "reject"})
+		if cfg.MQTTUsername != "" {
+			user, pass := cfg.MQTTUsername, cfg.MQTTPassword
+			a.mqtt.Authenticate = func(u, p string) bool {
+				return subtle.ConstantTimeCompare([]byte(u), []byte(user)) == 1 && subtle.ConstantTimeCompare([]byte(p), []byte(pass)) == 1
+			}
+		}
+		if len(cfg.MQTTClients) > 0 {
+			clients := append([]MQTTClient(nil), cfg.MQTTClients...)
+			a.mqtt.Authenticate = func(u, p string) bool {
+				for _, cl := range clients {
+					if subtle.ConstantTimeCompare([]byte(u), []byte(cl.Username)) == 1 && subtle.ConstantTimeCompare([]byte(p), []byte(cl.Password)) == 1 {
+						return true
+					}
+				}
+				return false
+			}
+			a.mqtt.Authorize = func(u, topic string, write bool) bool {
+				for _, cl := range clients {
+					if cl.Username != u {
+						continue
+					}
+					list := cl.Subscribe
+					if write {
+						list = cl.Publish
+					}
+					for _, filter := range list {
+						if filter == topic || router.Match(filter, topic) {
+							return true
+						}
+					}
+					return false
+				}
+				return false
+			}
+		}
+		a.mqtt.MaxClients = cfg.MQTTMaxClients
+		a.mqtt.MaxPublishPerMinute = cfg.MQTTMaxPublishPerMinute
+		if cfg.MQTTCertFile != "" {
+			tlsCfg, err := mqttServerTLS(cfg)
+			if err != nil {
+				return nil, err
+			}
+			a.mqtt.TLSConfig = tlsCfg
+		}
 	}
 	return a, nil
 }
+func mqttServerTLS(cfg Config) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(cfg.MQTTCertFile, cfg.MQTTKeyFile)
+	if err != nil {
+		return nil, err
+	}
+	out := &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{cert}}
+	if cfg.MQTTClientCAFile == "" {
+		return out, nil
+	}
+	b, err := os.ReadFile(cfg.MQTTClientCAFile)
+	if err != nil {
+		return nil, err
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(b) {
+		return nil, errors.New("invalid mqtt client CA")
+	}
+	out.ClientCAs = pool
+	out.ClientAuth = tls.VerifyClientCertIfGiven
+	if cfg.MQTTRequireClientCert {
+		out.ClientAuth = tls.RequireAndVerifyClientCert
+	}
+	return out, nil
+}
+
 func max64(a, b int64) int64 {
 	if a > b {
 		return a
@@ -230,7 +300,7 @@ func (a *Agent) localRoutes() http.Handler {
 }
 func (a *Agent) localAuth(r *http.Request) bool {
 	if a.cfg.LocalToken == "" {
-		return true
+		return a.cfg.AllowUnauthenticatedLocal
 	}
 	h := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 	return auth.EqualToken(h, a.cfg.LocalToken)

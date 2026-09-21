@@ -2,6 +2,7 @@ image:
   repository: ghcr.io/zyvorai/nodra
   tag: "0.2.2"
   pullPolicy: IfNotPresent
+  pullSecrets: []
 
 replicaCount: 1 # File mode refuses a value above 1. Postgres may scale; full HA is still unqualified.
 service:
@@ -16,7 +17,13 @@ ingress:
   hosts: [{host: nodra.example.com, paths: [{path: /, pathType: Prefix}]}]
   tls: []
 
-persistence: {enabled: true, size: 5Gi, storageClass: ""}
+certManager:
+  enabled: false
+  issuerName: ""
+  issuerKind: ClusterIssuer
+  secretName: "" # defaults to <release>-tls
+
+persistence: {enabled: true, size: 5Gi, storageClass: "", annotations: {}}
 secrets:
   adminToken: ""
   adminUser: admin
@@ -25,19 +32,59 @@ secrets:
   viewerUser: viewer
   viewerPassword: "" # defaults to viewerToken when empty
   enrollmentToken: ""
-  databaseURL: "" # required when server.store=postgres
+  databaseURL: "" # required when server.store=postgres and the chart creates the Secret
+  existingSecret: "" # when set, the chart does not create a Secret; that object must hold the keys below
+
+externalSecret:
+  enabled: false
+  targetName: "" # defaults to <release>-secrets
+  refreshInterval: 1h
+  secretStoreRef: {name: "", kind: ClusterSecretStore}
+  data: [] # {secretKey, remoteRef: {key, property}}
 
 server:
   deliveryWorkers: 8
   pkiEnabled: false
   store: file # file|postgres
+  tls:
+    existingSecret: "" # tls.crt + tls.key mounted at /tls when terminating TLS in the pod
+
+probes:
+  startup:
+    enabled: false
+    periodSeconds: 5
+    failureThreshold: 30
 
 resources:
   requests: {cpu: 100m, memory: 64Mi}
   limits: {cpu: "1", memory: 256Mi}
 podSecurityContext: {runAsNonRoot: true, fsGroup: 65532, fsGroupChangePolicy: OnRootMismatch, seccompProfile: {type: RuntimeDefault}}
 containerSecurityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, capabilities: {drop: ["ALL"]}}
-networkPolicy: {enabled: true}
+networkPolicy:
+  enabled: true
+  # Empty ingressFrom allows any source to the service port. Set selectors in production.
+  ingressFrom: []
+  egress:
+    enabled: false
+    rules: [] # {cidr, port, protocol} in addition to DNS
+monitoring:
+  podMonitor:
+    enabled: false
+    namespace: monitoring
+  prometheusRule:
+    enabled: false
+priorityClassName: ""
+topologySpreadConstraints: []
+backup:
+  enabled: false
+  schedule: "15 2 * * *"
+  image: postgres:16-alpine
+  host: ""
+  database: nodra
+  secretName: ""
+  userKey: database-user
+  passwordKey: database-password
+  existingClaim: ""
 podDisruptionBudget:
   enabled: true
   maxUnavailable: 1 # one replica is the default, so a node drain is not blocked by the budget
@@ -51,6 +98,10 @@ agent:
   serverURL: "http://nodra:8080"
   localToken: ""
   mqttListen: "0.0.0.0:1883"
+  mqtt:
+    tls:
+      existingSecret: "" # tls.crt and tls.key; ca.crt when requireClientCert is true
+      requireClientCert: false
   maxSpoolBytes: 2147483648
   maxSpoolEvents: 1000000
   spoolPolicy: reject

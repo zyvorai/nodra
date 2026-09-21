@@ -12,7 +12,7 @@ hero:
     - {label: "Modbus TCP/RTU"}
     - {label: "Apache-2.0"}
   highlights:
-    - {value: "v0.2.1", label: "Current release — adds Modbus RTU and J1939 industrial transports", footnote: "1"}
+    - {value: "v0.2.2", label: "Current release", footnote: "1"}
     - {value: "26", label: "Lettered fleet sites simulated end-to-end by nodra-sim", footnote: "2"}
     - {value: "2,000", label: "Activity entries retained live in the console Logs ring", footnote: "3"}
     - {value: "65532", label: "Non-root UID/GID enforced by the default Kubernetes manifests", footnote: "4"}
@@ -22,11 +22,12 @@ hero:
     - {icon: "🛠️", title: "Troubleshooting", description: "Real operational issues, with the documented fix — not a generic checklist.", href: "TROUBLESHOOTING.md"}
     - {icon: "▶️", title: "Demo and user walkthrough", description: "A full user-demo path: control plane console, A–Z fleet simulation, and verification scripts.", href: "DEMO.md"}
     - {icon: "🏭", title: "Production", description: "Single-replica file mode, Postgres revision checks, TLS, backup/restore, and known limits.", href: "PRODUCTION.md"}
-    - {icon: "✅", title: "Qualification", description: "Software matrix via make qualify versus operator-signed soak and restore drills.", href: "QUALIFICATION.md"}
+    - {icon: "✅", title: "Qualification", description: "Software matrix via make qualify versus operator-signed backup, TLS, and abbreviated WAN/disk drills.", href: "QUALIFICATION.md"}
+    - {icon: "📏", title: "Scale", description: "Configured limits, soak integrity gate, and the multi-day runs that have not been executed.", href: "SCALE.md"}
     - {icon: "🧩", title: "Architecture", description: "nodra-server is the management/control plane, nodrad is the edge runtime, nodractl is the operator CLI.", href: "ARCHITECTURE.md"}
     - {icon: "🔌", title: "API guide", description: "Base path /api/v1 — admin bearer auth for management, site tokens or mTLS for agents.", href: "API.md"}
 footnotes:
-  - {marker: "1", text: "v0.2.1 adds Modbus RTU and J1939 industrial transports on top of the v0.2.0 base.", href: "INDUSTRIAL_PROTOCOLS.md", href_label: "See Industrial protocols."}
+  - {marker: "1", text: "VERSION is 0.2.2. v0.2.1 added Modbus RTU and J1939.", href: "INDUSTRIAL_PROTOCOLS.md", href_label: "See Industrial protocols."}
   - {marker: "2", text: "nodra-sim seeds and continuously drives up to 26 lettered demo sites (A–Z).", href: "DEMO.md", href_label: "See the Demo walkthrough."}
   - {marker: "3", text: "Console activity is an in-memory ring capped at 2000 entries, intentionally non-durable.", href: "ARCHITECTURE.md#durability", href_label: "See Architecture — Activity log."}
   - {marker: "4", text: "Default manifests run as non-root UID/GID 65532 with a read-only root filesystem and all capabilities dropped.", href: "SECURITY-MODEL.md#kubernetes", href_label: "See Security model — Kubernetes."}
@@ -47,14 +48,14 @@ quick start, build instructions and licensing — see the
 
 <div class="icon-badge-list" markdown="1">
 
-- 📡 MQTT 3.1.1 edge ingress
+- 📡 MQTT 3.1.1 edge ingress (optional TLS)
 - 🌐 HTTP ingress
 - 💾 Offline-first WAL spool
 - 🔀 Local routes
 - 👥 Device twins
 - ✉️ Dead-letter queue with replay
 - 🐳 Docker app reconciliation
-- ☸️ Kubernetes-ready (Helm, Kustomize)
+- ☸️ Kubernetes-ready (Helm, Kustomize, production values)
 
 </div>
 

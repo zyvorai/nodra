@@ -35,6 +35,7 @@ func main() {
 	tlsCert := flag.String("tls-cert", os.Getenv("NODRA_TLS_CERT"), "TLS server certificate")
 	tlsKey := flag.String("tls-key", os.Getenv("NODRA_TLS_KEY"), "TLS server key")
 	clientCA := flag.String("client-ca", os.Getenv("NODRA_CLIENT_CA"), "optional client CA for mTLS")
+	requireClientCert := flag.Bool("require-client-cert", envBool("NODRA_REQUIRE_CLIENT_CERT", false), "require a client certificate when --client-ca is set")
 	publicBaseURL := flag.String("public-base-url", os.Getenv("NODRA_PUBLIC_BASE_URL"), "externally-reachable base URL, embedded as a CRLDistributionPoint in issued certs")
 	oidcIssuerURL := flag.String("oidc-issuer-url", os.Getenv("NODRA_OIDC_ISSUER_URL"), "OIDC issuer URL; enables SSO console login when set with --oidc-client-id")
 	oidcClientID := flag.String("oidc-client-id", os.Getenv("NODRA_OIDC_CLIENT_ID"), "OIDC client ID")
@@ -52,7 +53,7 @@ func main() {
 		AdminToken: *admin, AdminUser: *adminUser, AdminPassword: *adminPass,
 		ViewerToken: *viewer, ViewerUser: *viewerUser, ViewerPassword: *viewerPass,
 		EnrollmentToken: *enroll, PublicRead: *public, WorkerConcurrency: *workers,
-		PKIEnabled: *pkiEnabled, TLSCertFile: *tlsCert, TLSKeyFile: *tlsKey, ClientCAFile: *clientCA,
+		PKIEnabled: *pkiEnabled, TLSCertFile: *tlsCert, TLSKeyFile: *tlsKey, ClientCAFile: *clientCA, RequireClientCert: *requireClientCert,
 		StoreDriver: *storeDriver, DatabaseURL: *databaseURL, PublicBaseURL: *publicBaseURL,
 		OIDCIssuerURL: *oidcIssuerURL, OIDCClientID: *oidcClientID, OIDCClientSecret: *oidcClientSecret,
 		OIDCRedirectURL: *oidcRedirectURL, OIDCGroupsClaim: *oidcGroupsClaim,

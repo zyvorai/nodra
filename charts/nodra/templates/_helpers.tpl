@@ -11,3 +11,15 @@ app.kubernetes.io/name: {{ include "nodra.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/component: control-plane
 {{- end }}
+{{- define "nodra.secretName" -}}
+{{- if and .Values.secrets.existingSecret (and .Values.externalSecret .Values.externalSecret.enabled) -}}
+{{- fail "set secrets.existingSecret or externalSecret.enabled, not both" -}}
+{{- end -}}
+{{- if .Values.secrets.existingSecret -}}
+{{- .Values.secrets.existingSecret -}}
+{{- else if and .Values.externalSecret .Values.externalSecret.enabled -}}
+{{- .Values.externalSecret.targetName | default (printf "%s-secrets" (include "nodra.fullname" .)) -}}
+{{- else -}}
+{{- printf "%s-secrets" (include "nodra.fullname" .) -}}
+{{- end -}}
+{{- end }}
