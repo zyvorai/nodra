@@ -49,7 +49,7 @@ Evidence: `ops-checklist.md`, `lab/20260914T162245Z/nodra-soak/`.
 | Concurrent delivery claiming and fleet revisions (postgres mode) | **pass** — `internal/queue.PostgresQueue` claims deliveries concurrently; `store.PostgresStore` reads SQL and updates with `revision` (`TestPostgresCrossReplicaConsistency`) |
 | Suite wiring | see [INTEGRATIONS.md](INTEGRATIONS.md) |
 | Multi-hour WAN / disk soak | **pass** — four-hour lab run 2026-09-21 on `80.79.5.173` (`NODRA_SOAK_LAB=1`); `soak-check.py` green. Evidence: `evidence/qualification/lab/soak-4h-20260921T184846Z-*` |
-| Multi-day WAN / disk soak | **open** — 24h, 72h, and seven days need a self-hosted runner. Hosted jobs stop at 330 minutes |
+| Multi-day WAN / disk soak | **in progress** — 24h lab soak started 2026-09-21T23:12:45Z on `80.79.5.173` (ETA ~2026-09-22T23:12:45Z). Not signed until judged. 72h/7d unrun |
 | Full HA | **open** — concurrent delivery claiming and revision-checked fleet state are not a passing multi-day soak or PITR. Configured limits and lab ingress observations are in [SCALE.md](SCALE.md) |
 
 ## Maturity note

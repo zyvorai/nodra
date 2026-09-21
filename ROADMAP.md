@@ -33,6 +33,6 @@ Offline WAL, backpressure, local routes, MQTT QoS 0/1/2 (optional broker TLS and
 - stable API compatibility policy
 - HA control plane — not met. Postgres delivery workers claim concurrently, and fleet state is read from the database with revision checks (cross-replica test). File mode remains one replica. A four-hour lab soak has passed; multi-day soak and Nodra-built-in PITR are still required before this is an HA claim. Configured limits and lab ingress observations are in `docs/SCALE.md`
 - upgrade/migration guarantees — Have ([docs/UPGRADE.md](docs/UPGRADE.md)): upgrade from v0.2.0 and v0.2.1 to current, additive config table, numbered Postgres migrations with downgrade refusal, and file/Postgres rollback procedures. Automatic down-migration SQL is not provided.
-- multi-day soak tests under WAN loss and disk pressure — four-hour lab soak passed 2026-09-21 (`evidence/qualification/lab/soak-4h-20260921T184846Z-*`). 24h, 72h, and seven days need a self-hosted runner
+- multi-day soak tests under WAN loss and disk pressure — four-hour lab soak passed 2026-09-21 (`evidence/qualification/lab/soak-4h-20260921T184846Z-*`). A 24h lab soak started 2026-09-21T23:12:45Z (ETA ~2026-09-22T23:12:45Z); not closed until `soak-check.py` passes. 72h and seven days remain unrun
 - protocol conformance suites
 - recovery runbooks. Configured limits and a lab ingress observation are published in `docs/SCALE.md`.

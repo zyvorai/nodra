@@ -20,7 +20,7 @@ control plane.
 | Abbreviated WAN + disk drills | **signed** — `lab/20260914T162245Z/nodra-soak/` |
 | HA / multi-writer | **partial** — Postgres fleet state is read from the database with revision checks, and delivery workers claim concurrently. Full HA (a passing multi-day soak, PITR, remaining 1.0 gates) is **open**. File mode stays one replica. Configured limits: [SCALE.md](SCALE.md) |
 | Multi-hour WAN / disk soak | **signed** — four-hour lab run 2026-09-21 on `80.79.5.173` (`NODRA_SOAK_LAB=1`); `soak-check.py` passed. Evidence: `evidence/qualification/lab/soak-4h-20260921T184846Z-*` |
-| Multi-day WAN / disk soak | **open** — 24h, 72h, and 168h need a self-hosted runner. The hosted job timeout is 330 minutes |
+| Multi-day WAN / disk soak | **in progress** — 24h lab soak started 2026-09-21T23:12:45Z on `80.79.5.173` (ETA ~2026-09-22T23:12:45Z). Not signed until `soak-check.py` passes. 72h/7d unrun |
 
 **Verdict:** file mode is **production-capable** as a tested single-replica deployment when TLS + spool policy are set
 per this runbook and the ops checklist is signed on the target host. PostgreSQL shares fleet state and lets delivery workers claim concurrently; that is not a full HA claim. Lab

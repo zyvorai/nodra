@@ -25,7 +25,8 @@
   2026-09-21T18:48Z–22:49Z): `soak-check.py` green for no_data_loss,
   delivery_catchup (15 WAN cycles), bounded_growth, no_crash, readiness_bound.
   Evidence: `evidence/qualification/lab/soak-4h-20260921T184846Z-*`.
-  Multi-day soaks remain open.
+  A 24h lab soak started 2026-09-21T23:12:45Z (see `docs/SCALE.md`); not
+  signed until judged. 72h/7d remain open.
 
 - Postgres fleet state is read from the database on every call. Updates use a `revision` column (`UPDATE ... WHERE revision = ?`) so two control-plane processes cannot silently overwrite each other. Numbered schema migrations (`nodra_schema_migrations`) refuse a database newer than the binary. Helm `replicaCount` is honored; file mode fails the render above 1; Postgres above 1 uses `RollingUpdate`. This is not a v1.0 HA claim: multi-day soak, PITR, and the remaining gates stay open.
 - The soak publishes through the edge agent over HTTP and MQTT while the control plane is stopped, accumulates counters across control-plane restarts, writes heap profiles at the start, middle, and end, and fails when no events were accepted. The simulator is not started for that run, because its routes to a closed port retained every failed delivery in memory. See `docs/SCALE.md`. A four-hour lab soak (`NODRA_SOAK_LAB=1`) passed on 2026-09-21; multi-day runs remain open.

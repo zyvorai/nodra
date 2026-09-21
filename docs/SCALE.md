@@ -46,6 +46,19 @@ Heap profiles are written to the evidence directory as `heap-start.pprof`, `heap
 This closes the multi-hour soak gate for lab file-mode. It is not a multi-day
 soak and not a multi-replica HA claim.
 
+## Multi-day soak (in progress)
+
+A **24h** lab soak was started 2026-09-21T23:12:45Z on `80.79.5.173`
+(`NODRA_SOAK_LAB=1`, out dir `/home/sus/nodra-soak-24h-20260921T231245Z`,
+ETA ~2026-09-22T23:12:45Z). Judge only after `summary.json` exists:
+
+```bash
+OUT=$(ssh sus@80.79.5.173 'cat ~/nodra-soak-24h-latest.path')
+ssh sus@80.79.5.173 "python3 ~/nodra/scripts/ci/soak-check.py \$OUT/summary.json"
+```
+
+Do not treat multi-day as passed until that check is green. 72h and 7d remain unrun.
+
 ## Published ingress observation
 
 `scripts/bench-ingress.py` posts to a running edge agent's `/v1/publish` for a short window and prints `accepted_per_sec`. Record the host, duration, commit, workers, and that JSON before treating the number as evidence. It is a local observation, not a certified multi-site rating.

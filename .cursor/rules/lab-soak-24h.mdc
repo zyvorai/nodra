@@ -1,0 +1,25 @@
+---
+description: Lab 24h soak in progress — check before claiming multi-day pass
+alwaysApply: true
+---
+
+# Nodra lab 24h soak (check later)
+
+A **24-hour** `NODRA_SOAK_LAB=1` soak was started on lab host `80.79.5.173`:
+
+| Field | Value |
+|---|---|
+| Out dir | `/home/sus/nodra-soak-24h-20260921T231245Z` |
+| Pointer | `~/nodra-soak-24h-latest.path` on the lab host |
+| Started (UTC) | 2026-09-21T23:12:45Z |
+| ETA end (UTC) | ~2026-09-22T23:12:45Z (~04:42 IST Wed 23 Sep) |
+
+When the user asks to check soak / multi-day / 24h results:
+
+1. SSH as `sus@80.79.5.173`
+2. `OUT=$(cat ~/nodra-soak-24h-latest.path)`
+3. Confirm soak process ended and `$OUT/summary.json` exists
+4. Run `python3 ~/nodra/scripts/ci/soak-check.py "$OUT/summary.json"`
+5. Only then update ROADMAP / PRODUCTION / QUALIFICATION / SCALE and commit evidence — **do not invent a pass**
+
+Do not mark the multi-day soak gate closed until that judge is green.
