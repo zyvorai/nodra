@@ -4,13 +4,18 @@
 package server
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/zyvorai/nodra/internal/auth"
 )
@@ -31,10 +36,30 @@ type storedRole struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// roleStore is file-backed (roles.json) in file mode, or Postgres-backed when
+// StoreDriver=postgres so live replicas share custom role bearers.
 type roleStore struct {
 	mu    sync.RWMutex
 	path  string
+	db    *sql.DB
 	roles []storedRole
+}
+
+const pgRoleSchema = `
+CREATE TABLE IF NOT EXISTS nodra_custom_roles (
+	name TEXT PRIMARY KEY,
+	token_hash TEXT NOT NULL,
+	write_access BOOLEAN NOT NULL DEFAULT false,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS nodra_custom_roles_token_hash_idx ON nodra_custom_roles (token_hash);
+`
+
+func openRoleStore(driver, path, databaseURL string) (*roleStore, error) {
+	if driver == "postgres" && databaseURL != "" {
+		return newPostgresRoleStore(databaseURL)
+	}
+	return newRoleStore(path), nil
 }
 
 func newRoleStore(path string) *roleStore {
@@ -43,8 +68,35 @@ func newRoleStore(path string) *roleStore {
 	return r
 }
 
+func newPostgresRoleStore(databaseURL string) (*roleStore, error) {
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(4)
+	db.SetConnMaxLifetime(30 * time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err = db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("postgres roles ping: %w", err)
+	}
+	if _, err = db.ExecContext(ctx, pgRoleSchema); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("postgres roles migrate: %w", err)
+	}
+	return &roleStore{db: db}, nil
+}
+
+func (r *roleStore) Close() error {
+	if r.db != nil {
+		return r.db.Close()
+	}
+	return nil
+}
+
 func (r *roleStore) load() error {
-	if r.path == "" {
+	if r.path == "" || r.db != nil {
 		return nil
 	}
 	b, err := os.ReadFile(r.path)
@@ -65,7 +117,7 @@ func (r *roleStore) load() error {
 }
 
 func (r *roleStore) saveLocked() error {
-	if r.path == "" {
+	if r.path == "" || r.db != nil {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(r.path), 0o750); err != nil {
@@ -82,10 +134,36 @@ func (r *roleStore) saveLocked() error {
 	return os.Rename(tmp, r.path)
 }
 
-func (r *roleStore) roleForToken(tok string) (string, bool) {
+func (r *roleStore) listAll() ([]storedRole, error) {
+	if r.db != nil {
+		rows, err := r.db.Query(`SELECT name, token_hash, write_access, created_at FROM nodra_custom_roles ORDER BY name`)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var out []storedRole
+		for rows.Next() {
+			var role storedRole
+			if err := rows.Scan(&role.Name, &role.TokenHash, &role.Write, &role.CreatedAt); err != nil {
+				return nil, err
+			}
+			out = append(out, role)
+		}
+		return out, rows.Err()
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	for _, role := range r.roles {
+	out := make([]storedRole, len(r.roles))
+	copy(out, r.roles)
+	return out, nil
+}
+
+func (r *roleStore) roleForToken(tok string) (string, bool) {
+	roles, err := r.listAll()
+	if err != nil {
+		return "", false
+	}
+	for _, role := range roles {
 		if auth.EqualHash(role.TokenHash, tok) {
 			if role.Write {
 				return "admin", true
@@ -97,10 +175,12 @@ func (r *roleStore) roleForToken(tok string) (string, bool) {
 }
 
 func (r *roleStore) list() []CustomRole {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	out := make([]CustomRole, 0, len(r.roles))
-	for _, role := range r.roles {
+	roles, err := r.listAll()
+	if err != nil {
+		return nil
+	}
+	out := make([]CustomRole, 0, len(roles))
+	for _, role := range roles {
 		out = append(out, CustomRole{Name: role.Name, Write: role.Write, CreatedAt: role.CreatedAt})
 	}
 	return out
@@ -116,6 +196,18 @@ func (r *roleStore) create(name string, write bool) (CustomRole, error) {
 		return CustomRole{}, err
 	}
 	now := time.Now().UTC()
+	hash := auth.Hash(tok)
+	if r.db != nil {
+		_, err = r.db.Exec(`INSERT INTO nodra_custom_roles (name, token_hash, write_access, created_at) VALUES ($1,$2,$3,$4)`,
+			name, hash, write, now)
+		if err != nil {
+			if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
+				return CustomRole{}, errRoleExists
+			}
+			return CustomRole{}, err
+		}
+		return CustomRole{Name: name, Token: tok, Write: write, CreatedAt: now}, nil
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, role := range r.roles {
@@ -123,7 +215,7 @@ func (r *roleStore) create(name string, write bool) (CustomRole, error) {
 			return CustomRole{}, errRoleExists
 		}
 	}
-	r.roles = append(r.roles, storedRole{Name: name, TokenHash: auth.Hash(tok), Write: write, CreatedAt: now})
+	r.roles = append(r.roles, storedRole{Name: name, TokenHash: hash, Write: write, CreatedAt: now})
 	if err := r.saveLocked(); err != nil {
 		r.roles = r.roles[:len(r.roles)-1]
 		return CustomRole{}, err
@@ -132,6 +224,14 @@ func (r *roleStore) create(name string, write bool) (CustomRole, error) {
 }
 
 func (r *roleStore) delete(name string) bool {
+	if r.db != nil {
+		res, err := r.db.Exec(`DELETE FROM nodra_custom_roles WHERE name = $1`, name)
+		if err != nil {
+			return false
+		}
+		n, _ := res.RowsAffected()
+		return n > 0
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for i, role := range r.roles {

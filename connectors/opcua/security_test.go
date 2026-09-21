@@ -43,7 +43,7 @@ func TestResolveSecurityBasic256RequiresCerts(t *testing.T) {
 	}
 }
 
-func TestResolveSecurityBasic256CryptoUnavailable(t *testing.T) {
+func TestResolveSecurityBasic256RejectsUnparseableCerts(t *testing.T) {
 	dir := t.TempDir()
 	cert := filepath.Join(dir, "client.pem")
 	key := filepath.Join(dir, "client.key")
@@ -61,10 +61,46 @@ func TestResolveSecurityBasic256CryptoUnavailable(t *testing.T) {
 		ServerCertPath: server,
 	})
 	if err == nil {
-		t.Fatal("expected crypto-unavailable error")
+		t.Fatal("expected a key-material error")
 	}
-	if !strings.Contains(err.Error(), "channel crypto is not available") {
+	if !strings.Contains(err.Error(), "Basic256Sha256 key material") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestResolveSecurityBasic256WithRealCerts(t *testing.T) {
+	if !basic256CryptoAvailable() {
+		t.Skip("Basic256Sha256 channel crypto is not built in")
+	}
+	certPath, keyPath, serverCertPath := writeTestCertFiles(t, t.TempDir())
+
+	for _, tc := range []struct {
+		mode     string
+		wantMode int32
+	}{
+		{"", messageSecurityModeSignAndEncrypt}, // default
+		{"Sign", messageSecurityModeSign},
+		{"SignAndEncrypt", messageSecurityModeSignAndEncrypt},
+	} {
+		mat, err := resolveSecurity(SecurityConfig{
+			SecurityPolicy: "Basic256Sha256",
+			SecurityMode:   tc.mode,
+			ClientCertPath: certPath,
+			ClientKeyPath:  keyPath,
+			ServerCertPath: serverCertPath,
+		})
+		if err != nil {
+			t.Fatalf("security_mode %q: %v", tc.mode, err)
+		}
+		if mat.PolicyURI != securityPolicyBasic256Sha256 {
+			t.Fatalf("security_mode %q: policy %q", tc.mode, mat.PolicyURI)
+		}
+		if mat.Mode != tc.wantMode {
+			t.Fatalf("security_mode %q: mode %d, want %d", tc.mode, mat.Mode, tc.wantMode)
+		}
+		if mat.crypto == nil || mat.crypto.clientKey == nil || mat.crypto.serverKey == nil {
+			t.Fatalf("security_mode %q: key material was not parsed", tc.mode)
+		}
 	}
 }
 
@@ -94,6 +130,23 @@ func TestNewPollerRejectsBasic256WithoutCerts(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "client_cert_path") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestNewPollerAcceptsBasic256WithCerts(t *testing.T) {
+	certPath, keyPath, serverCertPath := writeTestCertFiles(t, t.TempDir())
+	raw, _ := json.Marshal(PollerConfig{
+		Endpoint: "opc.tcp://plc.local:4840", NodeIDs: []string{"ns=2;i=1"}, Topic: "t",
+		SecurityPolicy: "Basic256Sha256", SecurityMode: "Sign",
+		ClientCertPath: certPath, ClientKeyPath: keyPath, ServerCertPath: serverCertPath,
+	})
+	c, err := NewPoller("plc", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli := c.(*Poller).cli.(*Client)
+	if cli.Security.SecurityPolicy != "Basic256Sha256" || cli.Security.SecurityMode != "Sign" {
+		t.Fatalf("Security=%+v", cli.Security)
 	}
 }
 

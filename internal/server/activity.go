@@ -167,15 +167,8 @@ func auditFilterFromQuery(r *http.Request) audit.Filter {
 	return f
 }
 
-// auditList is a small/interactive query over the durable audit trail —
-// unlike activityList, it returns a next_cursor since audit history is
-// unbounded and can't be handed back as one bare array.
-//
-// Org filtering here is a post-filter over each fetched page (audit.Filter
-// has no notion of "any site in this org"), so an org-scoped caller's page
-// can come back with fewer than f.Limit entries even though more exist
-// further in — next_cursor still lets them page forward, this only affects
-// how full a single page looks, not what they can eventually see.
+// auditList queries the durable audit trail with SQL/file pushdown for org
+// site_ids (audit.Filter.SiteIDs). An explicit site_id query param still wins.
 func (s *Server) auditList(w http.ResponseWriter, r *http.Request) {
 	if s.audit == nil {
 		writeJSON(w, 200, map[string]any{"entries": []audit.Entry{}, "next_cursor": ""})

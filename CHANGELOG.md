@@ -17,8 +17,8 @@
 - Postgres fleet state is read from the database on every call. Updates use a `revision` column (`UPDATE ... WHERE revision = ?`) so two control-plane processes cannot silently overwrite each other. Numbered schema migrations (`nodra_schema_migrations`) refuse a database newer than the binary. Helm `replicaCount` is honored; file mode fails the render above 1; Postgres above 1 uses `RollingUpdate`. This is not a v1.0 HA claim: multi-day soak, PITR, and the remaining gates stay open.
 - The soak publishes through the edge agent over HTTP and MQTT while the control plane is stopped, accumulates counters across control-plane restarts, writes heap profiles at the start, middle, and end, and fails when no events were accepted. The simulator is not started for that run, because its routes to a closed port retained every failed delivery in memory. See `docs/SCALE.md`. The repaired four-hour run has not passed.
 - `charts/nodra/values-production.yaml` installs one PostgreSQL replica with an existing Secret, cert-manager TLS, restricted NetworkPolicy egress, a startup probe, and a `helm test` that enrolls one site and posts one event. Replica count stays 1. PITR is not included.
-- Local HTTP ingest rejects requests when `local_token` is empty unless `allow_unauthenticated_local` is set. MQTT CONNECT can require a username and password. `mqtt_clients` grants each device its own username and topic filters. Publish rate and connection count can be capped. `mqtt_cert_file` and `mqtt_key_file` terminate TLS on the broker; `mqtt_require_client_cert` requires a client certificate signed by `mqtt_client_ca_file`. Console login and OIDC mint short-lived sessions (`NODRA_SESSION_TTL`); refresh and logout endpoints rotate or revoke them; the web console refreshes before expiry. Static admin/viewer tokens stay available for automation. Custom roles persist in `roles.json`; console sessions persist in `sessions.json`. Enrollment-token rotate/TTL, ZTP bootstrap (`POST /api/v1/ztp/bootstrap`, `nodrad ztp`), OTA campaign pause/resume, and abort that clears in-flight twin OTA desired state are included. Org-scoped audit queries and overview queue counts filter by site. Optional OTLP/HTTP metrics export via `NODRA_OTLP_ENDPOINT`. Agents flush the cloud spool with `POST /api/v1/events/batch` (100 events) and fall back to single-event POST on older control planes. Console login and enrollment return 429 after five failures from one address in five minutes. `nodractl preflight`, `doctor`, and `support-bundle` read health endpoints. PostgreSQL backup is `pg_dump`; PITR is an operator WAL concern (`docs/RECOVERY.md`). Production Helm values, backup CronJob CI, and operator docs cover the deployment pack. Lab ingress observation is recorded in `docs/SCALE.md`.
-- Docs name v0.2.2 as the current release and list OPC-UA (None/anonymous), Linux serial, and the NATS subscribe bridge as shipped. Zenoh and Kafka stay unimplemented.
+- Local HTTP ingest rejects requests when `local_token` is empty unless `allow_unauthenticated_local` is set. MQTT CONNECT can require a username and password. `mqtt_clients` grants each device its own username and topic filters. Publish rate and connection count can be capped. `mqtt_cert_file` and `mqtt_key_file` terminate TLS on the broker; `mqtt_require_client_cert` requires a client certificate signed by `mqtt_client_ca_file`. Console login and OIDC mint short-lived sessions (`NODRA_SESSION_TTL`); refresh and logout endpoints rotate or revoke them; the web console refreshes before expiry. Static admin/viewer tokens stay available for automation. Custom roles and console sessions persist in `roles.json` / `sessions.json` in file mode; with `NODRA_STORE=postgres` they live in `nodra_custom_roles` / `nodra_console_sessions` and are shared across live replicas (schema migration 003). Enrollment-token rotate/TTL, ZTP bootstrap (`POST /api/v1/ztp/bootstrap`, `nodrad ztp`), OTA campaign pause/resume, and abort that clears in-flight twin OTA desired state are included. Org-scoped audit queries and overview queue counts filter by site. Optional OTLP/HTTP metrics export via `NODRA_OTLP_ENDPOINT`. Agents flush the cloud spool with `POST /api/v1/events/batch` (100 events) and fall back to single-event POST on older control planes. Console login and enrollment return 429 after five failures from one address in five minutes. `nodractl preflight`, `doctor`, and `support-bundle` read health endpoints. PostgreSQL backup is `pg_dump`; PITR is an operator WAL concern (`docs/RECOVERY.md`). Production Helm values, backup CronJob CI, and operator docs cover the deployment pack. Lab ingress observation is recorded in `docs/SCALE.md`.
+- Docs name v0.2.2 as the current release and list OPC-UA (None or Basic256Sha256 channel security, anonymous user token), Linux serial, and the NATS subscribe bridge as shipped. Zenoh and Kafka stay unimplemented.
 
 - `nodractl status` prints the Cilium-style logo from `/api/v1/overview`. `nodractl status json` is the raw overview.
 - `make help`, `make ci`, `make status`, and `make deploy-remote H=<host> U=sus`. The older `make deploy` target is unchanged.
@@ -27,11 +27,24 @@
 - **Outbound MQTT QoS 2** (broker → subscriber): `SUBSCRIBE` may grant QoS 2;
   fan-out and persistent-session replay complete `PUBLISH`/`PUBREC`/`PUBREL`/
   `PUBCOMP` with in-flight tracking (inbound QoS 2 was already present).
-- **OPC-UA Basic256Sha256 config scaffolding** (`security_policy` /
-  `security_mode` / client+server cert paths). None/anonymous path unchanged;
-  selecting Basic256Sha256 without certs (or without channel crypto) fails
-  closed with an actionable error — full RSA-OAEP / SignAndEncrypt framing
-  remains a follow-up.
+- **OPC-UA Basic256Sha256 secure channel** (`connectors/opcua`): the
+  `security_policy` / `security_mode` / cert-path configuration added earlier
+  now opens a real channel instead of failing closed. The asymmetric
+  OpenSecureChannel is RSA-OAEP encrypted (MGF1-SHA-1) and RSA-SHA256 signed
+  with the application-instance certificates; symmetric keys are derived with
+  P_SHA256 over the channel nonces per Part 6 §6.7.5; MSG/CLO chunks are
+  HMAC-SHA256 signed in `Sign` and additionally AES-256-CBC encrypted in
+  `SignAndEncrypt`. CreateSession sends the client certificate and a 32-byte
+  nonce and verifies the ServerSignature; ActivateSession sends the matching
+  ClientSignature. Still standard library only — no new module dependencies.
+  Covered by known-answer tests (RFC 4231 HMAC-SHA256, NIST SP 800-38A
+  AES-256-CBC, FIPS 180-1 SHA-1) and an end-to-end mock server that
+  implements the server half of both modes from the raw primitives.
+  SecurityPolicy None is unchanged, and the **user identity token is still
+  anonymous under every policy** — username/password and X.509 user tokens
+  are not implemented. Channel-token renewal and multi-chunk messages are
+  also not implemented, and this has not been run against a certified
+  commercial server or a conformance suite.
 - Staged multi-site OTA canary campaigns (`model.OTACampaign`): create/list/get
   plus `start` / `promote` / `abort` under `/api/v1/ota/campaigns`. Waves select
   devices by cumulative `canary_percent` and write the same Twin.Desired["ota"]

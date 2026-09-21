@@ -72,7 +72,10 @@ this depends on.
 ## An OPC-UA, serial, or NATS connector isn't publishing
 
 OPC-UA, the Linux serial connector, and the NATS subscribe bridge are in this
-tree. OPC-UA secure-channel crypto (Basic256Sha256) is not. Serial framing
+tree. OPC-UA runs SecurityPolicy None or Basic256Sha256 (Sign or
+SignAndEncrypt); the user identity token is always anonymous, so a server
+that demands username/password or an X.509 user token will refuse the
+session no matter how the channel is configured. Serial framing
 runs on Linux; other platforms get the build-tag stub. Confirm the connector
 block in the agent config against
 [`docs/INDUSTRIAL_PROTOCOLS.md`](INDUSTRIAL_PROTOCOLS.md) and

@@ -4,8 +4,11 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -133,5 +136,72 @@ func TestZTPBootstrap(t *testing.T) {
 	}
 	if !strings.Contains(string(body), `"agent_config"`) || !strings.Contains(string(body), "plant-1") {
 		t.Fatalf("ztp body %s", body)
+	}
+}
+
+func TestPostgresSharedSessionsAndRoles(t *testing.T) {
+	dsn := os.Getenv("NODRA_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("NODRA_DATABASE_URL unset — optional Postgres shared sessions/roles")
+	}
+	cfgA := Config{
+		StoreDriver: "postgres", DatabaseURL: dsn, DataDir: t.TempDir(),
+		AdminToken: "adm", AdminUser: "admin", AdminPassword: "secret",
+		EnrollmentToken: "enroll", SessionTTL: time.Minute,
+	}
+	cfgB := cfgA
+	cfgB.DataDir = t.TempDir()
+	a, err := New(cfgA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Shutdown(context.Background())
+	b, err := New(cfgB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Shutdown(context.Background())
+	tsA := httptest.NewServer(a.Handler())
+	defer tsA.Close()
+	tsB := httptest.NewServer(b.Handler())
+	defer tsB.Close()
+	cA := testClient{tsA.URL, "adm", t}
+	cB := testClient{tsB.URL, "adm", t}
+
+	code, body := cA.req("POST", "/api/v1/auth/login", map[string]any{"username": "admin", "password": "secret"}, "")
+	if code != 200 {
+		t.Fatalf("login %d %s", code, body)
+	}
+	var login struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(body, &login); err != nil || login.Token == "" {
+		t.Fatalf("login %s", body)
+	}
+	code, _ = cB.req("GET", "/api/v1/overview", nil, login.Token)
+	if code != 200 {
+		t.Fatalf("replica B must accept session minted on A, got %d", code)
+	}
+
+	roleName := "ops-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	code, body = cA.req("POST", "/api/v1/roles", map[string]any{"name": roleName, "write": true}, "adm")
+	if code != 201 {
+		t.Fatalf("create role %d %s", code, body)
+	}
+	var role CustomRole
+	if err := json.Unmarshal(body, &role); err != nil || role.Token == "" {
+		t.Fatalf("role %s", body)
+	}
+	code, _ = cB.req("GET", "/api/v1/overview", nil, role.Token)
+	if code != 200 {
+		t.Fatalf("replica B must accept role minted on A, got %d", code)
+	}
+	code, _ = cB.req("DELETE", "/api/v1/roles/"+roleName, nil, "adm")
+	if code != 204 {
+		t.Fatalf("delete role on B %d", code)
+	}
+	code, _ = cA.req("GET", "/api/v1/overview", nil, role.Token)
+	if code != 401 {
+		t.Fatalf("role should be gone on A after B delete, got %d", code)
 	}
 }

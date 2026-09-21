@@ -250,11 +250,22 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	instanceID, err := auth.NewToken(8)
+	sessions, err := openSessionStore(cfg.StoreDriver, filepath.Join(cfg.DataDir, "sessions.json"), cfg.DatabaseURL)
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, instanceID: instanceID, store: st, deliveries: q, dlq: dlq, leader: lead, metrics: &telemetry.Metrics{}, activity: &activityLog{}, audit: au, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}, oidcStates: map[string]oidcState{}, sessions: newSessionStore(filepath.Join(cfg.DataDir, "sessions.json")), customRoles: newRoleStore(filepath.Join(cfg.DataDir, "roles.json"))}
+	customRoles, err := openRoleStore(cfg.StoreDriver, filepath.Join(cfg.DataDir, "roles.json"), cfg.DatabaseURL)
+	if err != nil {
+		_ = sessions.Close()
+		return nil, err
+	}
+	instanceID, err := auth.NewToken(8)
+	if err != nil {
+		_ = sessions.Close()
+		_ = customRoles.Close()
+		return nil, err
+	}
+	s := &Server{cfg: cfg, instanceID: instanceID, store: st, deliveries: q, dlq: dlq, leader: lead, metrics: &telemetry.Metrics{}, activity: &activityLog{}, audit: au, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}, oidcStates: map[string]oidcState{}, sessions: sessions, customRoles: customRoles}
 	if cfg.EnrollmentTokenTTL > 0 {
 		s.enrollExpires = time.Now().UTC().Add(cfg.EnrollmentTokenTTL)
 	}
@@ -341,6 +352,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	_ = s.store.Close()
 	_ = s.audit.Close()
 	_ = s.leader.Close()
+	_ = s.sessions.Close()
+	_ = s.customRoles.Close()
 	return err
 }
 

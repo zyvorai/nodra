@@ -42,7 +42,7 @@ and not a full HA platform today (file mode is one replica; Postgres sharing is 
 | Primary scope | Edge ingress + durable store-and-forward + device twins + app reconciliation | Visual flow-based automation | MQTT broker (edge-deployed) | Cloud-connected edge runtime | Cloud-connected edge runtime |
 | Cloud dependency | None required — WAN-loss is a first-class operating mode, not a degraded one | None required | Usually paired with a cloud broker/console | AWS IoT Core | Azure IoT Hub |
 | License | Apache-2.0 | Apache-2.0 | Apache-2.0 core (EMQX) / proprietary (HiveMQ Edge) | Proprietary (free tier) | Proprietary (free tier) |
-| Industrial protocol decoding | Modbus TCP + RTU, J1939 via Device Agent capture, OPC-UA (None/anonymous), Linux serial, and a NATS subscribe bridge. Zenoh and Kafka are not shipped (`docs/INDUSTRIAL_PROTOCOLS.md`, `docs/NATS_BRIDGE.md`) | Via community nodes | Not built-in | Via custom components | Via custom modules |
+| Industrial protocol decoding | Modbus TCP + RTU, J1939 via Device Agent capture, OPC-UA (SecurityPolicy None or Basic256Sha256, anonymous user token), Linux serial, and a NATS subscribe bridge. Zenoh and Kafka are not shipped (`docs/INDUSTRIAL_PROTOCOLS.md`, `docs/NATS_BRIDGE.md`) | Via community nodes | Not built-in | Via custom components | Via custom modules |
 | HA / clustering | File mode is one replica. Postgres shares fleet state with revision checks and claims deliveries concurrently; full HA is still open (`ROADMAP.md`) | N/A (single instance) | Yes (broker clustering) | Managed by AWS | Managed by Azure |
 
 *(General characterizations as of writing — verify current features against

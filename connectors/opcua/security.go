@@ -21,12 +21,12 @@ const (
 )
 
 // SecurityConfig selects the OPC-UA channel security policy and optional
-// certificate paths. Empty / "None" keeps the existing anonymous
-// SecurityPolicy#None path. "Basic256Sha256" is accepted as configuration
-// scaffolding: selection is wired through dial, but establishing a real
-// Sign/SignAndEncrypt secure channel still needs RSA-OAEP, HMAC-SHA256 key
-// derivation, and message crypto that this build does not ship — see
-// resolveSecurity.
+// certificate paths. Empty / "None" keeps the anonymous
+// SecurityPolicy#None path. "Basic256Sha256" runs a real Sign or
+// SignAndEncrypt secure channel (RSA-OAEP asymmetric OpenSecureChannel,
+// P_SHA256 key derivation, AES-256-CBC + HMAC-SHA256 symmetric messages)
+// and requires all three certificate paths. The user identity token stays
+// anonymous under every policy.
 type SecurityConfig struct {
 	SecurityPolicy string `json:"security_policy,omitempty"` // ""|"None"|"Basic256Sha256"
 	SecurityMode   string `json:"security_mode,omitempty"`   // ""|"None"|"Sign"|"SignAndEncrypt"
@@ -36,26 +36,28 @@ type SecurityConfig struct {
 }
 
 // securityMaterial is the resolved channel security for one dial. For
-// SecurityPolicy None, PolicyURI is securityPolicyNone and Mode is None;
-// CertPEM fields stay empty. Basic256Sha256 currently never returns a usable
-// material — resolveSecurity fails first with an actionable error.
+// SecurityPolicy None, PolicyURI is securityPolicyNone, Mode is None and
+// the cert fields stay empty. For Basic256Sha256, crypto holds the parsed
+// certificates and key the channel runs on.
 type securityMaterial struct {
 	PolicyURI     string
 	Mode          int32
 	ClientCertPEM []byte
 	ClientKeyPEM  []byte
 	ServerCertPEM []byte
+	crypto        *channelCrypto
 }
 
 // basic256CryptoAvailable reports whether this build can run the
 // Basic256Sha256 secure-channel crypto (asymmetric OpenSecureChannel,
-// symmetric MSG signing/encryption). Scaffolding ships without it so CI
-// never needs real application-instance certificates.
-func basic256CryptoAvailable() bool { return false }
+// symmetric MSG signing/encryption). It does — see crypto_basic256.go and
+// securechannel_basic256.go.
+func basic256CryptoAvailable() bool { return true }
 
-// resolveSecurity validates cfg and returns material for SecurityPolicy None,
-// or a clear error when Basic256Sha256 is selected without certs / without
-// channel crypto support.
+// resolveSecurity validates cfg and returns material for SecurityPolicy
+// None, or the parsed Basic256Sha256 key material. It fails with a clear
+// error when Basic256Sha256 is selected without readable, usable
+// certificates.
 func resolveSecurity(cfg SecurityConfig) (*securityMaterial, error) {
 	policy := strings.TrimSpace(cfg.SecurityPolicy)
 	if policy == "" {
@@ -111,7 +113,12 @@ func resolveSecurity(cfg SecurityConfig) (*securityMaterial, error) {
 	}
 
 	if !basic256CryptoAvailable() {
-		return nil, fmt.Errorf("opcua: Basic256Sha256 channel crypto is not available in this build (need RSA-OAEP encrypt/decrypt, PKCS#1/PSS signing, and HMAC-SHA256 key derivation); certs were readable at client_cert_path/client_key_path/server_cert_path but the secure channel cannot be established yet — see ROADMAP.md")
+		return nil, fmt.Errorf("opcua: Basic256Sha256 channel crypto is not available in this build")
+	}
+
+	crypto, err := newChannelCrypto(clientCert, clientKey, serverCert)
+	if err != nil {
+		return nil, fmt.Errorf("opcua: Basic256Sha256 key material: %w", err)
 	}
 
 	return &securityMaterial{
@@ -120,6 +127,7 @@ func resolveSecurity(cfg SecurityConfig) (*securityMaterial, error) {
 		ClientCertPEM: clientCert,
 		ClientKeyPEM:  clientKey,
 		ServerCertPEM: serverCert,
+		crypto:        crypto,
 	}, nil
 }
 

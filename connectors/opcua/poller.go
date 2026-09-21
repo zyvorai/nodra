@@ -27,7 +27,8 @@ type subscribeClient interface {
 
 // PollerConfig configures an OPC-UA poller. Default security is
 // SecurityPolicy None with an anonymous session; set SecurityPolicy to
-// Basic256Sha256 (plus cert paths) to attempt that policy — see
+// Basic256Sha256 (plus all three cert paths) for a Sign or SignAndEncrypt
+// channel. The user identity token stays anonymous either way — see
 // docs/INDUSTRIAL_PROTOCOLS.md. Mode "poll" (the default) ticks Read on
 // Interval; mode "subscribe" instead opens one long-lived
 // Subscribe/MonitoredItems session and reconnects (waiting Interval between

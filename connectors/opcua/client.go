@@ -4,13 +4,15 @@
 // Package opcua implements a dependency-free OPC-UA (UA-TCP binary) client
 // suitable for Nodra adapters. Default scope is SecurityPolicy None with an
 // anonymous session, plus Read, Write, Subscribe/MonitoredItems,
-// GetEndpoints/FindServers/Browse. Basic256Sha256 is accepted as config
-// scaffolding (security_policy / security_mode / cert paths) but establishing
-// a real Sign/SignAndEncrypt channel still needs crypto that this build does
-// not ship — see SecurityConfig and docs/INDUSTRIAL_PROTOCOLS.md. The Poller
-// connector polls Read or Subscribe; Write/Browse/discovery are Client /
-// package-level Go API calls, not poller-only surfaces. The configured
-// endpoint URL is dialed directly.
+// GetEndpoints/FindServers/Browse. SecurityPolicy Basic256Sha256 is
+// implemented for both Sign and SignAndEncrypt using only the Go standard
+// library: an RSA-OAEP/RSA-SHA256 asymmetric OpenSecureChannel, P_SHA256 key
+// derivation, and AES-256-CBC + HMAC-SHA256 symmetric messages — see
+// SecurityConfig, crypto_basic256.go and securechannel_basic256.go. The user
+// identity token is anonymous under every policy; username/password and X.509
+// user tokens are not implemented. The Poller connector polls Read or
+// Subscribe; Write/Browse/discovery are Client / package-level Go API calls,
+// not poller-only surfaces. The configured endpoint URL is dialed directly.
 package opcua
 
 import (
@@ -318,18 +320,25 @@ func writeChunk(conn net.Conn, msgType string, payload []byte) error {
 	_, err := conn.Write(payload)
 	return err
 }
-func readChunk(conn net.Conn) (msgType string, payload []byte, err error) {
-	hdr := make([]byte, 8)
+
+// readChunkRaw also returns the 8-byte message header, which secured
+// channels need verbatim: the OPC-UA chunk signature covers it.
+func readChunkRaw(conn net.Conn) (msgType string, hdr, payload []byte, err error) {
+	hdr = make([]byte, 8)
 	if _, err = io.ReadFull(conn, hdr); err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 	msgType = string(hdr[0:3])
 	size := binary.LittleEndian.Uint32(hdr[4:8])
 	if size < 8 {
-		return "", nil, fmt.Errorf("invalid UA-TCP message size %d", size)
+		return "", nil, nil, fmt.Errorf("invalid UA-TCP message size %d", size)
 	}
 	payload = make([]byte, size-8)
 	_, err = io.ReadFull(conn, payload)
+	return msgType, hdr, payload, err
+}
+func readChunk(conn net.Conn) (msgType string, payload []byte, err error) {
+	msgType, _, payload, err = readChunkRaw(conn)
 	return msgType, payload, err
 }
 
@@ -347,6 +356,16 @@ type session struct {
 	reqID     uint32
 	handle    uint32
 	authToken []byte
+
+	// Basic256Sha256 channel state; all nil for SecurityPolicy None.
+	crypto *channelCrypto // parsed certificates and keys
+	keys   *channelKeys   // symmetric keys derived from the channel nonces
+	// Session-level nonce and server certificate, which are separate from
+	// the channel ones and feed the CreateSession/ActivateSession
+	// signatures.
+	sessionNonce       []byte
+	serverSessionNonce []byte
+	serverSessionCert  []byte
 }
 
 func dial(ctx context.Context, endpoint string, timeout time.Duration, sec SecurityConfig) (*session, error) {
@@ -366,7 +385,7 @@ func dial(ctx context.Context, endpoint string, timeout time.Duration, sec Secur
 	if err != nil {
 		return nil, err
 	}
-	s := &session{conn: conn, timeout: timeout, security: mat}
+	s := &session{conn: conn, timeout: timeout, security: mat, crypto: mat.crypto}
 	if err := s.hello(endpoint); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("hello: %w", err)
@@ -452,11 +471,25 @@ func (s *session) writeSecureMessage(msgType string, channelID uint32, securityH
 	return writeChunk(s.conn, msgType, buf.Bytes())
 }
 
+// writeChannelMessage sends one MSG/CLO chunk over whichever channel
+// security is in force: a plaintext symmetric frame for SecurityPolicy
+// None, or a signed (and, in SignAndEncrypt, encrypted) one for
+// Basic256Sha256.
+func (s *session) writeChannelMessage(msgType string, body []byte) error {
+	if s.secured() {
+		return s.writeSymmetricMessage(msgType, body)
+	}
+	symHeader := make([]byte, 4)
+	binary.LittleEndian.PutUint32(symHeader, s.tokenID)
+	return s.writeSecureMessage(msgType, s.channelID, symHeader, body)
+}
+
 // readSecureMessage reads one OPN/MSG/CLO chunk, strips the SecureChannelId
-// and security header (whose shape depends on msgType), and returns the
-// remaining bytes starting at the service TypeId.
+// and security header (whose shape depends on msgType), decrypts and
+// verifies it when the channel is secured, and returns the remaining bytes
+// starting at the service TypeId.
 func (s *session) readSecureMessage() (msgType string, body []byte, err error) {
-	msgType, payload, err := readChunk(s.conn)
+	msgType, hdr, payload, err := readChunkRaw(s.conn)
 	if err != nil {
 		return "", nil, err
 	}
@@ -464,6 +497,20 @@ func (s *session) readSecureMessage() (msgType string, body []byte, err error) {
 		r := &reader{b: payload}
 		code, reason := r.u32(), r.str()
 		return msgType, nil, fmt.Errorf("server error 0x%08x: %s", code, reason)
+	}
+	switch hdr[3] {
+	case 'A':
+		// Abort chunk: SecureChannelId, Error, Reason.
+		r := &reader{b: payload}
+		r.u32()
+		code, reason := r.u32(), r.str()
+		return msgType, nil, fmt.Errorf("server aborted the message: 0x%08x: %s", code, reason)
+	case 'C':
+		return msgType, nil, errors.New("opcua: multi-chunk messages are not supported")
+	}
+	if s.secured() {
+		body, err = s.decodeSecuredChunk(msgType, hdr, payload)
+		return msgType, body, err
 	}
 	r := &reader{b: payload}
 	r.u32() // SecureChannelId
@@ -497,9 +544,7 @@ func (s *session) serviceCallDeadline(expectedRespTypeID uint32, reqBody []byte,
 	if err := s.conn.SetDeadline(time.Now().Add(deadline)); err != nil {
 		return nil, err
 	}
-	symHeader := make([]byte, 4)
-	binary.LittleEndian.PutUint32(symHeader, s.tokenID)
-	if err := s.writeSecureMessage("MSG", s.channelID, symHeader, reqBody); err != nil {
+	if err := s.writeChannelMessage("MSG", reqBody); err != nil {
 		return nil, err
 	}
 	msgType, respBody, err := s.readSecureMessage()
@@ -524,14 +569,15 @@ func (s *session) openSecureChannel() error {
 	if err := s.setDeadline(); err != nil {
 		return err
 	}
+	if s.secured() {
+		return s.openSecureChannelBasic256()
+	}
 	mat := s.security
 	if mat == nil {
 		mat = &securityMaterial{PolicyURI: securityPolicyNone, Mode: messageSecurityModeNone}
 	}
 	if mat.PolicyURI != securityPolicyNone {
-		// Basic256Sha256 selection is validated in resolveSecurity; the
-		// asymmetric OPN + symmetric MSG crypto path is still scaffolding.
-		return fmt.Errorf("opcua: security policy %s is configured but secure-channel crypto is not implemented", mat.PolicyURI)
+		return fmt.Errorf("opcua: security policy %s is not supported", mat.PolicyURI)
 	}
 	handle := s.nextHandle()
 	body := &bytes.Buffer{}
@@ -597,10 +643,20 @@ func (s *session) createSession(endpoint string) error {
 	writeString(body, "", true)             // ServerUri
 	writeString(body, endpoint, false)      // EndpointUrl
 	writeString(body, "nodra-opcua", false) // SessionName
-	writeByteString(body, nil, true)        // ClientNonce
-	writeByteString(body, nil, true)        // ClientCertificate
-	writeFloat64(body, 1200000)             // RequestedSessionTimeout (ms)
-	writeUint32(body, 4*1024*1024)          // MaxResponseMessageSize
+	if s.secured() {
+		nonce, err := newNonce()
+		if err != nil {
+			return err
+		}
+		s.sessionNonce = nonce
+		writeByteString(body, nonce, false)                  // ClientNonce
+		writeByteString(body, s.crypto.clientCertDER, false) // ClientCertificate
+	} else {
+		writeByteString(body, nil, true) // ClientNonce
+		writeByteString(body, nil, true) // ClientCertificate
+	}
+	writeFloat64(body, 1200000)    // RequestedSessionTimeout (ms)
+	writeUint32(body, 4*1024*1024) // MaxResponseMessageSize
 
 	respBody, err := s.serviceCall(idCreateSessionResponse, body.Bytes())
 	if err != nil {
@@ -613,11 +669,21 @@ func (s *session) createSession(endpoint string) error {
 	}
 	readNodeIdRaw(r) // SessionId
 	authToken := readNodeIdRaw(r)
-	r.f64()     // RevisedSessionTimeout
-	r.byteStr() // ServerNonce
-	r.byteStr() // ServerCertificate
+	r.f64()                    // RevisedSessionTimeout
+	serverNonce := r.byteStr() // ServerNonce
+	serverCert := r.byteStr()  // ServerCertificate
 	if r.err != nil {
 		return r.err
+	}
+	if s.secured() {
+		if len(serverNonce) != basic256NonceLength {
+			return fmt.Errorf("server session nonce is %d bytes, Basic256Sha256 requires %d", len(serverNonce), basic256NonceLength)
+		}
+		if err := s.verifyCreateSessionResponse(r, serverCert); err != nil {
+			return err
+		}
+		s.serverSessionNonce = serverNonce
+		s.serverSessionCert = serverCert
 	}
 	s.authToken = authToken
 	return nil
@@ -628,10 +694,19 @@ func (s *session) activateSession() error {
 	body := &bytes.Buffer{}
 	body.Write(typeIDBytes(idActivateSessionRequest))
 	body.Write(s.requestHeader(s.authToken, handle))
-	writeString(body, "", true)      // ClientSignature.Algorithm
-	writeByteString(body, nil, true) // ClientSignature.Signature
-	writeInt32(body, 0)              // ClientSoftwareCertificates count
-	writeInt32(body, 0)              // LocaleIds count
+	if s.secured() {
+		sig, err := s.clientSessionSignature()
+		if err != nil {
+			return fmt.Errorf("sign ActivateSession: %w", err)
+		}
+		writeString(body, signatureAlgorithmRSASHA256, false) // ClientSignature.Algorithm
+		writeByteString(body, sig, false)                     // ClientSignature.Signature
+	} else {
+		writeString(body, "", true)      // ClientSignature.Algorithm
+		writeByteString(body, nil, true) // ClientSignature.Signature
+	}
+	writeInt32(body, 0) // ClientSoftwareCertificates count
+	writeInt32(body, 0) // LocaleIds count
 
 	inner := &bytes.Buffer{}
 	writeString(inner, "anonymous", false) // AnonymousIdentityToken.PolicyId
@@ -723,10 +798,8 @@ func (s *session) closeSecureChannel() error {
 	body := &bytes.Buffer{}
 	body.Write(typeIDBytes(idCloseSecureChannelRequest))
 	body.Write(s.requestHeader(s.authToken, handle))
-	symHeader := make([]byte, 4)
-	binary.LittleEndian.PutUint32(symHeader, s.tokenID)
 	// Best-effort: many servers close the socket without acknowledging CLO.
-	return s.writeSecureMessage("CLO", s.channelID, symHeader, body.Bytes())
+	return s.writeChannelMessage("CLO", body.Bytes())
 }
 
 // Client reads OPC-UA node values over a fresh connect/handshake/Read/close

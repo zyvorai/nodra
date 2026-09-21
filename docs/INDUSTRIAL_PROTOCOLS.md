@@ -81,18 +81,29 @@ This increment keeps protocol semantics in Nodra while Zyvor Device Agent owns o
     dependency-free philosophy as the Modbus TCP building block. Scope is
     deliberately narrow:
 
-    - **SecurityPolicy `None` by default** — anonymous session, no channel
-      encryption or signing. **`Basic256Sha256` scaffolding** is wired:
-      set `security_policy` to `Basic256Sha256`, `security_mode` to `Sign`
-      or `SignAndEncrypt` (default), and `client_cert_path` /
-      `client_key_path` / `server_cert_path`. Without those cert paths the
-      connector fails fast with an actionable error. Full secure-channel
-      crypto (RSA-OAEP, PKCS#1/PSS signing, HMAC-SHA256 key derivation) is
-      not shipped in this build yet — even with readable certs you get a
-      clear "channel crypto is not available" error rather than a subtly
-      wrong encrypted channel. Tracked in `ROADMAP.md`.
-    - **Anonymous session only** — no username/password or certificate-based
-      user tokens (independent of channel security policy).
+    - **SecurityPolicy `None` by default** — no channel encryption or
+      signing. **`Basic256Sha256` is implemented** for both `Sign` and
+      `SignAndEncrypt`: set `security_policy` to `Basic256Sha256`,
+      `security_mode` to `Sign` or `SignAndEncrypt` (default), and all three
+      of `client_cert_path` / `client_key_path` / `server_cert_path`. The
+      OpenSecureChannel exchange is RSA-OAEP encrypted and RSA-SHA256 signed
+      with those application-instance certificates, symmetric keys come from
+      P_SHA256 over the exchanged nonces, and each later message is
+      HMAC-SHA256 signed (plus AES-256-CBC encrypted in `SignAndEncrypt`).
+      Missing or unparseable certificates fail fast with an actionable
+      error. What this has *not* been through: a certified commercial server
+      or an OPC Foundation conformance suite. It is verified by an in-repo
+      mock server that implements the server half independently, plus
+      known-answer tests for the primitives. Smoke-test against your own
+      server before production use.
+    - **Anonymous user identity token only** — no username/password or X.509
+      user tokens, under every channel security policy. Channel security and
+      user authentication are separate in OPC-UA; only the former is
+      implemented here.
+    - **No channel-token renewal and no multi-chunk messages** — each poll
+      opens a fresh channel, so the ten-minute token lifetime is never
+      reached in `mode: "poll"`; a long-lived `mode: "subscribe"` session
+      will be dropped and reconnected when the server expires the token.
     - **Read and Subscribe/MonitoredItems** — `mode: "poll"` (default) ticks
       Read on `interval`; `mode: "subscribe"` instead opens one long-lived
       Subscribe session and reconnects (waiting `interval` between attempts)
@@ -120,8 +131,8 @@ This increment keeps protocol semantics in Nodra while Zyvor Device Agent owns o
     }
     ```
 
-    Optional Basic256Sha256 config (fails until channel crypto lands; cert
-    paths are required when this policy is selected):
+    Basic256Sha256 config (all three cert paths are required when this
+    policy is selected; the user token stays anonymous):
 
     ```json
     {
@@ -194,11 +205,11 @@ This increment keeps protocol semantics in Nodra while Zyvor Device Agent owns o
     servers, err := opcua.FindServers(ctx, "opc.tcp://boiler-plc.local:4840", 5*time.Second)
     ```
 
-    Basic256Sha256 config scaffolding is in place (`security_policy`,
-    `security_mode`, cert paths on the poller and `Client.Security`); full
-    asymmetric secure-channel crypto remains a follow-up in `ROADMAP.md` —
-    shipping a subtly-wrong "encrypted" channel would be worse than failing
-    closed with a clear error when certs or crypto support are missing.
+    `Client.Security` takes the same fields as the poller config, so the
+    Write, Browse and Read APIs all run over a Basic256Sha256 channel when
+    one is configured. Discovery (`GetEndpoints` / `FindServers`) always
+    runs over the unsecured pre-session channel, which is what Part 4 §5.4
+    specifies, so it ignores `Client.Security`.
 
 === "Serial (generic)"
 
