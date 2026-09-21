@@ -106,7 +106,8 @@ This pair is applied consistently across every admin-gated list and single-entit
 
 Two residual gaps keep this from being an absolute boundary, both deliberate trade-offs rather than oversights:
 
-- `overview()`'s `pending_deliveries`/`delivery_queue_bytes`/`dead_letters` come from `queue.Stats()`, which has no per-site breakdown, so they stay fleet-wide totals even for an org-scoped caller — an org admin can infer roughly how busy the *whole* fleet's delivery queue is, not just their own.
+- `overview()`'s `pending_deliveries`/`delivery_queue_bytes`/`dead_letters` are fleet-wide for a global token. An org-scoped token gets those three counts filtered to deliveries and dead letters whose `site_id` belongs to that org (scanned from the queue, not a separate index).
+- `auditList`/`auditExport` push an org's site IDs into the audit store filter (`SiteIDs`) so pages are not thinned by a post-filter.
 - `auditList()`/`auditExport()` filter by post-processing each fetched page (`audit.Filter` has no "any site in this org" concept), so a page can come back with fewer than its requested limit for an org-scoped caller even though more matching entries exist further in — `next_cursor` still lets them page forward, this only affects how full one page looks.
 
 Agent-authenticated endpoints (heartbeat, enroll, events ingestion, `agentTwins`/`agentTwinReported`, `agentDeployments`/`agentDeploymentStatus`/`agentDeploymentRollback`, `agentOTAStatus`) were never in scope for this: a site's own agent token already scopes it to itself, org or not.

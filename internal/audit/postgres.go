@@ -104,6 +104,10 @@ func (p *PostgresLog) Query(filter Filter) ([]Entry, string, error) {
 	}
 	if filter.SiteID != "" {
 		add("site_id = $%d", filter.SiteID)
+	} else if len(filter.SiteIDs) > 0 {
+		clauses = append(clauses, fmt.Sprintf("site_id = ANY($%d)", n))
+		args = append(args, filter.SiteIDs)
+		n++
 	}
 	if filter.Action != "" {
 		add("action = $%d", filter.Action)

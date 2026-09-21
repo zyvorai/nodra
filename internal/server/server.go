@@ -102,6 +102,16 @@ type Config struct {
 	OIDCGroupsClaim  string
 	OIDCAdminGroup   string
 	OIDCViewerGroup  string
+	// SessionTTL is how long password/OIDC console sessions last. Zero means
+	// one hour. Static AdminToken/ViewerToken remain valid indefinitely for
+	// automation; only minted sessions expire and can be refreshed.
+	SessionTTL time.Duration
+	// EnrollmentTokenTTL, when set, makes the bootstrap enrollment token
+	// expire after that duration from process start (or from the last rotate).
+	// Zero means the enrollment token does not expire.
+	EnrollmentTokenTTL time.Duration
+	OTLPEndpoint       string
+	OTLPInterval       time.Duration
 }
 
 type Server struct {
@@ -135,6 +145,10 @@ type Server struct {
 	oidcJWKS      *oidc.JWKSet
 	oidcStatesMu  sync.Mutex
 	oidcStates    map[string]oidcState
+	sessions      *sessionStore
+	enrollMu      sync.Mutex
+	enrollExpires time.Time
+	customRoles   *roleStore
 }
 
 // oidcState is one in-flight OIDC login attempt's server-side state,
@@ -240,7 +254,10 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, instanceID: instanceID, store: st, deliveries: q, dlq: dlq, leader: lead, metrics: &telemetry.Metrics{}, activity: &activityLog{}, audit: au, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}, oidcStates: map[string]oidcState{}}
+	s := &Server{cfg: cfg, instanceID: instanceID, store: st, deliveries: q, dlq: dlq, leader: lead, metrics: &telemetry.Metrics{}, activity: &activityLog{}, audit: au, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}, oidcStates: map[string]oidcState{}, sessions: newSessionStore(), customRoles: newRoleStore(filepath.Join(cfg.DataDir, "roles.json"))}
+	if cfg.EnrollmentTokenTTL > 0 {
+		s.enrollExpires = time.Now().UTC().Add(cfg.EnrollmentTokenTTL)
+	}
 	s.oidc = oidc.Config{
 		IssuerURL: cfg.OIDCIssuerURL, ClientID: cfg.OIDCClientID, ClientSecret: cfg.OIDCClientSecret,
 		RedirectURL: cfg.OIDCRedirectURL, GroupsClaim: cfg.OIDCGroupsClaim,
@@ -281,6 +298,27 @@ func (s *Server) Start(ctx context.Context) error {
 	go s.worker(ctx)
 	go s.auditRetentionLoop(ctx)
 	go s.certLifecycleLoop(ctx)
+	if s.cfg.OTLPEndpoint != "" {
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			exp := &telemetry.OTLPExporter{
+				Endpoint: s.cfg.OTLPEndpoint,
+				Interval: s.cfg.OTLPInterval,
+				Source: func() map[string]float64 {
+					ds := s.deliveries.Stats()
+					qs := s.dlq.Stats()
+					return map[string]float64{
+						"nodra.pending_deliveries":   float64(ds.Items),
+						"nodra.delivery_queue_bytes": float64(ds.Bytes),
+						"nodra.dead_letters":         float64(qs.Items),
+						"nodra.events_total":         float64(s.metrics.Events.Load()),
+					}
+				},
+			}
+			exp.Run(ctx)
+		}()
+	}
 	var err error
 	if s.cfg.TLSCertFile != "" && s.cfg.TLSKeyFile != "" {
 		err = s.http.ListenAndServeTLS(s.cfg.TLSCertFile, s.cfg.TLSKeyFile)
@@ -329,6 +367,8 @@ func (s *Server) routes() http.Handler {
 	})
 	mux.HandleFunc("POST /api/v1/auth/login", s.login)
 	mux.HandleFunc("GET /api/v1/auth/me", s.authMe)
+	mux.HandleFunc("POST /api/v1/auth/refresh", s.authRefresh)
+	mux.HandleFunc("POST /api/v1/auth/logout", s.authLogout)
 	mux.HandleFunc("GET /api/v1/auth/oidc/login", s.oidcLogin)
 	mux.HandleFunc("GET /api/v1/auth/oidc/callback", s.oidcCallback)
 	mux.HandleFunc("POST /api/v1/enroll", s.enroll)
@@ -359,6 +399,8 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET /api/v1/ota/campaigns/{id}", s.admin(http.HandlerFunc(s.otaCampaignGet)))
 	mux.Handle("POST /api/v1/ota/campaigns/{id}/start", s.admin(http.HandlerFunc(s.otaCampaignStart)))
 	mux.Handle("POST /api/v1/ota/campaigns/{id}/promote", s.admin(http.HandlerFunc(s.otaCampaignPromote)))
+	mux.Handle("POST /api/v1/ota/campaigns/{id}/pause", s.admin(http.HandlerFunc(s.otaCampaignPause)))
+	mux.Handle("POST /api/v1/ota/campaigns/{id}/resume", s.admin(http.HandlerFunc(s.otaCampaignResume)))
 	mux.Handle("POST /api/v1/ota/campaigns/{id}/abort", s.admin(http.HandlerFunc(s.otaCampaignAbort)))
 	mux.Handle("GET /api/v1/deployments", s.admin(http.HandlerFunc(s.deployments)))
 	mux.Handle("POST /api/v1/deployments", s.admin(http.HandlerFunc(s.deploymentCreate)))
@@ -366,6 +408,11 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("DELETE /api/v1/deployments/{id}", s.admin(http.HandlerFunc(s.deploymentDelete)))
 	mux.Handle("GET /api/v1/orgs", s.admin(http.HandlerFunc(s.orgs)))
 	mux.Handle("POST /api/v1/orgs", s.admin(http.HandlerFunc(s.orgCreate)))
+	mux.Handle("GET /api/v1/roles", s.admin(http.HandlerFunc(s.rolesList)))
+	mux.Handle("POST /api/v1/roles", s.admin(http.HandlerFunc(s.roleCreate)))
+	mux.Handle("DELETE /api/v1/roles/{name}", s.admin(http.HandlerFunc(s.roleDelete)))
+	mux.Handle("POST /api/v1/enrollment-token/rotate", s.admin(http.HandlerFunc(s.enrollRotate)))
+	mux.HandleFunc("POST /api/v1/ztp/bootstrap", s.ztpBootstrap)
 	mux.Handle("GET /api/v1/orgs/{id}", s.admin(http.HandlerFunc(s.orgGet)))
 	mux.Handle("DELETE /api/v1/orgs/{id}", s.admin(http.HandlerFunc(s.orgDelete)))
 	mux.Handle("GET /api/v1/policy-packs", s.admin(http.HandlerFunc(s.policyPacks)))
@@ -460,6 +507,12 @@ func (s *Server) roleForBearer(tok string) string {
 	if tok == "" {
 		return ""
 	}
+	if sess, ok := s.sessions.get(tok); ok {
+		return sess.Role
+	}
+	if role, ok := s.customRoles.roleForToken(tok); ok {
+		return role
+	}
 	if s.cfg.AdminToken != "" && auth.EqualToken(tok, s.cfg.AdminToken) {
 		return "admin"
 	}
@@ -497,6 +550,12 @@ func (s *Server) orgRoleForBearer(tok string) (role, orgID string) {
 // resolve to any role at all) and sees the whole fleet, unfiltered.
 func (s *Server) orgForBearer(tok string) (orgID string, scoped bool) {
 	if tok == "" {
+		return "", false
+	}
+	if sess, ok := s.sessions.get(tok); ok {
+		if sess.OrgID != "" {
+			return sess.OrgID, true
+		}
 		return "", false
 	}
 	if s.cfg.AdminToken != "" && auth.EqualToken(tok, s.cfg.AdminToken) {
@@ -574,6 +633,9 @@ func (s *Server) requireGlobalAdmin(w http.ResponseWriter, r *http.Request) bool
 // actorForBearer resolves the audit-log actor (the console username) for a
 // request's bearer token, empty if it doesn't match a configured role.
 func (s *Server) actorForBearer(tok string) string {
+	if sess, ok := s.sessions.get(tok); ok {
+		return sess.Actor
+	}
 	if role, org := s.orgRoleForBearer(tok); role != "" {
 		return org + ":" + role
 	}
@@ -604,20 +666,14 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		auth.EqualToken(user, s.cfg.AdminUser) && auth.EqualToken(in.Password, s.cfg.AdminPassword) {
 		s.note("ok", "control-plane", s.cfg.AdminUser, "", "", "", "login", "console login", map[string]any{"role": "admin"})
 		s.clearAttempts("login", r)
-		writeJSON(w, 200, map[string]any{
-			"token": s.cfg.AdminToken,
-			"user":  map[string]string{"username": s.cfg.AdminUser, "role": "admin"},
-		})
+		s.issueSession(w, "admin", s.cfg.AdminUser, "")
 		return
 	}
 	if s.cfg.ViewerToken != "" && s.cfg.ViewerPassword != "" &&
 		auth.EqualToken(user, s.cfg.ViewerUser) && auth.EqualToken(in.Password, s.cfg.ViewerPassword) {
 		s.note("ok", "control-plane", s.cfg.ViewerUser, "", "", "", "login", "console login", map[string]any{"role": "viewer"})
 		s.clearAttempts("login", r)
-		writeJSON(w, 200, map[string]any{
-			"token": s.cfg.ViewerToken,
-			"user":  map[string]string{"username": s.cfg.ViewerUser, "role": "viewer"},
-		})
+		s.issueSession(w, "viewer", s.cfg.ViewerUser, "")
 		return
 	}
 	if s.cfg.AdminToken == "" && s.cfg.ViewerToken == "" {
@@ -674,19 +730,28 @@ func (s *Server) clearAttempts(bucket string, r *http.Request) {
 }
 
 func (s *Server) authMe(w http.ResponseWriter, r *http.Request) {
-	role := s.roleForBearer(bearer(r))
+	tok := bearer(r)
+	role := s.roleForBearer(tok)
 	if role == "" {
 		writeJSON(w, 200, map[string]any{"authenticated": false})
 		return
 	}
-	user := s.cfg.AdminUser
-	if role == "viewer" {
-		user = s.cfg.ViewerUser
+	user := s.actorForBearer(tok)
+	if user == "" {
+		user = s.cfg.AdminUser
+		if role == "viewer" {
+			user = s.cfg.ViewerUser
+		}
 	}
-	writeJSON(w, 200, map[string]any{
+	out := map[string]any{
 		"authenticated": true,
 		"user":          map[string]string{"username": user, "role": role},
-	})
+	}
+	if sess, ok := s.sessions.get(tok); ok {
+		out["expires_at"] = sess.ExpiresAt
+		out["session"] = true
+	}
+	writeJSON(w, 200, out)
 }
 
 // oidcDiscover lazily resolves and caches the provider's discovery
@@ -740,11 +805,9 @@ func (s *Server) oidcLogin(w http.ResponseWriter, r *http.Request) {
 
 // oidcCallback completes the login: exchanges the code, verifies the ID
 // token, resolves the caller's role via the configured groups claim, and
-// mints the SAME static bearer token login() already issues for that role
-// — OIDC is a third way to obtain the existing two roles, not a new
-// identity/session mechanism. The token travels back to the SPA via the
-// URL fragment (never a logged query string), matching this codebase's
-// lack of any cookie/session middleware.
+// mints a short-lived console session for that role. Static AdminToken /
+// ViewerToken remain available for automation; OIDC and password login
+// never return those long-lived secrets in the browser fragment.
 func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.OIDCEnabled {
 		errorJSON(w, 503, "oidc login is not configured")
@@ -785,12 +848,17 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 403, "oidc login denied: no matching admin or viewer group")
 		return
 	}
-	tok := s.cfg.ViewerToken
-	if role == "admin" {
-		tok = s.cfg.AdminToken
+	actor := "oidc:" + claims.String("sub")
+	if email := claims.String("email"); email != "" {
+		actor = email
 	}
-	s.note("ok", "control-plane", "oidc:"+claims.String("sub"), "", "", "", "oidc.login", "console login via OIDC", map[string]any{"role": role, "email": claims.String("email")})
-	dest := "/#oidc_token=" + url.QueryEscape(tok) + "&role=" + url.QueryEscape(role)
+	sess, err := s.sessions.mint(role, actor, "", s.sessionTTL())
+	if err != nil {
+		errorJSON(w, 500, "session mint failed")
+		return
+	}
+	s.note("ok", "control-plane", actor, "", "", "", "oidc.login", "console login via OIDC", map[string]any{"role": role, "email": claims.String("email"), "expires_at": sess.ExpiresAt})
+	dest := "/#oidc_token=" + url.QueryEscape(sess.Token) + "&role=" + url.QueryEscape(role) + "&expires_at=" + url.QueryEscape(sess.ExpiresAt.Format(time.RFC3339))
 	http.Redirect(w, r, dest, http.StatusFound)
 }
 
@@ -844,6 +912,14 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	orgID := ""
 	switch {
 	case s.cfg.EnrollmentToken != "" && auth.EqualToken(in.EnrollmentToken, s.cfg.EnrollmentToken):
+		s.enrollMu.Lock()
+		expired := !s.enrollExpires.IsZero() && time.Now().UTC().After(s.enrollExpires)
+		s.enrollMu.Unlock()
+		if expired {
+			s.recordAttempt("enroll", r)
+			errorJSON(w, 401, "enrollment token expired")
+			return
+		}
 		// global fleet enrollment, orgID stays ""
 	default:
 		matched := false
@@ -1032,6 +1108,16 @@ func (s *Server) registerDevice(w http.ResponseWriter, r *http.Request) {
 	s.note("ok", "agent", in.SiteID, "", in.SiteID, "", "device.register", "device registered: "+in.Name, map[string]any{"device_id": in.ID, "protocol": in.Protocol})
 	writeJSON(w, 201, in)
 }
+func (s *Server) siteIDsForOrg(orgID string) []string {
+	var out []string
+	for _, site := range s.store.Sites() {
+		if site.OrgID == orgID {
+			out = append(out, site.ID)
+		}
+	}
+	return out
+}
+
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	st := s.store.Snapshot()
 	orgID, scoped := s.orgForBearer(bearer(r))
@@ -1077,13 +1163,17 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 			events++
 		}
 	}
-	// pending_deliveries/delivery_queue_bytes/dead_letters come from
-	// queue.Stats(), which has no per-site breakdown — these three remain
-	// fleet-wide totals even for an org-scoped caller. See
-	// docs/ARCHITECTURE.md's "Multi-tenant orgs" section.
+	// pending_deliveries/delivery_queue_bytes/dead_letters: when the caller
+	// is org-scoped, count only rows whose JSON site_id belongs to that org.
 	ds := s.deliveries.Stats()
 	qs := s.dlq.Stats()
-	writeJSON(w, 200, map[string]any{"sites": sites, "online_sites": online, "devices": devices, "twins": twins, "routes": routes, "deployments": deployments, "open_alerts": openAlerts, "pending_deliveries": ds.Items, "delivery_queue_bytes": ds.Bytes, "dead_letters": qs.Items, "events": events})
+	pending, pendingBytes, dead := ds.Items, ds.Bytes, qs.Items
+	if orgID, scoped := s.orgForBearer(bearer(r)); scoped {
+		sites := s.siteIDsForOrg(orgID)
+		pending, pendingBytes = s.countDeliveriesForSites(sites)
+		dead = s.countDeadLettersForSites(sites)
+	}
+	writeJSON(w, 200, map[string]any{"sites": sites, "online_sites": online, "devices": devices, "twins": twins, "routes": routes, "deployments": deployments, "open_alerts": openAlerts, "pending_deliveries": pending, "delivery_queue_bytes": pendingBytes, "dead_letters": dead, "events": events})
 }
 func countOpen(a []model.Alert) int {
 	n := 0
@@ -1936,12 +2026,60 @@ func (s *Server) agentDeploymentRollback(w http.ResponseWriter, r *http.Request)
 func (s *Server) deadletters(w http.ResponseWriter, r *http.Request) {
 	items, _ := s.dlq.List()
 	out := items[:0]
-	for _, dl := range items {
-		if s.callerCanSeeSite(r, dl.Delivery.SiteID) {
-			out = append(out, dl)
+	siteSet := map[string]struct{}{}
+	if orgID, scoped := s.orgForBearer(bearer(r)); scoped {
+		for _, id := range s.siteIDsForOrg(orgID) {
+			siteSet[id] = struct{}{}
+		}
+		for _, dl := range items {
+			if _, ok := siteSet[dl.Delivery.SiteID]; ok {
+				out = append(out, dl)
+			}
+		}
+	} else {
+		for _, dl := range items {
+			if s.callerCanSeeSite(r, dl.Delivery.SiteID) {
+				out = append(out, dl)
+			}
 		}
 	}
 	writeJSON(w, 200, asJSONList(out))
+}
+
+func (s *Server) countDeliveriesForSites(siteIDs []string) (items int, bytes int64) {
+	if len(siteIDs) == 0 {
+		return 0, 0
+	}
+	set := map[string]struct{}{}
+	for _, id := range siteIDs {
+		set[id] = struct{}{}
+	}
+	list, _ := s.deliveries.List()
+	for _, d := range list {
+		if _, ok := set[d.SiteID]; ok {
+			items++
+			bytes += int64(len(d.Payload))
+		}
+	}
+	return items, bytes
+}
+
+func (s *Server) countDeadLettersForSites(siteIDs []string) int {
+	if len(siteIDs) == 0 {
+		return 0
+	}
+	set := map[string]struct{}{}
+	for _, id := range siteIDs {
+		set[id] = struct{}{}
+	}
+	list, _ := s.dlq.List()
+	n := 0
+	for _, dl := range list {
+		if _, ok := set[dl.Delivery.SiteID]; ok {
+			n++
+		}
+	}
+	return n
 }
 func (s *Server) deadletterReplay(w http.ResponseWriter, r *http.Request) {
 	idv := r.PathValue("id")

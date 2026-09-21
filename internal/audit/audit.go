@@ -32,13 +32,14 @@ type Entry struct {
 
 // Filter selects a page of entries for Query.
 type Filter struct {
-	Since  time.Time
-	Until  time.Time
-	SiteID string
-	Action string
-	Actor  string
-	Limit  int
-	Cursor string
+	Since   time.Time
+	Until   time.Time
+	SiteID  string
+	SiteIDs []string // when set, match any of these site_ids (org-scoped pushdown)
+	Action  string
+	Actor   string
+	Limit   int
+	Cursor  string
 }
 
 // Store is the audit-log persistence surface. Query is an admin/export path,

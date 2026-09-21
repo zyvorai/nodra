@@ -60,12 +60,17 @@ func TestClientDemoWalkthrough(t *testing.T) {
 			Role     string `json:"role"`
 		} `json:"user"`
 	}
-	if err := json.Unmarshal(body, &login); err != nil || login.Token != "demo-token" || login.User.Username != "admin" {
-		t.Fatalf("login payload=%s", body)
+	if err := json.Unmarshal(body, &login); err != nil || login.Token == "" || login.Token == "demo-token" || login.User.Username != "admin" {
+		t.Fatalf("login payload=%s (want minted session, not static admin token)", body)
 	}
 	code, body = c.req("GET", "/api/v1/auth/me", nil, login.Token)
-	if code != 200 || !strings.Contains(string(body), `"authenticated":true`) {
+	if code != 200 || !strings.Contains(string(body), `"authenticated":true`) || !strings.Contains(string(body), `"session":true`) {
 		t.Fatalf("auth/me %d %s", code, body)
+	}
+	// Static automation token still works without a session.
+	code, body = c.req("GET", "/api/v1/auth/me", nil, "demo-token")
+	if code != 200 || !strings.Contains(string(body), `"authenticated":true`) {
+		t.Fatalf("static auth/me %d %s", code, body)
 	}
 
 	// Viewer role: read OK, mutate forbidden.
@@ -83,8 +88,8 @@ func TestClientDemoWalkthrough(t *testing.T) {
 		} `json:"user"`
 	}
 	_ = json.Unmarshal(body, &vlogin)
-	if vlogin.Token != "viewer-token" || vlogin.User.Role != "viewer" {
-		t.Fatalf("viewer login payload %s", body)
+	if vlogin.Token == "" || vlogin.Token == "viewer-token" || vlogin.User.Role != "viewer" {
+		t.Fatalf("viewer login payload want session token, got %s", body)
 	}
 	code, _ = c.req("GET", "/api/v1/overview", nil, vlogin.Token)
 	if code != 200 {

@@ -146,6 +146,18 @@ func (f *FileLog) Query(filter Filter) ([]Entry, string, error) {
 			if filter.SiteID != "" && e.SiteID != filter.SiteID {
 				continue
 			}
+			if len(filter.SiteIDs) > 0 {
+				ok := false
+				for _, id := range filter.SiteIDs {
+					if e.SiteID == id {
+						ok = true
+						break
+					}
+				}
+				if !ok {
+					continue
+				}
+			}
 			if filter.Action != "" && e.Action != filter.Action {
 				continue
 			}

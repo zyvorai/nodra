@@ -161,8 +161,11 @@ func TestOIDCLoginFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	tok := values.Get("oidc_token")
-	if tok != "adm" {
-		t.Fatalf("expected the same static admin token login() issues, got %q", tok)
+	if tok == "" || tok == "adm" {
+		t.Fatalf("expected a minted session token, not the static admin secret, got %q", tok)
+	}
+	if values.Get("expires_at") == "" {
+		t.Fatalf("expected expires_at in fragment: %s", dest)
 	}
 
 	// 3. The minted token authenticates against /api/v1/auth/me.
@@ -173,9 +176,10 @@ func TestOIDCLoginFlow(t *testing.T) {
 	}
 	var me struct {
 		Authenticated bool `json:"authenticated"`
+		Session       bool `json:"session"`
 	}
-	if err := json.Unmarshal(b, &me); err != nil || !me.Authenticated {
-		t.Fatalf("expected authenticated=true: %v (%s)", err, b)
+	if err := json.Unmarshal(b, &me); err != nil || !me.Authenticated || !me.Session {
+		t.Fatalf("expected authenticated session: %v (%s)", err, b)
 	}
 
 	// 4. A durable "oidc.login" audit entry was recorded.

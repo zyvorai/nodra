@@ -44,6 +44,10 @@ func main() {
 	oidcGroupsClaim := flag.String("oidc-groups-claim", env("NODRA_OIDC_GROUPS_CLAIM", "groups"), "ID token claim carrying the caller's groups")
 	oidcAdminGroup := flag.String("oidc-admin-group", os.Getenv("NODRA_OIDC_ADMIN_GROUP"), "group value granting the admin role via OIDC")
 	oidcViewerGroup := flag.String("oidc-viewer-group", os.Getenv("NODRA_OIDC_VIEWER_GROUP"), "group value granting the viewer role via OIDC")
+	sessionTTL := flag.Duration("session-ttl", envDuration("NODRA_SESSION_TTL", time.Hour), "TTL for password/OIDC console sessions; static admin/viewer tokens do not expire")
+	enrollTTL := flag.Duration("enrollment-token-ttl", envDuration("NODRA_ENROLLMENT_TOKEN_TTL", 0), "expire the bootstrap enrollment token after this duration; 0 means no expiry")
+	otlpEndpoint := flag.String("otlp-endpoint", os.Getenv("NODRA_OTLP_ENDPOINT"), "OTLP/HTTP collector base URL (metrics pushed to /v1/metrics)")
+	otlpInterval := flag.Duration("otlp-interval", envDuration("NODRA_OTLP_INTERVAL", 30*time.Second), "how often to push OTLP metrics when --otlp-endpoint is set")
 	flag.Parse()
 	if *admin == "" || *enroll == "" {
 		slog.Warn("authentication token missing; management or enrollment APIs will be unavailable")
@@ -58,6 +62,8 @@ func main() {
 		OIDCIssuerURL: *oidcIssuerURL, OIDCClientID: *oidcClientID, OIDCClientSecret: *oidcClientSecret,
 		OIDCRedirectURL: *oidcRedirectURL, OIDCGroupsClaim: *oidcGroupsClaim,
 		OIDCAdminGroup: *oidcAdminGroup, OIDCViewerGroup: *oidcViewerGroup,
+		SessionTTL: *sessionTTL, EnrollmentTokenTTL: *enrollTTL,
+		OTLPEndpoint: *otlpEndpoint, OTLPInterval: *otlpInterval,
 	})
 	if err != nil {
 		slog.Error("init failed", "error", err)
@@ -103,6 +109,14 @@ func envBool(k string, d bool) bool {
 	if v := os.Getenv(k); v != "" {
 		if b, e := strconv.ParseBool(v); e == nil {
 			return b
+		}
+	}
+	return d
+}
+func envDuration(k string, d time.Duration) time.Duration {
+	if v := os.Getenv(k); v != "" {
+		if n, e := time.ParseDuration(v); e == nil {
+			return n
 		}
 	}
 	return d

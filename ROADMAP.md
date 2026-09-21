@@ -13,7 +13,8 @@ Offline WAL, backpressure, local routes, MQTT QoS 0/1/2 (optional broker TLS and
   channel crypto fails with an actionable error). Full secure-channel crypto
   (RSA-OAEP, HMAC-SHA256 key derivation, Sign/SignAndEncrypt MSG framing)
   and non-anonymous user tokens are still out of scope.
-- ~~staged, multi-site OTA campaigns with canary rollout on top of the now-wired `pkg/ota` single-device request/status path~~ — Have (`model.OTACampaign`, `/api/v1/ota/campaigns` create/list/get/start/promote/abort; cumulative canary waves write Twin.Desired["ota"]; twin-tracked outcomes; auto-complete / failure-threshold abort). Pause/resume API and campaign-driven cancel of in-flight device OTAs are still out of scope.
+- ~~staged, multi-site OTA campaigns with canary rollout on top of the now-wired `pkg/ota` single-device request/status path~~ — Have (`model.OTACampaign`, `/api/v1/ota/campaigns` create/list/get/start/promote/pause/resume/abort; cumulative canary waves write Twin.Desired["ota"]; abort clears in-flight desired OTA; twin-tracked outcomes; auto-complete / failure-threshold abort).
+- Short-lived console sessions, enrollment token rotate/TTL, custom roles, ZTP bootstrap, OTLP/HTTP metrics export, org-scoped audit/overview queue filtering, operator PITR runbook, and `scripts/bench-ingress.py` — Have (see CHANGELOG Unreleased). Multi-hour/multi-day soak pass and a published measured throughput claim remain open.
 - ~~outbound MQTT QoS 2 (subscriber-side exactly-once delivery)~~ — Have (`SUBSCRIBE` may request QoS2; broker→subscriber PUBLISH/PUBREC/PUBREL/PUBCOMP with in-flight tracking)
 
 ## v1.0 criteria

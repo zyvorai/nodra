@@ -189,18 +189,21 @@ func (s *Server) auditList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"entries": []audit.Entry{}, "next_cursor": ""})
 		return
 	}
+	if f.SiteID == "" {
+		if orgID, scoped := s.orgForBearer(bearer(r)); scoped {
+			f.SiteIDs = s.siteIDsForOrg(orgID)
+			if len(f.SiteIDs) == 0 {
+				writeJSON(w, 200, map[string]any{"entries": []audit.Entry{}, "next_cursor": ""})
+				return
+			}
+		}
+	}
 	entries, next, err := s.audit.Query(f)
 	if err != nil {
 		errorJSON(w, 500, "audit query failed: "+err.Error())
 		return
 	}
-	visible := entries[:0]
-	for _, e := range entries {
-		if s.callerCanSeeSite(r, e.SiteID) {
-			visible = append(visible, e)
-		}
-	}
-	writeJSON(w, 200, map[string]any{"entries": asJSONList(visible), "next_cursor": next})
+	writeJSON(w, 200, map[string]any{"entries": asJSONList(entries), "next_cursor": next})
 }
 
 // auditExport streams the full matching audit history as newline-delimited
@@ -217,6 +220,14 @@ func (s *Server) auditExport(w http.ResponseWriter, r *http.Request) {
 	if f.SiteID != "" && !s.callerCanSeeSite(r, f.SiteID) {
 		return
 	}
+	if f.SiteID == "" {
+		if orgID, scoped := s.orgForBearer(bearer(r)); scoped {
+			f.SiteIDs = s.siteIDsForOrg(orgID)
+			if len(f.SiteIDs) == 0 {
+				return
+			}
+		}
+	}
 	flusher, _ := w.(http.Flusher)
 	enc := json.NewEncoder(w)
 	for {
@@ -226,9 +237,6 @@ func (s *Server) auditExport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, e := range entries {
-			if !s.callerCanSeeSite(r, e.SiteID) {
-				continue
-			}
 			if err := enc.Encode(e); err != nil {
 				return
 			}

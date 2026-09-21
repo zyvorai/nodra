@@ -104,8 +104,12 @@ func (s *Server) otaCampaignStart(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if c.Status != model.OTACampaignDraft && c.Status != model.OTACampaignPaused {
-		errorJSON(w, 409, "campaign must be draft or paused to start")
+	if c.Status == model.OTACampaignPaused {
+		errorJSON(w, 409, "campaign is paused; use POST .../resume")
+		return
+	}
+	if c.Status != model.OTACampaignDraft {
+		errorJSON(w, 409, "campaign must be draft to start")
 		return
 	}
 	targets, err := s.resolveCampaignTargets(c)
@@ -174,6 +178,7 @@ func (s *Server) otaCampaignAbort(w http.ResponseWriter, r *http.Request) {
 	}
 	c.Status = model.OTACampaignAborted
 	c.UpdatedAt = time.Now().UTC()
+	cleared := s.clearInFlightCampaignOTA(&c)
 	if err := s.store.UpdateOTACampaign(c.ID, func(out *model.OTACampaign) {
 		out.Status = model.OTACampaignAborted
 		out.UpdatedAt = c.UpdatedAt
@@ -181,8 +186,90 @@ func (s *Server) otaCampaignAbort(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 507, err.Error())
 		return
 	}
-	s.note("warn", "control-plane", s.actorForBearer(bearer(r)), "", firstSite(c), c.Name, "ota.campaign.abort", "OTA campaign aborted: "+c.Name, map[string]any{"campaign_id": c.ID})
+	s.note("warn", "control-plane", s.actorForBearer(bearer(r)), "", firstSite(c), c.Name, "ota.campaign.abort", "OTA campaign aborted: "+c.Name, map[string]any{"campaign_id": c.ID, "cleared_desired": cleared})
 	writeJSON(w, 200, c)
+}
+
+func (s *Server) otaCampaignPause(w http.ResponseWriter, r *http.Request) {
+	c, ok := s.loadMutableCampaign(w, r)
+	if !ok {
+		return
+	}
+	if c.Status != model.OTACampaignRunning {
+		errorJSON(w, 409, "campaign must be running to pause")
+		return
+	}
+	c.Status = model.OTACampaignPaused
+	c.UpdatedAt = time.Now().UTC()
+	if err := s.store.UpdateOTACampaign(c.ID, func(out *model.OTACampaign) {
+		out.Status = model.OTACampaignPaused
+		out.UpdatedAt = c.UpdatedAt
+	}); err != nil {
+		errorJSON(w, 507, err.Error())
+		return
+	}
+	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", firstSite(c), c.Name, "ota.campaign.pause", "OTA campaign paused: "+c.Name, map[string]any{"campaign_id": c.ID, "stage": c.CurrentStage})
+	writeJSON(w, 200, c)
+}
+
+func (s *Server) otaCampaignResume(w http.ResponseWriter, r *http.Request) {
+	c, ok := s.loadMutableCampaign(w, r)
+	if !ok {
+		return
+	}
+	if c.Status != model.OTACampaignPaused {
+		errorJSON(w, 409, "campaign must be paused to resume")
+		return
+	}
+	c.Status = model.OTACampaignRunning
+	c.UpdatedAt = time.Now().UTC()
+	if err := s.store.UpdateOTACampaign(c.ID, func(out *model.OTACampaign) {
+		out.Status = model.OTACampaignRunning
+		out.UpdatedAt = c.UpdatedAt
+	}); err != nil {
+		errorJSON(w, 507, err.Error())
+		return
+	}
+	c = s.refreshOTACampaign(c)
+	s.note("ok", "control-plane", s.actorForBearer(bearer(r)), "", firstSite(c), c.Name, "ota.campaign.resume", "OTA campaign resumed: "+c.Name, map[string]any{"campaign_id": c.ID, "stage": c.CurrentStage})
+	writeJSON(w, 200, c)
+}
+
+// clearInFlightCampaignOTA removes Twin.Desired["ota"] for devices that have
+// not finished (committed/failed/rolled-back) so abort stops further install work.
+func (s *Server) clearInFlightCampaignOTA(c *model.OTACampaign) int {
+	cleared := 0
+	for _, d := range c.Devices {
+		switch d.State {
+		case ota.StateCommitted, ota.StateFailed, ota.StateRolledBack:
+			continue
+		}
+		dev, ok := s.store.Device(d.DeviceID)
+		if !ok {
+			continue
+		}
+		removed := false
+		_ = s.store.UpdateTwin(dev.ID, func(tw *model.Twin) {
+			if tw.Desired == nil {
+				return
+			}
+			req, has, err := otaRequestFromDesired(tw.Desired)
+			if err != nil || !has {
+				return
+			}
+			if req.UpdateID != "" && req.UpdateID != d.UpdateID {
+				return
+			}
+			delete(tw.Desired, otaTwinKey)
+			tw.DesiredVersion++
+			tw.UpdatedAt = time.Now().UTC()
+			removed = true
+		})
+		if removed {
+			cleared++
+		}
+	}
+	return cleared
 }
 
 func (s *Server) loadMutableCampaign(w http.ResponseWriter, r *http.Request) (model.OTACampaign, bool) {
@@ -476,6 +563,7 @@ func (s *Server) refreshOTACampaign(c model.OTACampaign) model.OTACampaign {
 			c.Status = model.OTACampaignAborted
 			c.UpdatedAt = time.Now().UTC()
 			changed = true
+			_ = s.clearInFlightCampaignOTA(&c)
 			_ = s.store.AddAlert(model.Alert{
 				ID: id("alert"), SiteID: firstSite(c), Severity: "high", Type: "ota_campaign_aborted",
 				Message:   fmt.Sprintf("OTA campaign %s aborted: failure threshold %d%% exceeded (%d/%d)", c.Name, c.FailureThresholdPercent, failed, n),

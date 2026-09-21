@@ -25,6 +25,10 @@ Control-plane counters live in process memory, so a WAN restart sets them back t
 
 Heap profiles are written to the evidence directory as `heap-start.pprof`, `heap-mid.pprof`, and `heap-end.pprof` from `NODRA_PPROF` (loopback port 6060, soak overlay only).
 
+## Local ingress observation
+
+`scripts/bench-ingress.py` posts to a running edge agent's `/v1/publish` for a short window and prints `accepted_per_sec`. Record the host, duration, commit, and that JSON before treating the number as evidence. It is a local observation, not a product rating. Docker was required for the compose soak; when Docker is unavailable, run the bench against a local `nodrad` instead.
+
 ## How to run it
 
 ```bash

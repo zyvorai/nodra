@@ -4,14 +4,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,6 +31,10 @@ import (
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "init" {
 		initConfig(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "ztp" {
+		ztpBootstrap(os.Args[2:])
 		return
 	}
 	fs := flag.NewFlagSet("nodrad", flag.ExitOnError)
@@ -107,6 +116,70 @@ func initConfig(args []string) {
 	fmt.Println(string(b))
 	fmt.Printf("\nCreated %s\n", *path)
 }
+
+func ztpBootstrap(args []string) {
+	fs := flag.NewFlagSet("ztp", flag.ExitOnError)
+	path := fs.String("config", "./nodrad.json", "config path to write")
+	serverURL := fs.String("server", "http://127.0.0.1:8080", "control-plane URL")
+	site := fs.String("site", "", "site name")
+	token := fs.String("enrollment-token", "", "enrollment token")
+	data := fs.String("data", "./nodra-agent-data", "data directory")
+	listen := fs.String("listen", "127.0.0.1:9091", "local ingest listen address")
+	mqttListen := fs.String("mqtt-listen", "127.0.0.1:1883", "MQTT listen address")
+	insecure := fs.Bool("insecure", false, "skip TLS verify for lab HTTPS")
+	_ = fs.Parse(args)
+	if strings.TrimSpace(*site) == "" || *token == "" {
+		fmt.Fprintln(os.Stderr, "ztp requires --site and --enrollment-token")
+		os.Exit(2)
+	}
+	body, _ := json.Marshal(map[string]any{
+		"name": *site, "enrollment_token": *token,
+		"listen": *listen, "mqtt_listen": *mqttListen,
+	})
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(*serverURL, "/")+"/api/v1/ztp/bootstrap", bytes.NewReader(body))
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 30 * time.Second}
+	if *insecure {
+		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		fmt.Fprintf(os.Stderr, "ztp bootstrap failed: %s\n%s\n", resp.Status, raw)
+		os.Exit(1)
+	}
+	var out struct {
+		AgentConfig json.RawMessage `json:"agent_config"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil || len(out.AgentConfig) == 0 {
+		fmt.Fprintln(os.Stderr, "invalid ztp response:", string(raw))
+		os.Exit(1)
+	}
+	var cfg agent.Config
+	if err := json.Unmarshal(out.AgentConfig, &cfg); err != nil {
+		panic(err)
+	}
+	cfg.DataDir = *data
+	cfg.ServerURL = strings.TrimRight(*serverURL, "/")
+	if err := os.MkdirAll(filepath.Dir(*path), 0o750); err != nil {
+		panic(err)
+	}
+	if err := agent.SaveConfig(*path, cfg); err != nil {
+		panic(err)
+	}
+	b, _ := json.MarshalIndent(cfg, "", "  ")
+	fmt.Println(string(b))
+	fmt.Printf("\nZTP wrote %s (site_id=%s)\n", *path, cfg.SiteID)
+}
+
 func env(k, d string) string {
 	if v := os.Getenv(k); v != "" {
 		return v

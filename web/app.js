@@ -4,11 +4,45 @@
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 let token=sessionStorage.getItem('nodra_token')||'';
 let role=sessionStorage.getItem('nodra_role')||'admin';
+let expiresAt=sessionStorage.getItem('nodra_expires_at')||'';
+let refreshInFlight=null;
 const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)};
 const asList=v=>Array.isArray(v)?v:(v==null?[]:[v]);
 const isAdmin=()=>role!=='viewer';
 
+function persistSession(tok,rol,exp){
+  token=tok||'';
+  role=rol||'admin';
+  expiresAt=exp||'';
+  if(token)sessionStorage.setItem('nodra_token',token);else sessionStorage.removeItem('nodra_token');
+  sessionStorage.setItem('nodra_role',role);
+  if(expiresAt)sessionStorage.setItem('nodra_expires_at',expiresAt);else sessionStorage.removeItem('nodra_expires_at');
+}
+
+async function refreshSession(){
+  if(!token||!expiresAt)return token;
+  if(refreshInFlight)return refreshInFlight;
+  refreshInFlight=(async()=>{
+    try{
+      const r=await fetch('/api/v1/auth/refresh',{method:'POST',headers:{Authorization:`Bearer ${token}`}});
+      if(r.status===401){signOut(false);throw new Error('Session expired')}
+      if(!r.ok)return token;
+      const data=await r.json();
+      if(data.token)persistSession(data.token,(data.user&&data.user.role)||role,data.expires_at||'');
+      return token;
+    }finally{refreshInFlight=null}
+  })();
+  return refreshInFlight;
+}
+
+async function ensureFreshToken(){
+  if(!token||!expiresAt)return;
+  const ms=Date.parse(expiresAt)-Date.now();
+  if(Number.isFinite(ms)&&ms<5*60*1000)await refreshSession();
+}
+
 async function api(path,opt={}){
+  await ensureFreshToken();
   const h={...(opt.headers||{})};
   if(token)h.Authorization=`Bearer ${token}`;
   if(opt.body)h['Content-Type']='application/json';
@@ -36,10 +70,11 @@ function showConsole(){
   applyRoleUI();
 }
 function signOut(toastMsg=true){
-  token='';
-  role='admin';
-  sessionStorage.removeItem('nodra_token');
-  sessionStorage.removeItem('nodra_role');
+  const old=token;
+  if(old){
+    fetch('/api/v1/auth/logout',{method:'POST',headers:{Authorization:`Bearer ${old}`}}).catch(()=>{});
+  }
+  persistSession('','admin','');
   showLogin();
   if(toastMsg)toast('Signed out');
 }
@@ -102,10 +137,12 @@ function wireLoginChapters(){
 async function ensureSession(){
   if(!token){showLogin();return false}
   try{
+    await ensureFreshToken();
     const me=await api('/api/v1/auth/me');
     if(!me.authenticated){signOut(false);return false}
     role=(me.user&&me.user.role)||'admin';
-    sessionStorage.setItem('nodra_role',role);
+    if(me.expires_at)expiresAt=me.expires_at;
+    persistSession(token,role,expiresAt);
     showConsole();
     return true
   }catch{
@@ -131,8 +168,7 @@ $('#loginForm').addEventListener('submit',async e=>{
     token=data.token||'';
     if(!token)throw new Error('No session token returned');
     role=(data.user&&data.user.role)||'admin';
-    sessionStorage.setItem('nodra_token',token);
-    sessionStorage.setItem('nodra_role',role);
+    persistSession(token,role,data.expires_at||'');
     $('#loginPass').value='';
     showConsole();
     await refresh();
@@ -355,10 +391,7 @@ function consumeOIDCRedirect(){
   const params=new URLSearchParams(hash.slice(1));
   const t=params.get('oidc_token');
   if(t){
-    token=t;
-    role=params.get('role')||'admin';
-    sessionStorage.setItem('nodra_token',token);
-    sessionStorage.setItem('nodra_role',role);
+    persistSession(t,params.get('role')||'admin',params.get('expires_at')||'');
   }
   history.replaceState(null,'',location.pathname+location.search);
 }
@@ -370,5 +403,9 @@ function consumeOIDCRedirect(){
   if(!ok)fillLoginContext();
   const initial=location.hash.slice(1);
   if(['overview','sites','devices','streams','apps','dlq','logs'].includes(initial))page(initial);
-  if(ok){await refresh();setInterval(refresh,5000)}
+  if(ok){
+    await refresh();
+    setInterval(refresh,5000);
+    setInterval(()=>{ensureFreshToken().catch(()=>{})},60*1000);
+  }
 })();
