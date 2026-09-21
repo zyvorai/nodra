@@ -97,10 +97,14 @@ def check_no_data_loss(summary: dict) -> None:
                 f"(persisted={persisted} duplicates={dupes} spool_end={spool_end})",
             )
             return
-        if accepted > 0 and forwarded + dead + pending_end <= 0:
+        # Require evidence that the control plane is moving work — unless the
+        # edge spool still holds at least as many messages as we accepted
+        # (common when a prior backlog is draining ahead of soak publishes).
+        if accepted > 0 and forwarded + dead + pending_end <= 0 and spool_end < accepted:
             verdict(
                 "no_data_loss", "fail",
-                f"accepted={accepted} but nothing was forwarded, dead-lettered, or pending",
+                f"accepted={accepted} but nothing was forwarded, dead-lettered, or pending "
+                f"(spool_end={spool_end})",
             )
             return
         verdict(

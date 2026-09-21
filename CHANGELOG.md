@@ -14,6 +14,14 @@
 
 ## Unreleased
 
+- Operator upgrade/rollback procedure for v0.2.0 and v0.2.1 → current
+  (`docs/UPGRADE.md`), with contiguous migration load test and lab soak
+  ingest enabled under `NODRA_SOAK_LAB=1` (HTTPS-aware curl, local sink).
+- Fix Prometheus `/metrics` to emit real newlines (raw-string `\n` was
+  literal), so soak scrapes and greps work. `scripts/bench-ingress.py`
+  supports concurrent workers; lab loopback observations are in
+  `docs/SCALE.md` (~3.7–6.9 accepts/s at `f7c49d4`).
+
 - Postgres fleet state is read from the database on every call. Updates use a `revision` column (`UPDATE ... WHERE revision = ?`) so two control-plane processes cannot silently overwrite each other. Numbered schema migrations (`nodra_schema_migrations`) refuse a database newer than the binary. Helm `replicaCount` is honored; file mode fails the render above 1; Postgres above 1 uses `RollingUpdate`. This is not a v1.0 HA claim: multi-day soak, PITR, and the remaining gates stay open.
 - The soak publishes through the edge agent over HTTP and MQTT while the control plane is stopped, accumulates counters across control-plane restarts, writes heap profiles at the start, middle, and end, and fails when no events were accepted. The simulator is not started for that run, because its routes to a closed port retained every failed delivery in memory. See `docs/SCALE.md`. The repaired four-hour run has not passed.
 - `charts/nodra/values-production.yaml` installs one PostgreSQL replica with an existing Secret, cert-manager TLS, restricted NetworkPolicy egress, a startup probe, and a `helm test` that enrolls one site and posts one event. Replica count stays 1. PITR is not included.

@@ -18,5 +18,25 @@ type Metrics struct {
 }
 
 func (m *Metrics) Prometheus() string {
-	return fmt.Sprintf(`# HELP nodra_events_total Events accepted by Nodra.\n# TYPE nodra_events_total counter\nnodra_events_total %d\n# HELP nodra_events_duplicate_total Events rejected as already stored.\n# TYPE nodra_events_duplicate_total counter\nnodra_events_duplicate_total %d\n# HELP nodra_deliveries_total Successful route deliveries.\n# TYPE nodra_deliveries_total counter\nnodra_deliveries_total %d\n# HELP nodra_delivery_failures_total Failed route delivery attempts.\n# TYPE nodra_delivery_failures_total counter\nnodra_delivery_failures_total %d\n# HELP nodra_heartbeats_total Agent heartbeats.\n# TYPE nodra_heartbeats_total counter\nnodra_heartbeats_total %d\n# HELP nodra_enrollments_total Edge site enrollments.\n# TYPE nodra_enrollments_total counter\nnodra_enrollments_total %d\n`, m.Events.Load(), m.Duplicates.Load(), m.Deliveries.Load(), m.DeliveryFailures.Load(), m.Heartbeats.Load(), m.Enrollments.Load())
+	return fmt.Sprintf(
+		"# HELP nodra_events_total Events accepted by Nodra.\n"+
+			"# TYPE nodra_events_total counter\n"+
+			"nodra_events_total %d\n"+
+			"# HELP nodra_events_duplicate_total Events rejected as already stored.\n"+
+			"# TYPE nodra_events_duplicate_total counter\n"+
+			"nodra_events_duplicate_total %d\n"+
+			"# HELP nodra_deliveries_total Successful route deliveries.\n"+
+			"# TYPE nodra_deliveries_total counter\n"+
+			"nodra_deliveries_total %d\n"+
+			"# HELP nodra_delivery_failures_total Failed route delivery attempts.\n"+
+			"# TYPE nodra_delivery_failures_total counter\n"+
+			"nodra_delivery_failures_total %d\n"+
+			"# HELP nodra_heartbeats_total Agent heartbeats.\n"+
+			"# TYPE nodra_heartbeats_total counter\n"+
+			"nodra_heartbeats_total %d\n"+
+			"# HELP nodra_enrollments_total Edge site enrollments.\n"+
+			"# TYPE nodra_enrollments_total counter\n"+
+			"nodra_enrollments_total %d\n",
+		m.Events.Load(), m.Duplicates.Load(), m.Deliveries.Load(), m.DeliveryFailures.Load(), m.Heartbeats.Load(), m.Enrollments.Load(),
+	)
 }

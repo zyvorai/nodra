@@ -77,7 +77,14 @@ MQTT_PUBLISH="$ROOT/scripts/ci/mqtt_publish.py"
 
 CP_BASE=${NODRA_SOAK_CP_BASE:-http://127.0.0.1:8080}
 AGENT_BASE=${NODRA_SOAK_AGENT_BASE:-http://127.0.0.1:9091}
+# HTTPS lab control planes use a self-signed cert; allow NODRA_SOAK_TLS_INSECURE=1
+# or auto-enable when CP_BASE is https://.
 CURL=(curl -sSm 5)
+if [ "${NODRA_SOAK_TLS_INSECURE:-}" = "1" ] || [[ "$CP_BASE" == https://* ]]; then
+  CURL=(curl -sSm 5 -k)
+fi
+SINK_URL=${NODRA_SOAK_SINK_URL:-http://127.0.0.1:18081/hook}
+SINK_PID=""
 
 SAMPLES="$OUTDIR/samples.jsonl"
 WAN_LOG="$OUTDIR/wan-cycles.jsonl"
@@ -181,7 +188,7 @@ cp_start() {
 fill_disk() {
   local mb="$1"
   if [ "$LAB_MODE" = "1" ]; then
-    dd if=/dev/zero of=/var/lib/nodra/.soak-fill.bin bs=1M count="$mb" status=none 2>/dev/null || true
+    sudo dd if=/dev/zero of=/var/lib/nodra/.soak-fill.bin bs=1M count="$mb" status=none 2>/dev/null || true
   else
     compose exec -T control-plane sh -c "dd if=/dev/zero of=/var/lib/nodra/.soak-fill.bin bs=1M count=$mb status=none" >/dev/null 2>&1 || true
   fi
@@ -189,7 +196,7 @@ fill_disk() {
 
 release_disk() {
   if [ "$LAB_MODE" = "1" ]; then
-    rm -f /var/lib/nodra/.soak-fill.bin
+    sudo rm -f /var/lib/nodra/.soak-fill.bin
   else
     compose exec -T control-plane sh -c 'rm -f /var/lib/nodra/.soak-fill.bin' >/dev/null 2>&1 || true
   fi
@@ -367,13 +374,17 @@ capture_heap() {
 
 prepare_sink_route() {
   local i code=000
+  local target="$SINK_URL"
+  if [ "$LAB_MODE" != "1" ]; then
+    target="http://sink:8080/hook"
+  fi
   for i in $(seq 1 30); do
-    code=$(curl -sS -o /dev/null -w '%{http_code}' \
+    code=$("${CURL[@]}" -o /dev/null -w '%{http_code}' \
       -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-      -d '{"name":"soak-sink","topic":"soak/ingest","target_url":"http://sink:8080/hook","method":"POST","enabled":true,"retry_max":3,"timeout_seconds":5}' \
+      -d "{\"name\":\"soak-sink\",\"topic\":\"soak/ingest\",\"target_url\":\"$target\",\"method\":\"POST\",\"enabled\":true,\"retry_max\":3,\"timeout_seconds\":5}" \
       "$CP_BASE/api/v1/routes" || true)
-    if [ "$code" = "201" ]; then
-      log "soak ingest route created"
+    if [ "$code" = "201" ] || [ "$code" = "200" ]; then
+      log "soak ingest route created → $target (HTTP $code)"
       return 0
     fi
     sleep 2
@@ -381,12 +392,36 @@ prepare_sink_route() {
   log "soak ingest route was not created (last HTTP $code)"
 }
 
+start_lab_sink() {
+  local port
+  port=$(echo "$SINK_URL" | sed -n 's|.*://[^:]*:\([0-9]*\)/.*|\1|p')
+  port=${port:-18081}
+  python3 - "$port" <<'PY' &
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+port = int(sys.argv[1])
+class H(BaseHTTPRequestHandler):
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        if n:
+            self.rfile.read(n)
+        self.send_response(204)
+        self.end_headers()
+    def log_message(self, fmt, *args):
+        return
+ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
+PY
+  SINK_PID=$!
+  BG_PIDS+=("$SINK_PID")
+  log "lab sink listening on 127.0.0.1:$port (pid $SINK_PID)"
+}
+
 ingest_loop() {
   local end=$((SECONDS + DURATION)) n=0 code
   : >"$OUTDIR/ingest.ok"
   while [ "$SECONDS" -lt "$end" ]; do
     n=$((n + 1))
-    code=$(curl -sS -o /dev/null -w '%{http_code}' \
+    code=$("${CURL[@]}" -o /dev/null -w '%{http_code}' \
       -H "Authorization: Bearer $LOCAL_TOKEN" -H 'Content-Type: application/json' \
       -d "{\"topic\":\"soak/ingest\",\"payload\":{\"n\":$n,\"via\":\"http\"}}" \
       "$AGENT_BASE/v1/publish" || true)
@@ -490,7 +525,10 @@ disk_loop() {
   done
 }
 
-if [ "$LAB_MODE" != "1" ]; then
+if [ "$LAB_MODE" = "1" ]; then
+  start_lab_sink
+  prepare_sink_route
+elif [ "$LAB_MODE" != "1" ]; then
   prepare_sink_route
 fi
 SECONDS=0
@@ -502,9 +540,9 @@ wan_loop &
 BG_PIDS+=("$!")
 disk_loop &
 BG_PIDS+=("$!")
+ingest_loop &
+BG_PIDS+=("$!")
 if [ "$LAB_MODE" != "1" ]; then
-  ingest_loop &
-  BG_PIDS+=("$!")
   heap_loop &
   BG_PIDS+=("$!")
 fi

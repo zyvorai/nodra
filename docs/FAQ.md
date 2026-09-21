@@ -46,10 +46,12 @@ Run `make qualify` and sign [`docs/QUALIFICATION.md`](QUALIFICATION.md) /
 before go-live. See [`docs/PRODUCTION.md`](PRODUCTION.md).
 [`ROADMAP.md`](https://github.com/zyvorai/nodra/blob/main/ROADMAP.md)
 lists what's still required before v1.0: a stable API compatibility policy,
-a full HA control plane, an upgrade and rollback procedure, multi-day soak
-tests under WAN loss and disk pressure, protocol conformance suites, and
-recovery runbooks. Configured limits are published; a measured throughput
-number is not. If your deployment needs full HA today, it isn't there yet.
+a full HA control plane, multi-day soak tests under WAN loss and disk
+pressure, protocol conformance suites, and recovery runbooks. Upgrade and
+rollback steps for v0.2.0/v0.2.1 → current are in
+[`docs/UPGRADE.md`](UPGRADE.md). Configured limits are published; a measured
+throughput number waits on evidence in [`docs/SCALE.md`](SCALE.md). If your
+deployment needs full HA today, it isn't there yet.
 
 **What's the current version?** v0.2.2 — see `VERSION` and `CHANGELOG.md`.
 v0.2.1 added Modbus RTU and J1939.

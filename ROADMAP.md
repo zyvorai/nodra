@@ -31,7 +31,7 @@ Offline WAL, backpressure, local routes, MQTT QoS 0/1/2 (optional broker TLS and
 
 - stable API compatibility policy
 - HA control plane — not met. Postgres delivery workers claim concurrently, and fleet state is read from the database with revision checks (cross-replica test). File mode remains one replica. A passing multi-day soak, PITR, and a measured throughput number are still required before this is an HA claim. Configured limits are in `docs/SCALE.md`
-- upgrade/migration guarantees — numbered Postgres migrations and downgrade refusal are in place; upgrade from the two previous releases, config migration, and a rollback procedure are still open
+- upgrade/migration guarantees — Have ([docs/UPGRADE.md](docs/UPGRADE.md)): upgrade from v0.2.0 and v0.2.1 to current, additive config table, numbered Postgres migrations with downgrade refusal, and file/Postgres rollback procedures. Automatic down-migration SQL is not provided.
 - multi-day soak tests under WAN loss and disk pressure — the repaired soak is in CI and has not passed a four-hour run. 24h, 72h, and seven days need a self-hosted runner
 - protocol conformance suites
 - recovery runbooks. Configured limits are published in `docs/SCALE.md`. A measured events-per-second envelope is not

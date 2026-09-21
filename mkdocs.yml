@@ -49,6 +49,7 @@ nav:
       - API guide: API.md
       - Operations: OPERATIONS.md
       - Production: PRODUCTION.md
+      - Upgrade: UPGRADE.md
       - Qualification: QUALIFICATION.md
       - Scale: SCALE.md
       - Deployment: DEPLOYMENT.md
