@@ -23,7 +23,8 @@ hero:
     - {icon: "▶️", title: "Demo and user walkthrough", description: "A full user-demo path: control plane console, A–Z fleet simulation, and verification scripts.", href: "DEMO.md"}
     - {icon: "🏭", title: "Production", description: "Single-replica file mode, Postgres revision checks, TLS, backup/restore, and known limits.", href: "PRODUCTION.md"}
     - {icon: "✅", title: "Qualification", description: "Software matrix via make qualify versus operator-signed backup, TLS, and abbreviated WAN/disk drills.", href: "QUALIFICATION.md"}
-    - {icon: "📏", title: "Scale", description: "Configured limits, soak integrity gate, and the multi-day runs that have not been executed.", href: "SCALE.md"}
+    - {icon: "📏", title: "Scale", description: "Configured limits, four-hour lab soak evidence, lab ingress observation, and multi-day runs (24h in progress).", href: "SCALE.md"}
+    - {icon: "⬆️", title: "Upgrade", description: "Upgrade from v0.2.0/v0.2.1, Postgres migrations, and rollback.", href: "UPGRADE.md"}
     - {icon: "🧩", title: "Architecture", description: "nodra-server is the management/control plane, nodrad is the edge runtime, nodractl is the operator CLI.", href: "ARCHITECTURE.md"}
     - {icon: "🔌", title: "API guide", description: "Base path /api/v1 — admin bearer auth for management, site tokens or mTLS for agents.", href: "API.md"}
 footnotes:

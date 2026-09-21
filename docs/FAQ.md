@@ -37,21 +37,21 @@ single-control-plane product. Edge sites are offline-first. File mode is a
 tested single-replica deployment. PostgreSQL fleet state is read from the
 database, with revision checks so replicas cannot silently overwrite each
 other, and delivery workers already claim concurrently. A cross-replica test
-covers that consistency. Configured limits are in [`docs/SCALE.md`](SCALE.md).
-The repaired four-hour soak has not passed. Multi-day soak, PITR, and the
-rest of the 1.0 gates are still open. Helm defaults to one replica and
-refuses to scale file mode.
+covers that consistency. Configured limits and a lab ingress observation are
+in [`docs/SCALE.md`](SCALE.md). A four-hour lab soak passed 2026-09-21; a 24h
+lab soak is in progress (not signed until `soak-check.py` passes). 72h/7d,
+PITR, and full HA remain open. Helm defaults to one replica and refuses to
+scale file mode.
 Run `make qualify` and sign [`docs/QUALIFICATION.md`](QUALIFICATION.md) /
 [`evidence/qualification/ops-checklist.md`](https://github.com/zyvorai/nodra/blob/main/evidence/qualification/ops-checklist.md)
 before go-live. See [`docs/PRODUCTION.md`](PRODUCTION.md).
 [`ROADMAP.md`](https://github.com/zyvorai/nodra/blob/main/ROADMAP.md)
 lists what's still required before v1.0: a stable API compatibility policy,
-a full HA control plane, multi-day soak tests under WAN loss and disk
-pressure, protocol conformance suites, and recovery runbooks. Upgrade and
+a full HA control plane, completed multi-day soak tests (24h in progress;
+72h/7d unrun), protocol conformance suites, and recovery runbooks. Upgrade and
 rollback steps for v0.2.0/v0.2.1 → current are in
-[`docs/UPGRADE.md`](UPGRADE.md). Configured limits are published; a measured
-throughput number waits on evidence in [`docs/SCALE.md`](SCALE.md). If your
-deployment needs full HA today, it isn't there yet.
+[`docs/UPGRADE.md`](UPGRADE.md). If your deployment needs full HA today, it
+isn't there yet.
 
 **What's the current version?** v0.2.2 — see `VERSION` and `CHANGELOG.md`.
 v0.2.1 added Modbus RTU and J1939.

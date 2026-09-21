@@ -41,7 +41,7 @@ expected, not a sign the restore failed.
 
 File mode will not. The data directory is a single-writer WAL on a `ReadWriteOnce` volume, and Helm fails the render when `replicaCount` is above 1 in that mode. Do not point two processes at the same data directory.
 
-Postgres mode may run more than one control-plane process against the same database: fleet reads come from SQL, updates check `revision`, and delivery workers claim concurrently. That is still not full HA. The repaired four-hour soak has not passed. Multi-day soak, PITR, and a measured throughput number are open. Configured limits are in [`docs/SCALE.md`](SCALE.md). See the README maturity banner and `ROADMAP.md`.
+Postgres mode may run more than one control-plane process against the same database: fleet reads come from SQL, updates check `revision`, and delivery workers claim concurrently. That is still not full HA. A four-hour lab soak passed 2026-09-21; a 24h soak is in progress (not signed until judged). 72h/7d, PITR, and full HA remain open. Configured limits and lab ingress observations are in [`docs/SCALE.md`](SCALE.md). Upgrade/rollback: [`docs/UPGRADE.md`](UPGRADE.md). See the README maturity banner and `ROADMAP.md`.
 
 ## A device using QoS 2 or persistent MQTT sessions doesn't behave as expected
 

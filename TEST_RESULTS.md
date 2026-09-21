@@ -85,7 +85,7 @@ The checks above are the 2026-09-06 v0.2.0 gate. Current main also has:
 - Modbus TCP and RTU, J1939 via Device Agent capture, OPC-UA (SecurityPolicy None or Basic256Sha256 Sign/SignAndEncrypt, anonymous user token), Linux serial, and a NATS subscribe bridge. Zenoh and Kafka are not implemented.
 - Docker workload reconciliation requires a Docker runtime on the edge node and is opt-in.
 - Console activity Logs are in-memory only (not part of durable backup).
-- The repaired four-hour soak has not passed. Configured limits are in [docs/SCALE.md](docs/SCALE.md).
+- A four-hour lab soak passed 2026-09-21; a 24h lab soak is in progress (not signed until judged). Configured limits and lab ingress observations are in [docs/SCALE.md](docs/SCALE.md).
 
 ## Exact ZIP verification
 

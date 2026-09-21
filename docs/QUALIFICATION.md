@@ -11,9 +11,10 @@ are **signed** in
 the edge over HTTP and MQTT for the whole run, including WAN loss, and a
 skipped data-loss check is a failure. A four-hour lab soak passed on
 2026-09-21 (`evidence/qualification/lab/soak-4h-20260921T184846Z-*`).
-Multi-day soak (24h, 72h, seven days) and full HA remain open; those
-durations need a self-hosted runner. Postgres fleet consistency across replicas
-is covered by `TestPostgresCrossReplicaConsistency`. See [SCALE.md](SCALE.md).
+A 24h lab soak is in progress (started 2026-09-21T23:12:45Z; not signed
+until judged). 72h/7d and full HA remain open. Postgres fleet consistency
+across replicas is covered by `TestPostgresCrossReplicaConsistency`. See
+[SCALE.md](SCALE.md).
 
 ## Software (host) rows — `make qualify`
 
@@ -57,9 +58,9 @@ Evidence: `ops-checklist.md`, `lab/20260914T162245Z/nodra-soak/`.
 File mode is a tested single-replica deployment. PostgreSQL fleet state is read
 from the database, with revision checks so replicas cannot silently overwrite
 each other, and delivery workers already claim concurrently. A cross-replica
-test covers that consistency. Multi-day soak, PITR, and the rest of the 1.0
-gates are still open. Helm defaults to one replica and refuses to scale file
-mode. See [ROADMAP.md](https://github.com/zyvorai/nodra/blob/main/ROADMAP.md)
+test covers that consistency. A four-hour lab soak passed; a 24h soak is in
+progress. PITR and the rest of the 1.0 gates are still open. Helm defaults to
+one replica and refuses to scale file mode. See [ROADMAP.md](https://github.com/zyvorai/nodra/blob/main/ROADMAP.md)
 and [PRODUCTION.md](PRODUCTION.md).
 
 ## GitHub CI (lab substitute)
@@ -70,6 +71,7 @@ and a WAN-loss + disk-pressure soak (`scripts/ci/soak.sh`, judged by
 (`.github/workflows/ci.yml`) and a scheduled four-hour `soak-long` job
 (`.github/workflows/soak.yml`, nightly, against a hosted runner). The judge
 fails a run that accepted nothing. A four-hour lab soak passed on 2026-09-21;
-the scheduled CI `soak-long` job remains complementary evidence. Multi-day
-soaks (24h, 72h, seven days) stay open until they run on a self-hosted runner.
-The hosted job timeout is 330 minutes.
+the scheduled CI `soak-long` job remains complementary evidence. A 24h lab
+soak is in progress (not signed until judged). 72h and seven-day soaks stay
+open until they complete on a long-lived host. The hosted job timeout is 330
+minutes.

@@ -4,7 +4,7 @@
 
 Nodra is an Apache-2.0 edge runtime and control plane from Zyvor. It gives remote sites a local MQTT/HTTP ingress, durable store-and-forward, local routes, device twins, edge application reconciliation, fleet health, replayable dead letters and a clean web control plane.
 
-> **v0.2.2** is a serious single-control-plane release. Edge sites are offline-first. File mode is a tested single-replica deployment. PostgreSQL fleet state is read from the database, with revision checks so replicas cannot silently overwrite each other, and delivery workers already claim concurrently. A cross-replica test covers that consistency. Helm defaults to one replica and refuses to scale file mode. Configured limits are in [`docs/SCALE.md`](docs/SCALE.md). The soak workflow publishes through the edge and fails when nothing was accepted; the repaired four-hour run has not passed, and 24-hour, 72-hour, and seven-day runs need a self-hosted runner. PITR and the rest of the 1.0 gates are still open. The lab reference host runs HTTPS (`:18447`) with signed abbreviated WAN/disk drills.
+> **v0.2.2** is a serious single-control-plane release. Edge sites are offline-first. File mode is a tested single-replica deployment. PostgreSQL fleet state is read from the database, with revision checks so replicas cannot silently overwrite each other, and delivery workers already claim concurrently. A cross-replica test covers that consistency. Helm defaults to one replica and refuses to scale file mode. Configured limits and a lab ingress observation (~3.7–6.9 accepts/s) are in [`docs/SCALE.md`](docs/SCALE.md). A four-hour lab soak passed 2026-09-21; a 24h lab soak is in progress (not signed until judged). 72h/7d, Nodra-built-in PITR, and the rest of the 1.0 gates remain open. Upgrade/rollback for v0.2.0/v0.2.1 → current: [`docs/UPGRADE.md`](docs/UPGRADE.md). The lab reference host runs HTTPS (`:18447`) with signed ops drills.
 
 ## Why Nodra
 
@@ -50,10 +50,11 @@ each project's own docs.)*
 
 **Maturity, stated honestly**: current release is v0.2.2. The project's own
 `ROADMAP.md` lists what's still required before v1.0 — stable API
-compatibility, a full HA control plane, upgrade and rollback procedure,
-multi-day soak tests, protocol conformance suites, and recovery runbooks.
-Configured limits are in `docs/SCALE.md`; a measured events-per-second
-number is not. Postgres fleet reads are consistent across replicas and
+compatibility, a full HA control plane, completed multi-day soak tests
+(four-hour lab passed; 24h in progress; 72h/7d unrun), protocol conformance
+suites, and recovery runbooks. Upgrade/rollback for v0.2.0/v0.2.1 → current
+is in `docs/UPGRADE.md`. Configured limits and a lab ingress observation are
+in `docs/SCALE.md`. Postgres fleet reads are consistent across replicas and
 delivery workers claim concurrently; that is not the HA bar. If you need
 full HA or a stability guarantee today, this isn't there yet; if you need a
 single-site, offline-resilient edge runtime, this is exactly the scope.

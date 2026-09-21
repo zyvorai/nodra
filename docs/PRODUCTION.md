@@ -57,7 +57,7 @@ Do **not** dual-mount the same WAL directory on two live processes.
 
 ## Needs attention (known v0.2.x limits)
 
-- File mode has no multi-replica delivery plane — failover is restore-from-backup. Postgres delivery workers claim concurrently, and fleet updates use `revision`. The repaired four-hour soak has not passed. PITR and the rest of the 1.0 gates are still open. Limits are in [SCALE.md](SCALE.md).
+- File mode has no multi-replica delivery plane — failover is restore-from-backup. Postgres delivery workers claim concurrently, and fleet updates use `revision`. A four-hour lab soak passed 2026-09-21; a 24h soak is in progress (not signed until judged). PITR and full HA remain open. Limits and ingress observations: [SCALE.md](SCALE.md). Upgrade/rollback: [UPGRADE.md](UPGRADE.md).
 - The console's live Activity/Logs tail is in-memory (cap 2000) and is **not**
   in backups — but every actor-attributable action it shows is durably
   written to `audit/` (or Postgres) under the data directory, **is** in
