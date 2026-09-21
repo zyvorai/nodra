@@ -12,7 +12,8 @@ import (
 )
 
 func TestConsoleSessionMintRefreshLogout(t *testing.T) {
-	srv, err := New(Config{DataDir: t.TempDir(), AdminToken: "adm", AdminUser: "admin", AdminPassword: "secret", EnrollmentToken: "enroll", SessionTTL: time.Minute})
+	dir := t.TempDir()
+	srv, err := New(Config{DataDir: dir, AdminToken: "adm", AdminUser: "admin", AdminPassword: "secret", EnrollmentToken: "enroll", SessionTTL: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,11 +32,19 @@ func TestConsoleSessionMintRefreshLogout(t *testing.T) {
 	if err := json.Unmarshal(body, &login); err != nil || login.Token == "" || login.Token == "adm" || login.ExpiresAt.IsZero() {
 		t.Fatalf("login %s", body)
 	}
-	code, body = c.req("GET", "/api/v1/overview", nil, login.Token)
-	if code != 200 {
-		t.Fatalf("overview with session %d %s", code, body)
+	// Survives process restart via sessions.json
+	srv2, err := New(Config{DataDir: dir, AdminToken: "adm", AdminUser: "admin", AdminPassword: "secret", EnrollmentToken: "enroll", SessionTTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
 	}
-	code, body = c.req("POST", "/api/v1/auth/refresh", nil, login.Token)
+	ts2 := httptest.NewServer(srv2.Handler())
+	defer ts2.Close()
+	c2 := testClient{ts2.URL, "adm", t}
+	code, _ = c2.req("GET", "/api/v1/overview", nil, login.Token)
+	if code != 200 {
+		t.Fatalf("session after restart %d", code)
+	}
+	code, body = c2.req("POST", "/api/v1/auth/refresh", nil, login.Token)
 	if code != 200 {
 		t.Fatalf("refresh %d %s", code, body)
 	}
@@ -46,19 +55,19 @@ func TestConsoleSessionMintRefreshLogout(t *testing.T) {
 	if refreshed.Token == "" || refreshed.Token == login.Token {
 		t.Fatalf("refresh did not rotate token: %s", body)
 	}
-	code, _ = c.req("GET", "/api/v1/overview", nil, login.Token)
+	code, _ = c2.req("GET", "/api/v1/overview", nil, login.Token)
 	if code != 401 {
 		t.Fatalf("old token still valid after refresh")
 	}
-	code, _ = c.req("POST", "/api/v1/auth/logout", nil, refreshed.Token)
+	code, _ = c2.req("POST", "/api/v1/auth/logout", nil, refreshed.Token)
 	if code != 204 {
 		t.Fatalf("logout %d", code)
 	}
-	code, _ = c.req("GET", "/api/v1/overview", nil, refreshed.Token)
+	code, _ = c2.req("GET", "/api/v1/overview", nil, refreshed.Token)
 	if code != 401 {
 		t.Fatalf("session still valid after logout")
 	}
-	code, _ = c.req("GET", "/api/v1/overview", nil, "adm")
+	code, _ = c2.req("GET", "/api/v1/overview", nil, "adm")
 	if code != 200 {
 		t.Fatalf("static admin token broken")
 	}

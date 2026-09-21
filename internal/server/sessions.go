@@ -4,7 +4,10 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -14,20 +17,71 @@ import (
 // consoleSession is a short-lived bearer minted by password or OIDC login.
 // Static AdminToken/ViewerToken remain valid for automation and do not expire.
 type consoleSession struct {
-	Token     string
-	Role      string
-	Actor     string
-	OrgID     string
-	ExpiresAt time.Time
+	Token     string    `json:"token"`
+	Role      string    `json:"role"`
+	Actor     string    `json:"actor"`
+	OrgID     string    `json:"org_id,omitempty"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 type sessionStore struct {
 	mu    sync.Mutex
+	path  string
 	byTok map[string]consoleSession
 }
 
-func newSessionStore() *sessionStore {
-	return &sessionStore{byTok: map[string]consoleSession{}}
+func newSessionStore(path string) *sessionStore {
+	s := &sessionStore{path: path, byTok: map[string]consoleSession{}}
+	_ = s.load()
+	return s
+}
+
+func (s *sessionStore) load() error {
+	if s.path == "" {
+		return nil
+	}
+	b, err := os.ReadFile(s.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var list []consoleSession
+	if err := json.Unmarshal(b, &list); err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, sess := range list {
+		if now.Before(sess.ExpiresAt) {
+			s.byTok[sess.Token] = sess
+		}
+	}
+	return nil
+}
+
+func (s *sessionStore) saveLocked() error {
+	if s.path == "" {
+		return nil
+	}
+	list := make([]consoleSession, 0, len(s.byTok))
+	for _, sess := range s.byTok {
+		list = append(list, sess)
+	}
+	b, err := json.MarshalIndent(list, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o750); err != nil {
+		return err
+	}
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.path)
 }
 
 func (s *sessionStore) mint(role, actor, orgID string, ttl time.Duration) (consoleSession, error) {
@@ -43,9 +97,10 @@ func (s *sessionStore) mint(role, actor, orgID string, ttl time.Duration) (conso
 		ExpiresAt: time.Now().UTC().Add(ttl),
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.pruneLocked()
 	s.byTok[tok] = sess
-	s.mu.Unlock()
+	_ = s.saveLocked()
 	return sess, nil
 }
 
@@ -56,6 +111,7 @@ func (s *sessionStore) get(tok string) (consoleSession, bool) {
 	sess, ok := s.byTok[tok]
 	if !ok || time.Now().UTC().After(sess.ExpiresAt) {
 		delete(s.byTok, tok)
+		_ = s.saveLocked()
 		return consoleSession{}, false
 	}
 	return sess, true
@@ -64,6 +120,7 @@ func (s *sessionStore) get(tok string) (consoleSession, bool) {
 func (s *sessionStore) revoke(tok string) {
 	s.mu.Lock()
 	delete(s.byTok, tok)
+	_ = s.saveLocked()
 	s.mu.Unlock()
 }
 
@@ -74,6 +131,7 @@ func (s *sessionStore) rotate(tok string, ttl time.Duration) (consoleSession, bo
 	old, ok := s.byTok[tok]
 	if !ok || time.Now().UTC().After(old.ExpiresAt) {
 		delete(s.byTok, tok)
+		_ = s.saveLocked()
 		return consoleSession{}, false, nil
 	}
 	delete(s.byTok, tok)
@@ -89,15 +147,21 @@ func (s *sessionStore) rotate(tok string, ttl time.Duration) (consoleSession, bo
 		ExpiresAt: time.Now().UTC().Add(ttl),
 	}
 	s.byTok[newTok] = sess
+	_ = s.saveLocked()
 	return sess, true, nil
 }
 
 func (s *sessionStore) pruneLocked() {
 	now := time.Now().UTC()
+	changed := false
 	for k, v := range s.byTok {
 		if now.After(v.ExpiresAt) {
 			delete(s.byTok, k)
+			changed = true
 		}
+	}
+	if changed {
+		_ = s.saveLocked()
 	}
 }
 
@@ -150,7 +214,6 @@ func (s *Server) authLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, ok := s.sessions.get(tok); !ok {
-		// Static long-lived tokens are not revoked here.
 		w.WriteHeader(204)
 		return
 	}

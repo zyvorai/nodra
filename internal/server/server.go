@@ -254,7 +254,7 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, instanceID: instanceID, store: st, deliveries: q, dlq: dlq, leader: lead, metrics: &telemetry.Metrics{}, activity: &activityLog{}, audit: au, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}, oidcStates: map[string]oidcState{}, sessions: newSessionStore(), customRoles: newRoleStore(filepath.Join(cfg.DataDir, "roles.json"))}
+	s := &Server{cfg: cfg, instanceID: instanceID, store: st, deliveries: q, dlq: dlq, leader: lead, metrics: &telemetry.Metrics{}, activity: &activityLog{}, audit: au, client: &http.Client{Transport: &http.Transport{MaxIdleConns: 128, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second}}, oidcStates: map[string]oidcState{}, sessions: newSessionStore(filepath.Join(cfg.DataDir, "sessions.json")), customRoles: newRoleStore(filepath.Join(cfg.DataDir, "roles.json"))}
 	if cfg.EnrollmentTokenTTL > 0 {
 		s.enrollExpires = time.Now().UTC().Add(cfg.EnrollmentTokenTTL)
 	}
@@ -374,6 +374,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/enroll", s.enroll)
 	mux.HandleFunc("POST /api/v1/heartbeat", s.heartbeat)
 	mux.HandleFunc("POST /api/v1/events", s.events)
+	mux.HandleFunc("POST /api/v1/events/batch", s.eventsBatch)
 	mux.HandleFunc("POST /api/v1/devices/register", s.registerDevice)
 	mux.HandleFunc("GET /api/v1/agent/deployments", s.agentDeployments)
 	mux.HandleFunc("POST /api/v1/agent/deployments/{id}/status", s.agentDeploymentStatus)
@@ -1018,50 +1019,96 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 401, "unauthorized agent")
 		return
 	}
-	if in.Topic == "" || len(in.Payload) == 0 {
-		errorJSON(w, 400, "topic and payload are required")
+	out, code, errMsg := s.ingestAgentEvent(in.EventID, in.SiteID, in.Topic, in.Payload, in.Headers, in.EventTime)
+	if errMsg != "" {
+		errorJSON(w, code, errMsg)
 		return
 	}
-	eventID := in.EventID
+	writeJSON(w, code, out)
+}
+
+func (s *Server) eventsBatch(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		SiteID string `json:"site_id"`
+		Events []struct {
+			EventID   string            `json:"event_id"`
+			Topic     string            `json:"topic"`
+			Payload   json.RawMessage   `json:"payload"`
+			Headers   map[string]string `json:"headers"`
+			EventTime time.Time         `json:"event_time"`
+		} `json:"events"`
+	}
+	if !s.decode(w, r, &in) {
+		return
+	}
+	if _, ok := s.agentSite(r, in.SiteID); !ok {
+		errorJSON(w, 401, "unauthorized agent")
+		return
+	}
+	if len(in.Events) == 0 {
+		errorJSON(w, 400, "events is required")
+		return
+	}
+	if len(in.Events) > 500 {
+		errorJSON(w, 400, "batch limited to 500 events")
+		return
+	}
+	results := make([]map[string]any, 0, len(in.Events))
+	accepted, duplicates := 0, 0
+	for _, ev := range in.Events {
+		out, code, errMsg := s.ingestAgentEvent(ev.EventID, in.SiteID, ev.Topic, ev.Payload, ev.Headers, ev.EventTime)
+		if errMsg != "" {
+			results = append(results, map[string]any{"event_id": ev.EventID, "error": errMsg, "status": code})
+			continue
+		}
+		if dup, _ := out["duplicate"].(bool); dup {
+			duplicates++
+		} else {
+			accepted++
+		}
+		out["status"] = code
+		results = append(results, out)
+	}
+	writeJSON(w, 202, map[string]any{"accepted": accepted, "duplicates": duplicates, "results": results})
+}
+
+func (s *Server) ingestAgentEvent(eventID, siteID, topic string, payload json.RawMessage, headers map[string]string, eventTime time.Time) (map[string]any, int, string) {
+	if topic == "" || len(payload) == 0 {
+		return nil, 400, "topic and payload are required"
+	}
 	if eventID == "" {
 		eventID = id("evt")
 	}
 	if s.store.HasEvent(eventID) {
 		s.metrics.Duplicates.Add(1)
-		writeJSON(w, 202, map[string]any{"accepted": true, "event_id": eventID, "duplicate": true, "matched_routes": 0})
-		return
+		return map[string]any{"accepted": true, "event_id": eventID, "duplicate": true, "matched_routes": 0}, 202, ""
 	}
-	eventTime := in.EventTime
 	if eventTime.IsZero() {
 		eventTime = time.Now().UTC()
 	}
 	now := time.Now().UTC()
 	matched := 0
 	for _, rt := range s.store.Routes() {
-		if !rt.Enabled || (rt.SiteID != "" && rt.SiteID != in.SiteID) || !router.Match(rt.Topic, in.Topic) {
+		if !rt.Enabled || (rt.SiteID != "" && rt.SiteID != siteID) || !router.Match(rt.Topic, topic) {
 			continue
 		}
-		d := model.Delivery{ID: deterministicDeliveryID(eventID, rt.ID), RouteID: rt.ID, EventID: eventID, SiteID: in.SiteID, Topic: in.Topic, TargetURL: rt.TargetURL, Method: rt.Method, Payload: in.Payload, Headers: mergeHeaders(in.Headers, rt.Headers), TimeoutSecs: rt.TimeoutSecs, MaxAttempts: max(rt.RetryMax, 1), NextAttempt: now, EventTime: eventTime, CreatedAt: now}
+		d := model.Delivery{ID: deterministicDeliveryID(eventID, rt.ID), RouteID: rt.ID, EventID: eventID, SiteID: siteID, Topic: topic, TargetURL: rt.TargetURL, Method: rt.Method, Payload: payload, Headers: mergeHeaders(headers, rt.Headers), TimeoutSecs: rt.TimeoutSecs, MaxAttempts: max(rt.RetryMax, 1), NextAttempt: now, EventTime: eventTime, CreatedAt: now}
 		if err := s.deliveries.Put(d.ID, d); err != nil {
-			errorJSON(w, 503, "delivery queue unavailable: "+err.Error())
-			return
+			return nil, 503, "delivery queue unavailable: " + err.Error()
 		}
 		matched++
 	}
-	ev := model.Event{ID: eventID, SiteID: in.SiteID, Topic: in.Topic, Payload: in.Payload, Headers: in.Headers, EventTime: eventTime, IngestedAt: now, CreatedAt: eventTime}
+	ev := model.Event{ID: eventID, SiteID: siteID, Topic: topic, Payload: payload, Headers: headers, EventTime: eventTime, IngestedAt: now, CreatedAt: eventTime}
 	if err := s.store.AddEvent(ev); err != nil {
-		errorJSON(w, 507, "event persistence failed: "+err.Error())
-		return
+		return nil, 507, "event persistence failed: " + err.Error()
 	}
 	s.metrics.Events.Add(1)
-	// Keep event auto-logs light — detailed chapter lines come from nodra-sim.
-	// Not durably audited: too high-frequency for a compliance trail.
 	if matched > 0 {
-		s.note("info", "agent", "", "", in.SiteID, "", "event", "telemetry accepted on "+in.Topic, map[string]any{
+		s.note("info", "agent", "", "", siteID, "", "event", "telemetry accepted on "+topic, map[string]any{
 			"event_id": ev.ID, "matched_routes": matched,
 		})
 	}
-	writeJSON(w, 202, map[string]any{"accepted": true, "event_id": ev.ID, "matched_routes": matched, "event_time": eventTime, "ingested_at": now})
+	return map[string]any{"accepted": true, "event_id": ev.ID, "matched_routes": matched, "event_time": eventTime, "ingested_at": now}, 202, ""
 }
 func mergeHeaders(a, b map[string]string) map[string]string {
 	if len(a) == 0 && len(b) == 0 {

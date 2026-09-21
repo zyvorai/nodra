@@ -576,10 +576,75 @@ func (a *Agent) flush(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	const batchSize = 100
+	for start := 0; start < len(items); start += batchSize {
+		end := start + batchSize
+		if end > len(items) {
+			end = len(items)
+		}
+		batch := items[start:end]
+		events := make([]map[string]any, 0, len(batch))
+		for _, ev := range batch {
+			events = append(events, map[string]any{
+				"event_id": ev.ID, "topic": ev.Topic, "payload": json.RawMessage(ev.Payload),
+				"headers": ev.Headers, "event_time": ev.EventTime,
+			})
+		}
+		body, _ := json.Marshal(map[string]any{"site_id": a.cfg.SiteID, "events": events})
+		resp, err := a.do(ctx, "POST", "/api/v1/events/batch", body)
+		if err != nil {
+			slog.Warn("spool flush batch failed", "error", err, "batch", len(batch))
+			return
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			_ = resp.Body.Close()
+			// Older control planes: fall back to one-at-a-time.
+			a.flushOneByOne(ctx, batch)
+			return
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			_ = resp.Body.Close()
+			slog.Warn("spool flush batch rejected", "status", resp.StatusCode, "body", string(b))
+			return
+		}
+		var out struct {
+			Results []struct {
+				EventID string `json:"event_id"`
+				Error   string `json:"error"`
+			} `json:"results"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		_ = resp.Body.Close()
+		okIDs := map[string]struct{}{}
+		for _, r := range out.Results {
+			if r.Error == "" && r.EventID != "" {
+				okIDs[r.EventID] = struct{}{}
+			}
+		}
+		// A real batch handler always returns results. Empty means an older or
+		// unrelated endpoint answered — fall back to one-at-a-time.
+		if len(out.Results) == 0 {
+			a.flushOneByOne(ctx, batch)
+			continue
+		}
+		for _, ev := range batch {
+			if _, ok := okIDs[ev.ID]; !ok {
+				return
+			}
+			if err = a.spool.Delete(ev.ID); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (a *Agent) flushOneByOne(ctx context.Context, items []model.Event) {
 	for _, ev := range items {
 		b, _ := json.Marshal(map[string]any{"event_id": ev.ID, "site_id": a.cfg.SiteID, "topic": ev.Topic, "payload": json.RawMessage(ev.Payload), "headers": ev.Headers, "event_time": ev.EventTime})
 		resp, err := a.do(ctx, "POST", "/api/v1/events", b)
 		if err != nil {
+			slog.Warn("spool flush failed", "error", err)
 			return
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {

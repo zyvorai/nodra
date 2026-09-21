@@ -27,7 +27,13 @@ Heap profiles are written to the evidence directory as `heap-start.pprof`, `heap
 
 ## Local ingress observation
 
-`scripts/bench-ingress.py` posts to a running edge agent's `/v1/publish` for a short window and prints `accepted_per_sec`. Record the host, duration, commit, and that JSON before treating the number as evidence. It is a local observation, not a product rating. Docker was required for the compose soak; when Docker is unavailable, run the bench against a local `nodrad` instead.
+`scripts/bench-ingress.py` posts to a running edge agent's `/v1/publish` for a short window and prints `accepted_per_sec`. Record the host, duration, commit, and that JSON before treating the number as evidence. It is a local observation, not a product rating.
+
+| Host | Commit | Seconds | Accepted | Failed | accepted/sec | Notes |
+|---|---|---|---|---|---|---|
+| `80.79.5.173` (lab nodrad loopback) | `5bda337` | 30.3 | 59 | 0 | 1.95 | Sequential HTTP publishes; edge spool was already ~54k deep from a prior HTTP→HTTPS CP misconfig |
+
+Agents flush cloud spool via `POST /api/v1/events/batch` (up to 100 events). Older control planes without that route still get one-at-a-time flush.
 
 ## How to run it
 
