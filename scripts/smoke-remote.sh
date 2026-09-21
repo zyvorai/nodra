@@ -41,7 +41,8 @@ pass() { printf '  ✅ %s\n' "$*"; }
 fail() { printf '  ❌ %s\n' "$*" >&2; exit 1; }
 curl_nodra() {
   if [ "${NODRA_TLS_INSECURE:-}" = "1" ]; then
-    curl -k "$@"
+    # Lab self-signed HTTPS: prefer HTTP/1.1 to avoid intermittent curl HTTP/2 INTERNAL_ERROR.
+    curl -k --http1.1 "$@"
   else
     curl "$@"
   fi
@@ -75,19 +76,21 @@ code="$(curl_nodra -sS -o "${TMP}/nodra-login.json" -w '%{http_code}' \
   "${BASE}/api/v1/auth/login")"
 [ "$code" = "200" ] || fail "login HTTP ${code}"
 grep -q '"token"' "${TMP}/nodra-login.json" || fail "login missing token"
+SESSION_TOKEN="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("token",""))' "${TMP}/nodra-login.json")"
+[ -n "$SESSION_TOKEN" ] || fail "login token empty"
 pass "api/v1/auth/login"
 
 code="$(curl_nodra -sS -o "${TMP}/nodra-version.json" -w '%{http_code}' "${BASE}/api/v1/version")"
 [ "$code" = "200" ] || fail "version HTTP ${code}"
 pass "api/v1/version"
 
-code="$(curl_nodra -sS -o "${TMP}/nodra-overview.json" -w '%{http_code}' \
-  -H "Authorization: Bearer ${TOKEN}" "${BASE}/api/v1/overview")"
+code="$(curl_nodra -sS --max-time 30 -o "${TMP}/nodra-overview.json" -w '%{http_code}' \
+  -H "Authorization: Bearer ${SESSION_TOKEN}" "${BASE}/api/v1/overview")"
 [ "$code" = "200" ] || fail "overview HTTP ${code} (after login token)"
 pass "api/v1/overview (admin)"
 
-code="$(curl_nodra -sS -o "${TMP}/nodra-activity.json" -w '%{http_code}' \
-  -H "Authorization: Bearer ${TOKEN}" "${BASE}/api/v1/activity?limit=5")"
+code="$(curl_nodra -sS --max-time 30 -o "${TMP}/nodra-activity.json" -w '%{http_code}' \
+  -H "Authorization: Bearer ${SESSION_TOKEN}" "${BASE}/api/v1/activity?limit=5")"
 [ "$code" = "200" ] || fail "activity HTTP ${code}"
 [[ "$(head -c1 "${TMP}/nodra-activity.json")" == "[" ]] || fail "activity not JSON array"
 pass "api/v1/activity"
