@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nodra share card</title>
+<!--
+  1200x630 Open Graph / README hero card.
+  Build:  ./docs/social/build-social-card.sh
+-->
+<style>
+  :root { --ink:#0d0d0c; --soft:#5a544c; --signal:#ff5a15; --deep:#cc420a; --warm:#fbf7f2;
+    --sans:'Helvetica Neue',Helvetica,Arial,sans-serif; --mono:'SF Mono',Menlo,Consolas,monospace; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; }
+  body { width:1200px; height:630px; overflow:hidden; background:var(--warm); color:var(--ink); font-family:var(--sans); position:relative; }
+  .bar { position:absolute; left:0; top:0; bottom:0; width:12px; background:var(--signal); }
+  .wrap { position:absolute; left:56px; right:48px; top:40px; bottom:36px; display:flex; flex-direction:column; }
+
+  .top { display:flex; align-items:center; gap:12px; font-family:var(--mono); font-size:18px; letter-spacing:.14em; text-transform:uppercase; color:var(--soft); }
+  .top img { height:36px; }
+  .top b { color:var(--deep); letter-spacing:.1em; }
+  .top .r { margin-left:auto; letter-spacing:.08em; }
+
+  h1 { margin:36px 0 0; font-size:52px; line-height:1.08; letter-spacing:-.025em; font-weight:700; max-width:1080px; }
+  h1 em { font-style:normal; color:var(--signal); }
+  .sub { margin:18px 0 0; font-size:24px; line-height:1.4; color:#26231f; max-width:980px; }
+
+  .chips { margin-top:auto; display:flex; flex-wrap:wrap; gap:10px; padding-bottom:18px; }
+  .chip { font-size:18px; font-weight:700; padding:6px 14px; border-radius:20px; background:var(--signal); color:#fff; border:2px solid var(--signal); }
+  .chip.g { background:#fff; color:var(--deep); border:2px solid var(--signal); }
+
+  .foot { padding-top:14px; border-top:3px solid var(--ink); display:flex; align-items:center; font-family:var(--mono); font-size:20px; color:var(--soft); }
+  .foot b { color:var(--ink); }
+  .foot .r { margin-left:auto; }
+</style>
+</head>
+<body>
+<div class="bar"></div>
+<div class="wrap">
+  <div class="top"><img src="../../web/zyvor-mark.svg" alt=""><b>Zyvor</b><span>&middot;</span><span>Nodra</span><span class="r">Edge runtime</span></div>
+
+  <h1>The cloud is gone.<br>The site <em>keeps running</em>.</h1>
+  <p class="sub">Offline-first MQTT/HTTP ingress, durable store-and-forward, device twins, and a fleet control plane — Apache-2.0.</p>
+
+  <div class="chips">
+    <span class="chip">MQTT 3.1.1</span>
+    <span class="chip">Durable WAL</span>
+    <span class="chip g">Local routes</span>
+    <span class="chip g">Device twins</span>
+    <span class="chip g">DLQ replay</span>
+  </div>
+
+  <div class="foot"><span><b>zyvor.dev/nodra</b></span><span class="r">v0.2.2 &middot; Apache-2.0</span></div>
+</div>
+</body>
+</html>
