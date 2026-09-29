@@ -4,11 +4,20 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/github/v/release/zyvorai/nodra?label=version&color=informational)](CHANGELOG.md)
 
+[![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)
+[![30-day PoC](https://img.shields.io/badge/30--day_PoC-1d1d1f?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)
+
+[![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)
+[![30-day PoC](https://img.shields.io/badge/30--day_PoC-1d1d1f?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)
+
+[![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)
+[![30-day PoC](https://img.shields.io/badge/30--day_PoC-1d1d1f?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)
+
 ![Nodra — offline-first edge runtime](docs/social/nodra-share-card.png)
 
 **The open edge runtime that keeps sites running when the cloud doesn't.**
 
-📖 **[Read the full docs](https://zyvor.dev/docs/nodra)** — quickstart, architecture, security model, and production runbooks.
+📖 **[Read the full docs](https://zyvor.dev/docs/nodra?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)** — quickstart, architecture, security model, and production runbooks.
 
 Nodra is an Apache-2.0 edge runtime and control plane from Zyvor. Remote sites get local MQTT/HTTP ingress, durable store-and-forward, local routes, device twins, edge app reconciliation, fleet health, replayable dead letters, and a clean web console. WAN loss is a first-class operating mode, not a degraded one.
 
@@ -377,7 +386,7 @@ GitHub CI: current + min Go, govulncheck, container build, Helm lint, kind E2E, 
 
 | Doc | Topic |
 |---|---|
-| [zyvor.dev/docs/nodra](https://zyvor.dev/docs/nodra) | Product docs |
+| [zyvor.dev/docs/nodra](https://zyvor.dev/docs/nodra?utm_source=github&utm_medium=nodra&utm_campaign=readme_suite) | Product docs |
 | [docs/FAQ.md](docs/FAQ.md) | Licensing, support, readiness |
 | [docs/DEMO.md](docs/DEMO.md) | Console, sim, lab scripts |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components and durability |
@@ -387,7 +396,7 @@ GitHub CI: current + min Go, govulncheck, container build, Helm lint, kind E2E, 
 | [docs/SECURITY-MODEL.md](docs/SECURITY-MODEL.md) | Trust boundaries |
 | [ROADMAP.md](ROADMAP.md) | Next milestones |
 
-Product page: [zyvor.dev/nodra](https://zyvor.dev/nodra). Social assets: [docs/social/](docs/social/).
+Product page: [zyvor.dev/nodra](https://zyvor.dev/nodra?utm_source=github&utm_medium=nodra&utm_campaign=readme_suite). Social assets: [docs/social/](docs/social/).
 
 ## License
 
@@ -398,4 +407,10 @@ Licensed under the [Apache License, Version 2.0](LICENSE). Personal, lab, and co
 ### Enterprise
 
 Production support, SLAs, and Zyvor Enterprise products are licensed separately.
-Contact [sales@zyvor.dev](mailto:sales@zyvor.dev) or see [zyvor.dev](https://zyvor.dev).
+Contact [sales@zyvor.dev](mailto:sales@zyvor.dev) or see [zyvor.dev](https://zyvor.dev/?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer).
+
+Book a [demo](https://zyvor.dev/schedule?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer) or start a [30-day PoC](https://zyvor.dev/poc?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer). Fallback: [sales@zyvor.dev](mailto:sales@zyvor.dev).
+
+Book a [demo](https://zyvor.dev/schedule?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer) or start a [30-day PoC](https://zyvor.dev/poc?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer). Fallback: [sales@zyvor.dev](mailto:sales@zyvor.dev).
+
+Book a [demo](https://zyvor.dev/schedule?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer) or start a [30-day PoC](https://zyvor.dev/poc?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer). Fallback: [sales@zyvor.dev](mailto:sales@zyvor.dev).
