@@ -1,51 +1,96 @@
+<div align="center">
+
 # Nodra
 
 [![CI](https://github.com/zyvorai/nodra/actions/workflows/ci.yml/badge.svg)](https://github.com/zyvorai/nodra/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/github/v/release/zyvorai/nodra?label=version&color=informational)](CHANGELOG.md)
+[![Go](https://img.shields.io/badge/Go-nodrad%20%C2%B7%20server%20%C2%B7%20nodractl-00ADD8?logo=go&logoColor=white)](go.mod)
 
 [![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)
-[![30-day PoC](https://img.shields.io/badge/30--day_PoC-1d1d1f?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)
-
-[![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)
-[![30-day PoC](https://img.shields.io/badge/30--day_PoC-1d1d1f?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)
-
-[![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)
-[![30-day PoC](https://img.shields.io/badge/30--day_PoC-1d1d1f?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)
+[![30-day PoC](https://img.shields.io/badge/30--day_PoC-000000?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)
+[![Quickstart](https://img.shields.io/badge/One--command_Kubernetes_demo-ff9f0a?style=for-the-badge)](#quickstart)
 
 ![Nodra — offline-first edge runtime](docs/social/nodra-hero-dark.jpg)
 
-**The open edge runtime that keeps sites running when the cloud doesn't.**
+### The WAN went down. The site kept running.
+
+**The open edge runtime that keeps sites running when the cloud doesn't.** Remote sites get local MQTT/HTTP ingress, durable store-and-forward, local routes, device twins, edge app reconciliation, fleet health, replayable dead letters, and a clean web console. WAN loss is a first-class operating mode, not a degraded one.
+
+**Offline-first WAL** · **MQTT QoS 2, exactly-once** · **Modbus, J1939, OPC-UA** · **Device twins** · **No cloud required**
 
 📖 **[Read the full docs](https://zyvor.dev/docs/nodra?utm_source=github&utm_medium=nodra&utm_campaign=readme_hero)** — quickstart, architecture, security model, and production runbooks.
 
-Nodra is an Apache-2.0 edge runtime and control plane from Zyvor. Remote sites get local MQTT/HTTP ingress, durable store-and-forward, local routes, device twins, edge app reconciliation, fleet health, replayable dead letters, and a clean web console. WAN loss is a first-class operating mode, not a degraded one.
+</div>
 
-## Contents
+---
 
-- [Why Nodra](#why-nodra)
-- [Is this for you?](#is-this-for-you)
-- [Capabilities](#capabilities)
-- [Quick start](#quick-start)
-- [Local routes](#local-routes)
-- [Backpressure and disk protection](#backpressure-and-disk-protection)
-- [Cloud routes and dead letters](#cloud-routes-and-dead-letters)
-- [Device twins](#device-twins)
-- [Certificate identity / mTLS](#certificate-identity--mtls)
-- [Docker app reconciliation](#docker-app-reconciliation)
-- [Kubernetes](#kubernetes)
-- [Web console](#web-console)
-- [CLI](#cli)
-- [Architecture](#architecture)
-- [Protocol strategy](#protocol-strategy)
-- [Security defaults](#security-defaults)
-- [Testing](#testing)
-- [Docs](#docs)
-- [License](#license)
+## What's new
+
+From [CHANGELOG.md](CHANGELOG.md) (0.2.1, 0.2.2 and unreleased):
+
+| | |
+|---|---|
+| **OPC-UA with channel security** | OPC-UA connector with None or Basic256Sha256 channel security, alongside Linux serial and the NATS subscribe bridge. |
+| **Industrial transports** | Modbus RTU next to Modbus TCP, Linux termios serial with CRC16 validation, and J1939 via Device Agent CAN streams. |
+| **Locked-down MQTT** | Broker TLS, optional client certificates, per-device usernames and topic filters, publish-rate and connection caps. |
+| **Production Helm profile** | `values-production.yaml`: PostgreSQL with an existing Secret, cert-manager TLS, restricted NetworkPolicy egress and a `helm test` that enrolls a site. |
+| **Revision-checked Postgres** | Fleet state read from the database on every call, with `revision`-guarded updates and numbered schema migrations. |
+| **Staged OTA campaigns** | Canary waves with promote, abort and failure thresholds over `/api/v1/ota/campaigns`. |
+| **Four-hour lab soak passed** | Evidence under `evidence/qualification/lab/`; upgrade and rollback procedure in [docs/UPGRADE.md](docs/UPGRADE.md). |
+
+---
 
 ## Why Nodra
 
 Edge systems fail differently from datacenters. WAN links disappear, devices use several protocols, remote machines are hard to touch, and cloud-only automation becomes useless exactly when a site needs it most.
+
+| When this happens… | Nodra gives you… |
+|---|---|
+| The WAN drops and telemetry vanishes | **An append-only, fsynced WAL** that is replayed after restart and forwarded when the WAN returns |
+| The MES on site still needs the data during the outage | **Local routes** with topic filters, field filters and transforms, executed at the edge |
+| PLCs speak Modbus, trucks speak J1939, the plant speaks OPC-UA | **Built-in connectors** for Modbus TCP/RTU, J1939, OPC-UA, serial and NATS, plus a Connector SDK |
+| A full disk takes down the gateway | **Explicit backpressure** by bytes and events: `reject`, `drop-oldest` or `drop-newest` |
+| Failed cloud deliveries disappear silently | **A dead-letter queue** that keeps payload and history; inspect, replay or delete |
+| Rolling out an app to 40 sites means 40 SSH sessions | **Docker app reconciliation** and staged OTA campaigns from one control plane |
+
+![Capabilities at a glance: Ingest, Endure, Fleet, Operate](docs/ux/readme-capabilities.jpg)
+
+---
+
+## Nodra vs AWS IoT Greengrass
+
+![Nodra vs AWS IoT Greengrass: your site, your control plane, no cloud required](docs/ux/readme-vs.jpg)
+
+| | **Nodra** | **AWS IoT Greengrass** |
+|---|---|---|
+| Control plane | Self-hosted `nodra-server` on your hardware or Kubernetes | AWS IoT (in your AWS account) |
+| Edge runtime | `nodrad`: MQTT/HTTP ingress, WAL, local routes, cached twins | Greengrass nucleus with deployed components |
+| Store-and-forward | Fsynced WAL with byte and event caps and an explicit spool policy | Stream manager exporting to AWS services |
+| Industrial protocols | Modbus TCP/RTU, J1939, OPC-UA, serial, NATS built in | Through components |
+| Device state | Device twins: desired in the control plane, reported from the edge | Device shadows in AWS IoT |
+| App delivery | Docker desired state with optional cosign verification and health rollback | Component deployments from AWS |
+| **Choose Greengrass when** | | Your fleet and data already live in AWS IoT and AWS services, and a managed AWS control plane is what you want |
+
+### Is this for you?
+
+Nodra is a small, open-source, offline-first edge runtime on a site's own hardware. It is not a no-code automation platform, not a managed cloud IoT service, and not a full HA platform today (file mode is one replica).
+
+| | **Nodra** | Node-RED | EMQX/HiveMQ Edge | AWS IoT Greengrass | Azure IoT Edge |
+|---|---|---|---|---|---|
+| Primary scope | Edge ingress + durable store-and-forward + device twins + app reconciliation | Visual flow-based automation | MQTT broker (edge-deployed) | Cloud-connected edge runtime | Cloud-connected edge runtime |
+| Cloud dependency | None required — WAN-loss is first-class | None required | Usually paired with a cloud broker/console | AWS IoT Core | Azure IoT Hub |
+| License | Apache-2.0 | Apache-2.0 | Apache-2.0 core (EMQX) / proprietary (HiveMQ Edge) | Proprietary (free tier) | Proprietary (free tier) |
+| Industrial protocols | Modbus TCP/RTU, J1939, OPC-UA, serial, NATS bridge (`docs/INDUSTRIAL_PROTOCOLS.md`) | Via community nodes | Not built-in | Via custom components | Via custom modules |
+| HA / clustering | File mode: one replica. Postgres: revision-checked fleet state + concurrent delivery claims; full HA still open (`ROADMAP.md`) | N/A | Yes (broker clustering) | Managed by AWS | Managed by Azure |
+
+*(General characterizations as of writing — verify against each project's own docs.)*
+
+---
+
+## How it fits together
+
+![Edge agent at the site, control plane when you can reach it: nodrad, nodra-server, nodractl, nodra-relay-bridge](docs/ux/readme-how-it-works.jpg)
 
 Nodra keeps the local path alive:
 
@@ -66,57 +111,25 @@ PLC / sensor / app
  MES   local AI/app
 ```
 
-## Is this for you?
+### Architecture
 
-Nodra is a small, open-source, offline-first edge runtime on a site's own hardware. It is not a no-code automation platform, not a managed cloud IoT service, and not a full HA platform today (file mode is one replica).
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). File mode uses append-only fsynced WALs with in-memory indexes and periodic compaction. Postgres mode reads fleet state from the database.
 
-| | **Nodra** | Node-RED | EMQX/HiveMQ Edge | AWS IoT Greengrass | Azure IoT Edge |
-|---|---|---|---|---|---|
-| Primary scope | Edge ingress + durable store-and-forward + device twins + app reconciliation | Visual flow-based automation | MQTT broker (edge-deployed) | Cloud-connected edge runtime | Cloud-connected edge runtime |
-| Cloud dependency | None required — WAN-loss is first-class | None required | Usually paired with a cloud broker/console | AWS IoT Core | Azure IoT Hub |
-| License | Apache-2.0 | Apache-2.0 | Apache-2.0 core (EMQX) / proprietary (HiveMQ Edge) | Proprietary (free tier) | Proprietary (free tier) |
-| Industrial protocols | Modbus TCP/RTU, J1939, OPC-UA, serial, NATS bridge (`docs/INDUSTRIAL_PROTOCOLS.md`) | Via community nodes | Not built-in | Via custom components | Via custom modules |
-| HA / clustering | File mode: one replica. Postgres: revision-checked fleet state + concurrent delivery claims; full HA still open (`ROADMAP.md`) | N/A | Yes (broker clustering) | Managed by AWS | Managed by Azure |
+### Protocol strategy
 
-*(General characterizations as of writing — verify against each project's own docs.)*
+The core provides local runtime, durability, fleet state, twins, and deployment reconciliation. Protocol adapters plug in:
 
-> **Maturity (honest):** v0.2.2 is a serious single-control-plane release. Four-hour lab soak passed 2026-09-21; 24h soak in progress (not signed until judged). 72h/7d, Nodra-built-in PITR, and the rest of the 1.0 gates remain open. Limits: [`docs/SCALE.md`](docs/SCALE.md). Upgrade: [`docs/UPGRADE.md`](docs/UPGRADE.md). If you need full HA today, this isn't there yet; if you need a single-site, offline-resilient edge runtime, this is the scope.
+- HTTP + MQTT 3.1.1 ingress
+- Modbus TCP/RTU, J1939, OPC-UA, NATS, serial/USB
+- Connector SDK
 
-New here? [`docs/FAQ.md`](docs/FAQ.md) · [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
+Planned: Zenoh, Kafka bridge. See `pkg/connector` and [ROADMAP.md](ROADMAP.md).
 
-## Capabilities
+---
 
-### Ingress
+## Quickstart
 
-- **MQTT 3.1.1** — CONNECT, SUBSCRIBE, PUBLISH QoS 0/1/2 (exactly-once both ways), persistent sessions for queued QoS 1/2, local subscriber fan-out. Optional broker TLS and client certificates.
-- **HTTP** — `POST /v1/publish` with optional local bearer protection.
-- **Industrial** — Modbus TCP/RTU, J1939, OPC-UA, Linux serial, NATS subscribe bridge, Connector SDK.
-
-### Durability
-
-- **Offline-first WAL** — append-only, fsynced, replayed after restart, compacted automatically.
-- **Explicit backpressure** — cap by bytes and event count; `reject`, `drop-oldest`, or `drop-newest`.
-- **Local routes** — MQTT-style topic filters to local HTTP services while the WAN is down.
-- **Transactional ACK** — server ACKs only after matching deliveries and the event are durably committed.
-- **Dead-letter queue** — failed deliveries retain payload/history; inspect, replay, or delete.
-
-### Fleet
-
-- **Device twins** — desired state in the control plane, reported state from the edge, locally cached by `nodrad`.
-- **Site identity** — optional CSR enrollment; private key stays on the edge. Self-rotation + X.509 CRL.
-- **Fleet revocation** — revoked sites get a distinguishable `403 site_revoked`.
-- **Edge app reconciliation** — Docker desired `running|stopped` state, env, ports, volumes, command.
-- **Optional Postgres store** — revision-checked fleet reads and concurrent delivery claims (not a full HA claim).
-
-### Ops
-
-- Embedded Zyvor console (no CDN) with Overview, Sites, Devices, Streams, Apps, Dead letters, Logs.
-- Optional OIDC SSO → admin/viewer roles; viewer/admin RBAC.
-- Prometheus metrics; A–Z `nodra-sim` live fleet demo.
-- Kubernetes-ready: Helm, Kustomize, Restricted Pod Security, non-root 65532.
-- Supply chain: CodeQL, race tests, govulncheck, multi-arch OCI, SBOM, provenance, keyless cosign.
-
-## Quick start
+Requires Go 1.25+ to build (`make build`); the Kubernetes demo uses kind + Helm.
 
 ### Build
 
@@ -338,19 +351,37 @@ nodractl dlq list|replay|delete
 nodractl events | publish ...
 ```
 
-## Architecture
+## Capabilities
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). File mode uses append-only fsynced WALs with in-memory indexes and periodic compaction. Postgres mode reads fleet state from the database.
+### Ingress
 
-## Protocol strategy
+- **MQTT 3.1.1** — CONNECT, SUBSCRIBE, PUBLISH QoS 0/1/2 (exactly-once both ways), persistent sessions for queued QoS 1/2, local subscriber fan-out. Optional broker TLS and client certificates.
+- **HTTP** — `POST /v1/publish` with optional local bearer protection.
+- **Industrial** — Modbus TCP/RTU, J1939, OPC-UA, Linux serial, NATS subscribe bridge, Connector SDK.
 
-The core provides local runtime, durability, fleet state, twins, and deployment reconciliation. Protocol adapters plug in:
+### Durability
 
-- HTTP + MQTT 3.1.1 ingress
-- Modbus TCP/RTU, J1939, OPC-UA, NATS, serial/USB
-- Connector SDK
+- **Offline-first WAL** — append-only, fsynced, replayed after restart, compacted automatically.
+- **Explicit backpressure** — cap by bytes and event count; `reject`, `drop-oldest`, or `drop-newest`.
+- **Local routes** — MQTT-style topic filters to local HTTP services while the WAN is down.
+- **Transactional ACK** — server ACKs only after matching deliveries and the event are durably committed.
+- **Dead-letter queue** — failed deliveries retain payload/history; inspect, replay, or delete.
 
-Planned: Zenoh, Kafka bridge. See `pkg/connector` and [ROADMAP.md](ROADMAP.md).
+### Fleet
+
+- **Device twins** — desired state in the control plane, reported state from the edge, locally cached by `nodrad`.
+- **Site identity** — optional CSR enrollment; private key stays on the edge. Self-rotation + X.509 CRL.
+- **Fleet revocation** — revoked sites get a distinguishable `403 site_revoked`.
+- **Edge app reconciliation** — Docker desired `running|stopped` state, env, ports, volumes, command.
+- **Optional Postgres store** — revision-checked fleet reads and concurrent delivery claims (not a full HA claim).
+
+### Ops
+
+- Embedded Zyvor console (no CDN) with Overview, Sites, Devices, Streams, Apps, Dead letters, Logs.
+- Optional OIDC SSO → admin/viewer roles; viewer/admin RBAC.
+- Prometheus metrics; A–Z `nodra-sim` live fleet demo.
+- Kubernetes-ready: Helm, Kustomize, Restricted Pod Security, non-root 65532.
+- Supply chain: CodeQL, race tests, govulncheck, multi-arch OCI, SBOM, provenance, keyless cosign.
 
 ## Security defaults
 
@@ -398,21 +429,50 @@ GitHub CI: current + min Go, govulncheck, container build, Helm lint, kind E2E, 
 
 Product page: [zyvor.dev/nodra](https://zyvor.dev/nodra?utm_source=github&utm_medium=nodra&utm_campaign=readme_suite). Social assets: [docs/social/](docs/social/).
 
+---
+
+## Maturity
+
+> **Maturity (honest):** v0.2.2 is a serious single-control-plane release. Four-hour lab soak passed 2026-09-21; 24h soak in progress (not signed until judged). 72h/7d, Nodra-built-in PITR, and the rest of the 1.0 gates remain open. Limits: [`docs/SCALE.md`](docs/SCALE.md). Upgrade: [`docs/UPGRADE.md`](docs/UPGRADE.md). If you need full HA today, this isn't there yet; if you need a single-site, offline-resilient edge runtime, this is the scope.
+
+New here? [`docs/FAQ.md`](docs/FAQ.md) · [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
+
+---
+
+## Part of the Zyvor stack
+
+How the edge products fit: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+
+| Product | Role next to Nodra |
+|---|---|
+| **Nodra** | Edge data plane: ingress, WAL, routes, twins, apps, staged OTA campaigns |
+| **[Zyvor Device Agent](https://github.com/zyvorai/zyvor-device-agent)** | Publishes inventory, status and sensors into Nodra over MQTT; J1939 CAN streams via `connectors/j1939` |
+| **[Zyvor OTA](https://github.com/zyvorai/ota)** | Owns download, verification, A/B activation and rollback; Nodra delivers commands and progress and runs the campaigns ([docs/OTA_INTEGRATION.md](docs/OTA_INTEGRATION.md)) |
+| **[Yard](https://github.com/zyvorai/yard)** | Asset operations; Yard connectors pull Nodra devices, twins and OTA campaigns |
+| **[relay-pubsub](https://github.com/zyvorai/relay-pubsub)** | `nodra-relay-bridge` maps Nodra deliveries into Zyvor Relay events, directly or through this Pub/Sub gateway ([docs/RELAY.md](docs/RELAY.md)) |
+
+→ [zyvor.dev](https://zyvor.dev)
+
+---
+
 ## License
 
-Commercial subscriptions and support: see [docs/SUBSCRIPTION-MODEL.md](docs/SUBSCRIPTION-MODEL.md).
+Nodra is **free and open source** under the [Apache License 2.0](LICENSE) (see [NOTICE](NOTICE)): personal, lab and commercial production use at no charge. That does not change.
 
-### Open source (Apache-2.0)
+**Zyvor Enterprise** adds what production teams ask for: supported releases, deployment and upgrade guidance, priority incident triage, a named technical contact and 24x7 critical intake. Plans and terms: [docs/SUBSCRIPTION-MODEL.md](docs/SUBSCRIPTION-MODEL.md) · [Pricing](https://zyvor.dev/pricing?utm_source=github&utm_medium=nodra&utm_campaign=readme_license) · [sales@zyvor.dev](mailto:sales@zyvor.dev).
 
-Licensed under the [Apache License, Version 2.0](LICENSE). Personal, lab, and commercial production use at no charge, subject to Apache-2.0 (preserve notices / NOTICE where required).
+Product page: [zyvor.dev/nodra](https://zyvor.dev/nodra?utm_source=github&utm_medium=nodra&utm_campaign=readme_suite). Report vulnerabilities per [SECURITY.md](SECURITY.md); contributions per [CONTRIBUTING.md](CONTRIBUTING.md).
 
-### Enterprise
+---
 
-Production support, SLAs, and Zyvor Enterprise products are licensed separately.
-Contact [sales@zyvor.dev](mailto:sales@zyvor.dev) or see [zyvor.dev](https://zyvor.dev/?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer).
+<div align="center">
 
-Book a [demo](https://zyvor.dev/schedule?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer) or start a [30-day PoC](https://zyvor.dev/poc?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer). Fallback: [sales@zyvor.dev](mailto:sales@zyvor.dev).
+### Keep every site running, online or not
 
-Book a [demo](https://zyvor.dev/schedule?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer) or start a [30-day PoC](https://zyvor.dev/poc?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer). Fallback: [sales@zyvor.dev](mailto:sales@zyvor.dev).
+[![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer)
+[![30-day PoC](https://img.shields.io/badge/Start_a_30--day_PoC-000000?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer)
+[![Pricing](https://img.shields.io/badge/Pricing-1d1d1f?style=for-the-badge)](https://zyvor.dev/pricing?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer)
+[![Contact sales](https://img.shields.io/badge/Contact_sales-ff9f0a?style=for-the-badge)](mailto:sales@zyvor.dev?subject=Nodra)
+[![Star on GitHub](https://img.shields.io/github/stars/zyvorai/nodra?style=for-the-badge&logo=github&label=Star&color=2997ff)](https://github.com/zyvorai/nodra)
 
-Book a [demo](https://zyvor.dev/schedule?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer) or start a [30-day PoC](https://zyvor.dev/poc?utm_source=github&utm_medium=nodra&utm_campaign=readme_footer). Fallback: [sales@zyvor.dev](mailto:sales@zyvor.dev).
+</div>
