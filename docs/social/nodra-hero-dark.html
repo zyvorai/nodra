@@ -8,58 +8,47 @@
   Build: ./docs/social/build-hero-dark.sh  ->  nodra-hero-dark.jpg (2400x1260)
 -->
 <style>
-  :root { --blue:#0071e3; --signal:#2997ff; --cyan:#64d2ff; --green:#30d158; --amber:#ff9f0a;
+  :root { --blue:#0071e3; --signal:#2997ff; --cyan:#64d2ff; --green:#30d158; --amber:#ff9f0a; --red:#ff453a; --violet:#bf5af2;
     --sans:'SF Pro Display','Helvetica Neue',Helvetica,Arial,sans-serif; --mono:'SF Mono',Menlo,Consolas,monospace; }
   * { box-sizing:border-box; }
   html,body { margin:0; padding:0; }
   body { width:1200px; height:630px; overflow:hidden; color:#f5f5f7; font-family:var(--sans); position:relative; background:#000; }
   .aurora { position:absolute; inset:0;
-    background:radial-gradient(720px 460px at 80% 16%, rgba(41,151,255,.40), transparent 62%),
-               radial-gradient(600px 420px at 104% 98%, rgba(100,210,255,.20), transparent 60%),
+    background:radial-gradient(720px 460px at 80% 16%, rgba(41,151,255,.34), transparent 62%),
+               radial-gradient(600px 420px at 104% 98%, rgba(100,210,255,.16), transparent 60%),
                radial-gradient(520px 380px at 6% 110%, rgba(0,113,227,.28), transparent 60%); }
-  .grid { position:absolute; inset:0; opacity:.09;
-    background-image:linear-gradient(rgba(120,180,255,.9) 1px,transparent 1px),linear-gradient(90deg,rgba(120,180,255,.9) 1px,transparent 1px);
-    background-size:44px 44px; -webkit-mask-image:radial-gradient(900px 520px at 72% 42%, #000 18%, transparent 75%); }
-  .left { position:absolute; left:60px; top:52px; width:560px; z-index:3; }
+  .copy { position:absolute; left:60px; top:52px; width:560px; z-index:3; }
   .brand { display:flex; align-items:center; gap:12px; font-family:var(--mono); font-size:14px; letter-spacing:.18em; text-transform:uppercase; color:#a1a1a6; }
   .brand b { color:#fff; }
   .word { margin:20px 0 0; font-size:112px; line-height:.95; font-weight:800; letter-spacing:-.05em; white-space:nowrap;
     background:linear-gradient(92deg,#fff 0%,#e3f0ff 38%,var(--signal) 74%,var(--cyan) 100%); -webkit-background-clip:text; background-clip:text; color:transparent; padding-bottom:6px; }
   .tag { margin:14px 0 0; font-size:31px; line-height:1.15; font-weight:700; letter-spacing:-.02em; }
   .tag em { font-style:normal; color:var(--signal); }
-  .lede { margin:12px 0 0; font-size:18px; line-height:1.45; color:#b8b8bf; width:520px; }
+  .lede { margin:12px 0 0; font-size:18px; line-height:1.45; color:#b8b8bf; width:520px; text-shadow:0 1px 12px #000; }
   .stats { margin-top:24px; display:flex; gap:32px; }
   .stat b { display:block; font-size:34px; font-weight:800; letter-spacing:-.03em; color:#fff; }
   .stat span { font-family:var(--mono); font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#8e8e93; }
   .pill { position:absolute; left:60px; bottom:40px; display:flex; gap:10px; z-index:3; }
-  .pill span { font-family:var(--mono); font-size:13.5px; font-weight:700; padding:7px 13px; border-radius:18px; border:1.5px solid rgba(255,255,255,.2); color:#e5e5ea; background:rgba(255,255,255,.04); }
+  .pill span { font-family:var(--mono); font-size:13.5px; font-weight:700; padding:7px 13px; border-radius:18px; border:1.5px solid rgba(255,255,255,.2); color:#e5e5ea; background:rgba(0,0,0,.6); }
   .pill span.b { background:var(--blue); border-color:var(--blue); color:#fff; box-shadow:0 0 24px rgba(0,113,227,.55); }
-
-  .right { position:absolute; left:652px; top:96px; width:560px; z-index:2; }
-  .win { position:relative; width:560px; border-radius:16px; overflow:hidden; z-index:2;
-    background:linear-gradient(180deg, rgba(22,24,30,.94), rgba(10,11,14,.96));
-    box-shadow:0 50px 100px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.14), 0 0 90px rgba(41,151,255,.22);
-    transform:perspective(1600px) rotateY(-14deg) rotateX(4deg); transform-origin:left center; }
-  .bar { height:34px; display:flex; align-items:center; gap:8px; padding:0 14px; background:rgba(255,255,255,.05); border-bottom:1px solid rgba(255,255,255,.07); }
-  .bar i { width:11px; height:11px; border-radius:50%; background:#ff5f57; } .bar i:nth-child(2){background:#febc2e} .bar i:nth-child(3){background:#28c840}
-  .bar em { margin-left:auto; margin-right:auto; font-style:normal; font-family:var(--mono); font-size:12px; color:#8e8e93; transform:translateX(-24px); }
-  .term { min-height:214px; padding:20px 22px 24px; font-family:var(--mono); font-size:15.5px; line-height:1.75; }
-  .l { white-space:pre; overflow:hidden; text-overflow:ellipsis; color:#f5f5f7; }
-  .l .p { color:var(--signal); font-weight:700; }
-  .l.out { color:#a1a1a6; }
-  .l.cm { color:#6e6e73; }
-  .l.ok { color:#d1f7dc; } .l.ok span { color:var(--green); font-weight:700; }
-  .l.warn { color:#ffe1b0; } .l.warn span { color:var(--amber); font-weight:700; }
-  .cur { display:inline-block; width:9px; height:18px; background:var(--signal); vertical-align:-3px; box-shadow:0 0 12px var(--signal); }
-  .chips { margin:34px 0 0 38px; width:480px; display:flex; flex-wrap:wrap; gap:10px; position:relative; z-index:3; }
-  .chips span { font-family:var(--mono); font-size:13px; font-weight:700; letter-spacing:.04em; padding:7px 12px; border-radius:14px;
-    color:#cfe6ff; background:rgba(10,20,35,.82); border:1px solid rgba(41,151,255,.45); box-shadow:0 0 18px rgba(41,151,255,.18); }
+  .art { position:absolute; left:520px; top:0; width:680px; height:630px; z-index:2; }
+  .art svg { display:block; }
+  #labels { position:absolute; inset:0; z-index:4; pointer-events:none; }
+  .lbl { position:absolute; font-family:var(--mono); font-size:12.5px; color:#a1a1a6; text-align:center; transform:translate(-50%,-50%); white-space:nowrap; }
+  .lbl b { display:block; font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:#e5e5ea; }
+  .lbl span { display:block; margin-top:3px; }
+  .lbl.box { padding:7px 12px; border-radius:12px; background:rgba(8,10,14,.85); border:1px solid rgba(255,255,255,.14); }
+  .lbl.chip { padding:6px 11px; border-radius:13px; font-size:12.5px; font-weight:700; color:#cfe6ff; background:rgba(10,20,35,.85); border:1px solid rgba(41,151,255,.5); box-shadow:0 0 16px rgba(41,151,255,.2); }
+  .lbl.left { transform:translate(0,-50%); text-align:left; }
+  .lbl.right { transform:translate(-100%,-50%); text-align:right; }
+  .ok { color:var(--green) !important; } .warn { color:var(--amber) !important; } .bad { color:var(--red) !important; } .sig { color:var(--signal) !important; } .cy { color:var(--cyan) !important; } .vi { color:var(--violet) !important; }
 </style>
 </head>
 <body>
 <div class="aurora"></div>
-<div class="grid"></div>
-<div class="left">
+<div class="art"><svg id="art" width="680" height="630" viewBox="0 0 680 630" xmlns="http://www.w3.org/2000/svg"></svg></div>
+<div id="labels"></div>
+<div class="copy">
   <div class="brand"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><defs><linearGradient id="zb" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ff5a15"/><stop offset="1" stop-color="#cc420a"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#zb)"/><path d="M18.5,20.5 45.5,20.5 18.5,43.5 45.5,43.5" fill="none" stroke="#fff" stroke-width="8.3" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Zyvor</b><span>&middot;</span><span>Offline-first edge runtime</span></div>
   <div class="word">Nodra</div>
   <div class="tag">The WAN went down.<br><em>The site kept running.</em></div>
@@ -67,8 +56,114 @@
   <div class="stats"><div class="stat"><b>5</b><span>binaries</span></div><div class="stat"><b>5</b><span>connectors</span></div><div class="stat"><b>QoS 2</b><span>MQTT exactly-once</span></div></div>
 </div>
 <div class="pill"><span class="b">github.com/zyvorai/nodra</span><span>Apache-2.0</span></div>
-<div class="right"><div class="win"><div class="bar"><i></i><i></i><i></i><em>nodra</em></div>
-<div class="term"><div class="l"><span class="p">$</span> nodractl publish --topic factory/line-1/temperature</div><div class="l out">{</div><div class="l out">  &quot;pending&quot;: 1,</div><div class="l ok"><span>&#10003;</span>   &quot;queued&quot;: true,</div><div class="l"><span class="p">$</span> <i class="cur"></i></div></div></div>
-<div class="chips"><span>Go</span><span>MQTT 3.1.1</span><span>Modbus</span><span>OPC-UA</span><span>Kubernetes</span><span>Prometheus</span></div></div>
+<script>
+var Z = (function () {
+  var NS = 'http://www.w3.org/2000/svg', svg = document.getElementById('art'), labels = document.getElementById('labels');
+  var seed = 20261004;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  function el(tag, a, parent) { var n = document.createElementNS(NS, tag); for (var k in a) n.setAttribute(k, a[k]); (parent || svg).appendChild(n); return n; }
+  function g(attrs) { return el('g', attrs || {}); }
+  function label(x, y, inner, cls, style) { var d = document.createElement('div'); d.className = 'lbl ' + (cls || ''); d.style.left = (520 + x) + 'px'; d.style.top = y + 'px'; if (style) d.setAttribute('style', d.getAttribute('style') + ';' + style); d.innerHTML = inner; labels.appendChild(d); return d; }
+  return { NS: NS, svg: svg, W: 680, H: 630, rnd: rnd, el: el, g: g, label: label,
+    reseed: function (s) { seed = s; },
+    c: { blue: '#0071e3', signal: '#2997ff', cyan: '#64d2ff', green: '#30d158', amber: '#ff9f0a', red: '#ff453a', violet: '#bf5af2', teal: '#40c8e0', indigo: '#5e5ce6', pink: '#ff375f', white: '#f5f5f7', grey: '#8e8e93' } };
+})();
+(function () {
+// Nodra: the write-ahead log as a glowing coil of records. MQTT and HTTP feed the near end; when the WAN link
+// returns, store-and-forward flushes the far end out to the cloud.
+var C = Z.c, PI = Math.PI, mono = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+var ax0 = 200, ax1 = 500, ay = 318, R = 104, tilt = 30, turns = 4.6;
+var defs = Z.el('defs', {});
+defs.innerHTML = '<filter id="nd-gl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>' +
+  '<filter id="nd-sf" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"/></filter>' +
+  '<linearGradient id="nd-core" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#64d2ff" stop-opacity=".0"/><stop offset=".2" stop-color="#64d2ff" stop-opacity=".35"/><stop offset=".8" stop-color="#2997ff" stop-opacity=".35"/><stop offset="1" stop-color="#30d158" stop-opacity=".0"/></linearGradient>';
+function f(v) { return v.toFixed(1); }
+function txt(x, y, s, fill, size, anchor) {
+  var t = Z.el('text', { x: f(x), y: f(y), fill: fill, 'font-family': mono, 'font-size': size, 'text-anchor': anchor || 'middle', 'letter-spacing': '.06em' });
+  t.textContent = s; return t;
+}
+function lerp(a, b, t) { return a + (b - a) * t; }
+function mix(c0, c1, t) {
+  var a = [parseInt(c0.substr(1, 2), 16), parseInt(c0.substr(3, 2), 16), parseInt(c0.substr(5, 2), 16)];
+  var b = [parseInt(c1.substr(1, 2), 16), parseInt(c1.substr(3, 2), 16), parseInt(c1.substr(5, 2), 16)];
+  return 'rgb(' + a.map(function (v, i) { return Math.round(lerp(v, b[i], t)); }).join(',') + ')';
+}
+// helix point for u in [0,1]
+function H(u) {
+  var th = u * turns * 2 * PI;
+  return { x: lerp(ax0, ax1, u) + tilt * Math.sin(th), y: ay - R * Math.cos(th), z: Math.sin(th), th: th };
+}
+
+// soft core glow along the axis
+Z.el('ellipse', { cx: (ax0 + ax1) / 2, cy: ay, rx: 230, ry: 120, fill: '#0071e3', opacity: .2, filter: 'url(#nd-sf)' });
+Z.el('rect', { x: ax0 - 30, y: ay - 3, width: ax1 - ax0 + 60, height: 6, rx: 3, fill: 'url(#nd-core)', filter: 'url(#nd-gl)' });
+
+// records along the helix: draw back half first, then front half
+var NR = 150, recs = [];
+for (var i = 0; i < NR; i++) {
+  var u = (i + 0.5) / NR, p = H(u), q = H(u + 0.002);
+  recs.push({ u: u, p: p, ang: Math.atan2(q.y - p.y, q.x - p.x) * 180 / PI });
+}
+function colourAt(u) { return u < 0.55 ? mix('#64d2ff', '#2997ff', u / 0.55) : mix('#2997ff', '#30d158', (u - 0.55) / 0.45); }
+[false, true].forEach(function (front) {
+  // continuous wire behind the tiles
+  var segs = [];
+  for (var i = 0; i <= 600; i++) { var p = H(i / 600); if ((p.z > 0) === front) segs.push((segs.length && segs._last === i - 1 ? ' L' : ' M') + f(p.x) + ',' + f(p.y)); if ((p.z > 0) === front) segs._last = i; }
+  Z.el('path', { d: segs.join(''), fill: 'none', stroke: front ? 'rgba(120,200,255,.55)' : 'rgba(120,185,255,.26)', 'stroke-width': front ? 1.4 : 1 });
+  recs.forEach(function (r, k) {
+    if ((r.p.z > 0) !== front) return;
+    var depth = (r.p.z + 1) / 2, col = colourAt(r.u);
+    var w = 9 + depth * 5, h = 5 + depth * 3;
+    var flushed = r.u > 0.94;
+    Z.el('rect', { x: f(-w / 2), y: f(-h / 2), width: f(w), height: f(h), rx: 1.6,
+      fill: col, opacity: (front ? 0.55 + depth * 0.45 : 0.22 + depth * 0.3).toFixed(2),
+      transform: 'translate(' + f(r.p.x) + ',' + f(r.p.y) + ') rotate(' + f(r.ang) + ')',
+      filter: front && (k % 9 === 0 || flushed) ? 'url(#nd-gl)' : null });
+  });
+});
+
+// ingress: MQTT and HTTP streams curling into the near end of the coil
+var start = H(0);
+[{ y: 170, n: 'MQTT', c: C.cyan }, { y: 470, n: 'HTTP', c: C.teal }].forEach(function (s, k) {
+  var sx = 124, d = 'M' + sx + ',' + s.y + ' C' + (sx + 60) + ',' + s.y + ' ' + f(start.x - 60) + ',' + f(start.y + (k ? 120 : -10)) + ' ' + f(start.x) + ',' + f(start.y);
+  Z.el('path', { d: d, fill: 'none', stroke: s.c, 'stroke-width': 6, opacity: .12, filter: 'url(#nd-sf)' });
+  Z.el('path', { d: d, fill: 'none', stroke: s.c, 'stroke-width': 1.6, opacity: .75, filter: 'url(#nd-gl)' });
+  var el = Z.el('path', { d: d, fill: 'none', stroke: 'none' }), L = el.getTotalLength();
+  for (var i = 0; i < 9; i++) {
+    var q = el.getPointAtLength(L * (0.14 + i * 0.095)), q2 = el.getPointAtLength(L * (0.14 + i * 0.095) + 1);
+    Z.el('rect', { x: -5, y: -3, width: 10, height: 6, rx: 1.6, fill: s.c, opacity: (0.55 + i * 0.05).toFixed(2), filter: 'url(#nd-gl)', transform: 'translate(' + f(q.x) + ',' + f(q.y) + ') rotate(' + f(Math.atan2(q2.y - q.y, q2.x - q.x) * 180 / PI) + ')' });
+  }
+  Z.label(sx, s.y + (k ? 24 : -24), s.n, 'chip');
+});
+
+// egress: flush from the far end over a restored WAN link to the cloud
+var end = H(1), cxp = 600, cyp = 150;
+var ed = 'M' + f(end.x) + ',' + f(end.y) + ' C' + f(end.x + 60) + ',' + f(end.y - 10) + ' ' + f(cxp - 10) + ',' + f(cyp + 120) + ' ' + f(cxp) + ',' + f(cyp + 34);
+var eel = Z.el('path', { d: ed, fill: 'none', stroke: 'none' }), EL = eel.getTotalLength();
+Z.el('path', { d: ed, fill: 'none', stroke: C.green, 'stroke-width': 2, opacity: .85, filter: 'url(#nd-gl)' });
+// the healed break in the link
+var bk = eel.getPointAtLength(EL * 0.55);
+var bk2 = eel.getPointAtLength(EL * 0.55 + 1), ba = Math.atan2(bk2.y - bk.y, bk2.x - bk.x) * 180 / PI;
+var bg = Z.g({ transform: 'translate(' + f(bk.x) + ',' + f(bk.y) + ') rotate(' + f(ba) + ') scale(1.7)' });
+Z.el('rect', { x: -14, y: -6, width: 9, height: 12, rx: 2, fill: '#0b1626', stroke: C.green, 'stroke-width': 1.4 }, bg);
+Z.el('rect', { x: 5, y: -6, width: 9, height: 12, rx: 2, fill: '#0b1626', stroke: C.green, 'stroke-width': 1.4 }, bg);
+Z.el('path', { d: 'M-4,-9 L1,-2 L-2,1 L4,9', fill: 'none', stroke: '#fff', 'stroke-width': 1.6, filter: 'url(#nd-gl)' }, bg);
+Z.el('circle', { cx: f(bk.x), cy: f(bk.y), r: 18, fill: C.green, opacity: .18, filter: 'url(#nd-sf)' });
+for (var i = 0; i < 5; i++) {
+  var q = eel.getPointAtLength(EL * [0.12, 0.26, 0.4, 0.7, 0.84][i]);
+  Z.el('rect', { x: f(q.x - 4), y: f(q.y - 2.5), width: 8, height: 5, rx: 1.4, fill: '#bff5cc', filter: 'url(#nd-gl)' });
+}
+// cloud glyph
+var cg = Z.g({ transform: 'translate(' + cxp + ',' + cyp + ')' });
+Z.el('path', { d: 'M-30,18 a14,14 0 0 1 2,-27 a20,20 0 0 1 38,-4 a15,15 0 0 1 20,15 a12,12 0 0 1 -4,16 z', fill: '#0b1626', stroke: C.green, 'stroke-width': 1.6, filter: 'url(#nd-gl)' }, cg);
+Z.label(cxp, cyp - 52, '<b>store-and-forward</b><span>WAN back: flush</span>');
+
+// WAL hub label under the coil
+Z.label((ax0 + ax1) / 2, ay + R + 56, '<b>durable WAL</b><span>append-only &middot; fsynced &middot; replayed</span>');
+Z.label(560, 590, 'QoS 2 &middot; exactly-once', 'chip');
+
+for (var i = 0; i < 40; i++) { var x = 130 + Z.rnd() * 520, y = 24 + Z.rnd() * 580; if (Math.abs(y - ay) < R + 30 && x > ax0 - 40 && x < ax1 + 40) continue; Z.el('circle', { cx: f(x), cy: f(y), r: (0.7 + Z.rnd() * 1.2).toFixed(1), fill: C.cyan, opacity: (0.1 + Z.rnd() * 0.35).toFixed(2) }); }
+})();
+</script>
 </body>
 </html>
