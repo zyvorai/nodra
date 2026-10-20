@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/zyvorai/nodra/internal/serialport"
@@ -45,6 +46,7 @@ type Poller struct {
 	transport string
 	ival      time.Duration
 	cancel    context.CancelFunc
+	mu        sync.Mutex
 	last      string
 }
 
@@ -62,6 +64,9 @@ func NewPoller(name string, raw json.RawMessage) (connector.Connector, error) {
 	}
 	if cfg.Quantity == 0 {
 		cfg.Quantity = 1
+	}
+	if cfg.Quantity > 125 {
+		return nil, fmt.Errorf("modbus quantity must be 1..125, got %d", cfg.Quantity)
 	}
 	ival := 5 * time.Second
 	if cfg.Interval != "" {
@@ -149,7 +154,7 @@ func (p *Poller) loop(ctx context.Context, h connector.Handler) {
 func (p *Poller) poll(ctx context.Context, h connector.Handler) {
 	regs, err := p.cli.ReadHoldingRegisters(ctx, p.cfg.Start, p.cfg.Quantity)
 	if err != nil {
-		p.last = err.Error()
+		p.setLast(err.Error())
 		slog.Warn("modbus poll failed", "connector", p.name, "transport", p.transport, "error", err)
 		return
 	}
@@ -161,15 +166,24 @@ func (p *Poller) poll(ctx context.Context, h connector.Handler) {
 		Topic: p.cfg.Topic, Payload: payload,
 		Headers: map[string]string{"x-nodra-ingress": "modbus", "x-nodra-connector": p.name, "x-modbus-transport": p.transport},
 	}); err != nil {
-		p.last = err.Error()
+		p.setLast(err.Error())
 		slog.Warn("modbus ingest failed", "connector", p.name, "error", err)
 		return
 	}
-	p.last = "ok"
+	p.setLast("ok")
+}
+
+func (p *Poller) setLast(s string) {
+	p.mu.Lock()
+	p.last = s
+	p.mu.Unlock()
 }
 func (p *Poller) Health(context.Context) connector.Health {
-	ok := p.last == "" || p.last == "ok"
-	return connector.Health{Healthy: ok, Message: p.last}
+	p.mu.Lock()
+	last := p.last
+	p.mu.Unlock()
+	ok := last == "" || last == "ok"
+	return connector.Health{Healthy: ok, Message: last}
 }
 func (p *Poller) Close() error {
 	if p.cancel != nil {

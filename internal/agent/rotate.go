@@ -114,10 +114,17 @@ func (a *Agent) rotateCertificate(ctx context.Context) error {
 	// The old cert/key stay in place on disk until both new files are
 	// durably written — a rotation failure partway through never leaves the
 	// agent without a usable identity.
+	oldKey, readErr := os.ReadFile(keyPath)
 	if err = durable.AtomicWrite(keyPath, keyPEM, 0o600); err != nil {
 		return err
 	}
 	if err = durable.AtomicWrite(certPath, []byte(out.ClientCertificate), 0o600); err != nil {
+		// Do not leave the new key next to the old certificate.
+		if readErr == nil {
+			if rbErr := durable.AtomicWrite(keyPath, oldKey, 0o600); rbErr != nil {
+				return fmt.Errorf("%w (restoring previous key also failed: %v)", err, rbErr)
+			}
+		}
 		return err
 	}
 	return a.configureClient()

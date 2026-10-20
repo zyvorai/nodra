@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/zyvorai/nodra/pkg/ota"
 )
@@ -37,7 +38,7 @@ func (a *Agent) localOTAStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b, _ := json.Marshal(map[string]any{"site_id": a.cfg.SiteID, "status": in.Status})
-	resp, err := a.do(r.Context(), "POST", "/api/v1/agent/devices/"+idv+"/ota/status", b)
+	resp, err := a.do(r.Context(), "POST", "/api/v1/agent/devices/"+url.PathEscape(idv)+"/ota/status", b)
 	if err != nil {
 		writeJSON(w, 502, map[string]string{"error": err.Error()})
 		return

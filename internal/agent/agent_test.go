@@ -692,3 +692,27 @@ func TestLocalOTAStatusForwardsAndValidates(t *testing.T) {
 		t.Fatalf("expected control plane to have the forwarded status, got %d %s", getResp.StatusCode, gb)
 	}
 }
+
+func TestLocalForwardEscapesPathID(t *testing.T) {
+	var got []string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.URL.EscapedPath())
+		w.WriteHeader(200)
+	}))
+	defer up.Close()
+	cfg := DefaultConfig()
+	cfg.ServerURL = up.URL
+	cfg.SiteID = "s1"
+	cfg.LocalToken = "local"
+	cfg.DataDir = filepath.Join(t.TempDir(), "agent")
+	a, err := New(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("POST", "/v1/twins/a%2F..%2Fb/reported", strings.NewReader(`{"reported":{}}`))
+	req.Header.Set("Authorization", "Bearer local")
+	a.Handler().ServeHTTP(httptest.NewRecorder(), req)
+	if len(got) != 1 || got[0] != "/api/v1/agent/twins/a%2F..%2Fb/reported" {
+		t.Fatalf("upstream path = %v", got)
+	}
+}
