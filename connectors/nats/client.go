@@ -53,10 +53,8 @@ func (c *Client) Connect(ctx context.Context) (*Conn, error) {
 		_ = conn.Close()
 		return nil, err
 	}
-	go func() {
-		<-ctx.Done()
-		_ = conn.Close()
-	}()
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	cn.stop = stop
 	return cn, nil
 }
 
@@ -65,6 +63,7 @@ type Conn struct {
 	conn net.Conn
 	r    *bufio.Reader
 	wmu  sync.Mutex
+	stop func() bool // detaches the ctx close-watcher
 }
 
 func (cn *Conn) handshake(c *Client) error {
@@ -142,4 +141,9 @@ func (cn *Conn) Next(ctx context.Context) (string, []byte, error) {
 	}
 }
 
-func (cn *Conn) Close() error { return cn.conn.Close() }
+func (cn *Conn) Close() error {
+	if cn.stop != nil {
+		cn.stop()
+	}
+	return cn.conn.Close()
+}

@@ -17,6 +17,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -814,7 +815,7 @@ func (a *Agent) localTwinReported(w http.ResponseWriter, r *http.Request) {
 	}
 	idv := r.PathValue("id")
 	b, _ := json.Marshal(map[string]any{"site_id": a.cfg.SiteID, "reported": in.Reported})
-	resp, err := a.do(r.Context(), "POST", "/api/v1/agent/twins/"+idv+"/reported", b)
+	resp, err := a.do(r.Context(), "POST", "/api/v1/agent/twins/"+url.PathEscape(idv)+"/reported", b)
 	if err != nil {
 		writeJSON(w, 502, map[string]string{"error": err.Error()})
 		return

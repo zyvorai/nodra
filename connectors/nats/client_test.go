@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"net"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -196,5 +197,38 @@ func TestClientRejectsNonInfoFirstLine(t *testing.T) {
 	defer cancel()
 	if _, err := cli.Connect(ctx); err == nil {
 		t.Fatal("expected handshake failure for non-INFO first line")
+	}
+}
+
+// Closing a Conn must detach its ctx close-watcher; otherwise every
+// reconnect under a long-lived ctx leaks a goroutine.
+func TestConnectCloseDoesNotLeakGoroutines(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	const n = 30
+	go func() {
+		for i := 0; i < n; i++ {
+			runMockNATSServer(t, ln, 1, func(conn net.Conn, r *bufio.Reader) {
+				_, _ = r.ReadString('\n') // returns on client close
+			})
+		}
+	}()
+	before := runtime.NumGoroutine()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cli := &Client{Addr: ln.Addr().String(), Subjects: []string{"a"}, Timeout: 2 * time.Second}
+	for i := 0; i < n; i++ {
+		conn, err := cli.Connect(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.Close()
+	}
+	time.Sleep(300 * time.Millisecond)
+	if after := runtime.NumGoroutine(); after > before+n/2 {
+		t.Fatalf("goroutines grew from %d to %d after %d connect/close cycles", before, after, n)
 	}
 }
