@@ -25,6 +25,8 @@
 
 ---
 
+[Client overview (PDF)](docs/Nodra-Client-Overview.pdf)
+
 ## What's new
 
 From [CHANGELOG.md](CHANGELOG.md) (0.2.1, 0.2.2 and unreleased):
