@@ -66,7 +66,7 @@ grep -Fq 'Sign in to Nodra' "${TMP}/nodra-dash.html" || fail "login chapter miss
 grep -Fq 'login-store-page' "${TMP}/nodra-dash.html" || fail "Kryton-style login store missing"
 grep -Fq 'login-wordmark' "${TMP}/nodra-dash.html" || fail "login wordmark missing"
 grep -qi 'zyvor' "${TMP}/nodra-dash.html" || fail "missing Zyvor brand"
-grep -qi 'Apache-2.0' "${TMP}/nodra-dash.html" || fail "footer missing Apache-2.0"
+grep -qi 'Zyvor Production License' "${TMP}/nodra-dash.html" || fail "footer missing Zyvor Production License"
 grep -Fq 'data-tab="logs"' "${TMP}/nodra-dash.html" || fail "Logs tab missing"
 pass "login chapter + Kryton store + Logs tab"
 

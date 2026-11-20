@@ -22,5 +22,5 @@ PY
 echo '[6/7] local end-to-end smoke'
 ./scripts/smoke.sh
 echo '[7/7] license/readme checks'
-test -s LICENSE; test -s README.md; grep -q 'Apache License' LICENSE; grep -q 'Offline-first' README.md
+test -s LICENSE; test -s README.md; grep -q 'Zyvor Production License' LICENSE; grep -q 'Offline-first' README.md
 echo 'release-check: PASS'

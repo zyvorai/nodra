@@ -76,13 +76,13 @@ Edge systems fail differently from datacenters. WAN links disappear, devices use
 
 ### Is this for you?
 
-Nodra is a small, open-source, offline-first edge runtime on a site's own hardware. It is not a no-code automation platform, not a managed cloud IoT service, and not a full HA platform today (file mode is one replica).
+Nodra is a small, source-available, offline-first edge runtime on a site's own hardware. It is not a no-code automation platform, not a managed cloud IoT service, and not a full HA platform today (file mode is one replica).
 
 | | **Nodra** | Node-RED | EMQX/HiveMQ Edge | AWS IoT Greengrass | Azure IoT Edge |
 |---|---|---|---|---|---|
 | Primary scope | Edge ingress + durable store-and-forward + device twins + app reconciliation | Visual flow-based automation | MQTT broker (edge-deployed) | Cloud-connected edge runtime | Cloud-connected edge runtime |
 | Cloud dependency | None required — WAN-loss is first-class | None required | Usually paired with a cloud broker/console | AWS IoT Core | Azure IoT Hub |
-| License | Apache-2.0 | Apache-2.0 | Apache-2.0 core (EMQX) / proprietary (HiveMQ Edge) | Proprietary (free tier) | Proprietary (free tier) |
+| License | Zyvor Production License 1.0 (free non-production) | Apache-2.0 | Apache-2.0 core (EMQX) / proprietary (HiveMQ Edge) | Proprietary (free tier) | Proprietary (free tier) |
 | Industrial protocols | Modbus TCP/RTU, J1939, OPC-UA, serial, NATS bridge (`docs/INDUSTRIAL_PROTOCOLS.md`) | Via community nodes | Not built-in | Via custom components | Via custom modules |
 | HA / clustering | File mode: one replica. Postgres: revision-checked fleet state + concurrent delivery claims; full HA still open (`ROADMAP.md`) | N/A | Yes (broker clustering) | Managed by AWS | Managed by Azure |
 
@@ -459,11 +459,11 @@ How the edge products fit: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ## Support
 
-Free under Apache-2.0. If it helps you, you can donate any amount you like: <https://rzp.io/rzp/utwdYh3>. A donation is voluntary and supports development and maintenance. It is not a purchase: it buys no support, SLA, features, priority or license, and it is not tax-deductible (Zyvor AI Labs Private Limited is a company, not a charity). Support contracts are separate: [sales@zyvor.dev](mailto:sales@zyvor.dev).
+Non-production use is free under the Zyvor Production License v1.0; production use requires a commercial license (sales@zyvor.dev). If it helps you, you can donate any amount you like: <https://rzp.io/rzp/utwdYh3>. A donation is voluntary and supports development and maintenance. It is not a purchase: it buys no support, SLA, features, priority or license, and it is not tax-deductible (Zyvor AI Labs Private Limited is a company, not a charity). Support contracts are separate: [sales@zyvor.dev](mailto:sales@zyvor.dev).
 
 ## License
 
-Nodra is **free and open source** under the [Apache License 2.0](LICENSE) (see [NOTICE](NOTICE)): personal, lab and commercial production use at no charge. That does not change.
+Nodra is source-available under the **[Zyvor Production License v1.0](LICENSE)** (SPDX `LicenseRef-Zyvor-Production-1.0`, also in [LICENSES/](LICENSES/LicenseRef-Zyvor-Production-1.0.txt); see [NOTICE](NOTICE)). Non-production use (evaluation, development, testing, research, education) is free. Production use requires a commercial license from Zyvor AI Labs Private Limited ([sales@zyvor.dev](mailto:sales@zyvor.dev), [zyvor.dev/buy](https://zyvor.dev/buy)); a 30-day trial key is available for production evaluation.
 
 **Zyvor Enterprise** adds what production teams ask for: supported releases, deployment and upgrade guidance, priority incident triage, a named technical contact and 24x7 critical intake. Plans and terms: [docs/SUBSCRIPTION-MODEL.md](docs/SUBSCRIPTION-MODEL.md) · [Pricing](https://zyvor.dev/pricing?utm_source=github&utm_medium=nodra&utm_campaign=readme_license) · [sales@zyvor.dev](mailto:sales@zyvor.dev). Support from USD 8-18 per device per year (INR 793-1,784 incl. GST in India), USD 5,000 (INR 495,600) annual minimum; buy / get a quote at [zyvor.dev/buy](https://zyvor.dev/buy).
 

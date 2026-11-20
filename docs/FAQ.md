@@ -11,14 +11,16 @@ starting points.
 
 ## Licensing & cost
 
-**Is it really free?** Yes. Apache-2.0 — use, modify, and run it for
-personal, lab, and commercial production use at no charge, subject to
-preserving notices (see [`NOTICE`](https://github.com/zyvorai/nodra/blob/main/NOTICE)). See the README's
+**Is it really free?** Non-production use (evaluation, development, testing, research,
+education) is free under the Zyvor Production License v1.0. Production use
+requires a commercial license from Zyvor AI Labs (sales@zyvor.dev,
+https://zyvor.dev/buy; a 30-day trial key is available). Notices must be
+preserved (see [`NOTICE`](https://github.com/zyvorai/nodra/blob/main/NOTICE)). See the README's
 [License](https://github.com/zyvorai/nodra#license) section.
 
 **What does "Enterprise" mean here?** Production support, SLAs, and
 Zyvor's other commercial products are licensed separately from this
-open-source runtime. Prices (per device per year, India in INR incl. GST)
+source-available runtime. Prices (per device per year, India in INR incl. GST)
 are in [SUBSCRIPTION-MODEL.md](SUBSCRIPTION-MODEL.md#pricing); buy at
 https://zyvor.dev/buy or contact sales@zyvor.dev. Nothing in this repository
 requires it.

@@ -10,7 +10,7 @@ hero:
     - {label: "MQTT 3.1.1"}
     - {label: "HTTP ingress"}
     - {label: "Modbus TCP/RTU"}
-    - {label: "Apache-2.0"}
+    - {label: "Zyvor Production License"}
   highlights:
     - {value: "v0.2.2", label: "Current release", footnote: "1"}
     - {value: "26", label: "Lettered fleet sites simulated end-to-end by nodra-sim", footnote: "2"}
@@ -35,7 +35,7 @@ footnotes:
   - {marker: "5", text: "Six trust boundaries are documented: device→nodrad, nodrad→control plane, operator→API, operator→console, control plane→webhook, and simulator→control plane.", href: "SECURITY-MODEL.md#trust-boundaries", href_label: "See Security model — Trust boundaries."}
 ---
 
-Nodra is an Apache-2.0 edge runtime and control plane from Zyvor. It gives
+Nodra is a source-available edge runtime and control plane from Zyvor. It gives
 remote sites a local MQTT/HTTP ingress, durable store-and-forward, local
 routes, device twins, edge application reconciliation, fleet health,
 replayable dead letters and a clean web control plane. Edge sites are

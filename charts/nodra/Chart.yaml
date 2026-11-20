@@ -1,6 +1,6 @@
 apiVersion: v2
 name: nodra
-description: Nodra open-source edge runtime and control plane
+description: Nodra source-available edge runtime and control plane
 home: https://zyvor.dev
 sources:
   - https://github.com/zyvorai/nodra
