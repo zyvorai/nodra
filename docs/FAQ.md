@@ -18,7 +18,9 @@ preserving notices (see [`NOTICE`](https://github.com/zyvorai/nodra/blob/main/NO
 
 **What does "Enterprise" mean here?** Production support, SLAs, and
 Zyvor's other commercial products are licensed separately from this
-open-source runtime. Contact sales@zyvor.dev. Nothing in this repository
+open-source runtime. Prices (per device per year, India in INR incl. GST)
+are in [SUBSCRIPTION-MODEL.md](SUBSCRIPTION-MODEL.md#pricing); buy at
+https://zyvor.dev/buy or contact sales@zyvor.dev. Nothing in this repository
 requires it.
 
 ## Support
