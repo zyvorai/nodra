@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package ota defines Nodra's contract with an external Zyvor OTA agent.
 //
 // Nodra owns transport, durable delivery, desired/reported state and status
