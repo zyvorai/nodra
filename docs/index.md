@@ -3,7 +3,7 @@ hero:
   eyebrow: EDGE RUNTIME & CONTROL PLANE
   title: Nodra
   lead: >-
-    The open edge runtime that keeps sites running when the cloud doesn't:
+    The edge runtime that keeps sites running when the cloud doesn't:
     local MQTT/HTTP ingress, a durable store-and-forward WAL, device twins,
     and edge app reconciliation — offline-first by design.
   swatches:

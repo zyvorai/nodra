@@ -66,7 +66,7 @@ function showConsole(){
   gate.setAttribute('aria-hidden','true');
   $('#appShell').hidden=false;
   document.body.classList.remove('login-locked');
-  document.title='Nodra — Open edge runtime';
+  document.title='Nodra — Edge runtime';
   applyRoleUI();
 }
 function signOut(toastMsg=true){

@@ -15,7 +15,7 @@
 
 ### The WAN went down. The site kept running.
 
-**The open edge runtime that keeps sites running when the cloud doesn't.** Remote sites get local MQTT/HTTP ingress, durable store-and-forward, local routes, device twins, edge app reconciliation, fleet health, replayable dead letters, and a clean web console. WAN loss is a first-class operating mode, not a degraded one.
+**The edge runtime that keeps sites running when the cloud doesn't.** Remote sites get local MQTT/HTTP ingress, durable store-and-forward, local routes, device twins, edge app reconciliation, fleet health, replayable dead letters, and a clean web console. WAN loss is a first-class operating mode, not a degraded one.
 
 **Offline-first WAL** · **MQTT QoS 2, exactly-once** · **Modbus, J1939, OPC-UA** · **Device twins** · **No cloud required**
 
@@ -25,7 +25,6 @@
 
 ---
 
-[Client overview (PDF)](docs/Nodra-Client-Overview.pdf)
 
 ## What's new
 
@@ -60,33 +59,9 @@ Edge systems fail differently from datacenters. WAN links disappear, devices use
 
 ---
 
-## Nodra vs AWS IoT Greengrass
-
-![Nodra vs AWS IoT Greengrass: your site, your control plane, no cloud required](docs/ux/readme-vs.jpg)
-
-| | **Nodra** | **AWS IoT Greengrass** |
-|---|---|---|
-| Control plane | Self-hosted `nodra-server` on your hardware or Kubernetes | AWS IoT (in your AWS account) |
-| Edge runtime | `nodrad`: MQTT/HTTP ingress, WAL, local routes, cached twins | Greengrass nucleus with deployed components |
-| Store-and-forward | Fsynced WAL with byte and event caps and an explicit spool policy | Stream manager exporting to AWS services |
-| Industrial protocols | Modbus TCP/RTU, J1939, OPC-UA, serial, NATS built in | Through components |
-| Device state | Device twins: desired in the control plane, reported from the edge | Device shadows in AWS IoT |
-| App delivery | Docker desired state with optional cosign verification and health rollback | Component deployments from AWS |
-| **Choose Greengrass when** | | Your fleet and data already live in AWS IoT and AWS services, and a managed AWS control plane is what you want |
-
 ### Is this for you?
 
 Nodra is a small, source-available, offline-first edge runtime on a site's own hardware. It is not a no-code automation platform, not a managed cloud IoT service, and not a full HA platform today (file mode is one replica).
-
-| | **Nodra** | Node-RED | EMQX/HiveMQ Edge | AWS IoT Greengrass | Azure IoT Edge |
-|---|---|---|---|---|---|
-| Primary scope | Edge ingress + durable store-and-forward + device twins + app reconciliation | Visual flow-based automation | MQTT broker (edge-deployed) | Cloud-connected edge runtime | Cloud-connected edge runtime |
-| Cloud dependency | None required — WAN-loss is first-class | None required | Usually paired with a cloud broker/console | AWS IoT Core | Azure IoT Hub |
-| License | Zyvor Production License 1.0 (free non-production) | Apache-2.0 | Apache-2.0 core (EMQX) / proprietary (HiveMQ Edge) | Proprietary (free tier) | Proprietary (free tier) |
-| Industrial protocols | Modbus TCP/RTU, J1939, OPC-UA, serial, NATS bridge (`docs/INDUSTRIAL_PROTOCOLS.md`) | Via community nodes | Not built-in | Via custom components | Via custom modules |
-| HA / clustering | File mode: one replica. Postgres: revision-checked fleet state + concurrent delivery claims; full HA still open (`ROADMAP.md`) | N/A | Yes (broker clustering) | Managed by AWS | Managed by Azure |
-
-*(General characterizations as of writing — verify against each project's own docs.)*
 
 ---
 
