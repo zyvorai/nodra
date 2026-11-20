@@ -465,7 +465,7 @@ Free under Apache-2.0. If it helps you, you can donate any amount you like: <htt
 
 Nodra is **free and open source** under the [Apache License 2.0](LICENSE) (see [NOTICE](NOTICE)): personal, lab and commercial production use at no charge. That does not change.
 
-**Zyvor Enterprise** adds what production teams ask for: supported releases, deployment and upgrade guidance, priority incident triage, a named technical contact and 24x7 critical intake. Plans and terms: [docs/SUBSCRIPTION-MODEL.md](docs/SUBSCRIPTION-MODEL.md) · [Pricing](https://zyvor.dev/pricing?utm_source=github&utm_medium=nodra&utm_campaign=readme_license) · [sales@zyvor.dev](mailto:sales@zyvor.dev).
+**Zyvor Enterprise** adds what production teams ask for: supported releases, deployment and upgrade guidance, priority incident triage, a named technical contact and 24x7 critical intake. Plans and terms: [docs/SUBSCRIPTION-MODEL.md](docs/SUBSCRIPTION-MODEL.md) · [Pricing](https://zyvor.dev/pricing?utm_source=github&utm_medium=nodra&utm_campaign=readme_license) · [sales@zyvor.dev](mailto:sales@zyvor.dev). Support from USD 8-18 per device per year (INR 793-1,784 incl. GST in India), USD 5,000 (INR 495,600) annual minimum; buy / get a quote at [zyvor.dev/buy](https://zyvor.dev/buy).
 
 Product page: [zyvor.dev/nodra](https://zyvor.dev/nodra?utm_source=github&utm_medium=nodra&utm_campaign=readme_suite). Report vulnerabilities per [SECURITY.md](SECURITY.md); contributions per [CONTRIBUTING.md](CONTRIBUTING.md).
 
