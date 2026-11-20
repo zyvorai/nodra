@@ -1,12 +1,11 @@
 # Nodra: support subscriptions
 
-Nodra is source-available software. Non-production use is free under the Zyvor Production License v1.0; production use requires a commercial license (sales@zyvor.dev).
+Nodra is source-available software. A commercial license is required to run it (sales@zyvor.dev); a 30-day trial key is how to evaluate.
 
 Teams that want supported releases and defined response targets can buy an annual **support subscription** from Zyvor.
 
 | Plan | What you get | Coverage |
 |------|--------------|----------|
-| Community | The software, community documentation and public issue tracking | No contracted response target |
 | Standard | Deployment and upgrade guidance, defined supported configuration | Business hours |
 | Supported | Standard plus priority queue and incident triage | Business hours, faster response |
 | Enterprise | Supported plus a named technical contact and 24x7 critical intake | One-hour initial response target for critical issues |
@@ -26,7 +25,7 @@ Prices are in the [Pricing](#pricing) section below; custom pricing: contact [sa
 
 ## Pricing
 
-The support subscription is priced per device per year, on one ladder shared by Fleet, Relay, Device Agent, OTA and Nodra, with an annual minimum of USD 5,000 (INR 495,600 incl. GST in India) that applies to every step. Non-production use of the software is free under the Zyvor Production License v1.0; production use requires a commercial license.
+The support subscription is priced per device per year, on one ladder shared by Fleet, Relay, Device Agent, OTA and Nodra, with an annual minimum of USD 5,000 (INR 495,600 incl. GST in India) that applies to every step. A commercial license is required to run the software.
 
 | Devices | Elsewhere (USD, excl. tax) | India (INR, incl. 18% GST) |
 |---|---|---|
