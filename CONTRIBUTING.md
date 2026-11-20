@@ -1,8 +1,8 @@
 # Contributing
 
-Thanks for improving Nodra.
+Thanks for improving Nodra. Nodra is source-available under the Zyvor Production License v1.0, not open source. Please email sales@zyvor.dev before sending a change so we can agree scope.
 
-1. Fork the repository and create a focused branch.
+1. Create a focused branch in your own checkout.
 2. Run `make fmt`, `make vet`, and `make race`.
 3. For API/UI changes, also run `make smoke` (and `make demo-client` against a lab if you touch auth or console tabs).
 4. Add tests for behavior changes, especially durability and authentication boundaries.

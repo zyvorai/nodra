@@ -4,7 +4,7 @@ hero:
   title: Nodra ↔ Zyvor Relay
 ---
 
-Nodra keeps the edge online (MQTT/HTTP, offline WAL, twins). [Zyvor Relay](https://github.com/zyvorai/relay) owns the durable ops loop: **Accept → Notify → Ack → Act → Verify**.
+Nodra keeps the edge online (MQTT/HTTP, offline WAL, twins). [Zyvor Relay](https://github.com/zyvorai/relay-site) owns the durable ops loop: **Accept → Notify → Ack → Act → Verify**.
 
 They join over HTTP: Nodra cloud routes POST webhooks to **`nodra-relay-bridge`**, which maps deliveries into Relay `POST /v1/events` (or optional relay-pubsub `:publish`).
 
@@ -84,6 +84,6 @@ Point Relay `RELAY_ACTION_TARGETS` and stamped `data.verification_probe.url` at 
 
 ## Related
 
-- Relay architecture: https://github.com/zyvorai/relay/blob/main/docs/ARCHITECTURE.md  
-- Relay Nodra note: https://github.com/zyvorai/relay/blob/main/docs/NODRA.md  
+- Relay architecture: source is private; request access at sales@zyvor.dev  
+- Relay Nodra note: source is private; request access at sales@zyvor.dev  
 - relay-edge publish paths: similar dual direct/gateway client  

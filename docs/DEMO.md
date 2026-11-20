@@ -108,7 +108,7 @@ Default lab smoke credentials: `admin` / `nodra-lab-admin` (token `nodra-lab-adm
 
 ## Zyvor Relay
 
-Offline edge events can Accept into [Zyvor Relay](https://github.com/zyvorai/relay) via `nodra-relay-bridge`:
+Offline edge events can Accept into [Zyvor Relay](https://github.com/zyvorai/relay-site) via `nodra-relay-bridge`:
 
 ```bash
 make build
