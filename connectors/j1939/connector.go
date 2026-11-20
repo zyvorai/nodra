@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Package j1939 consumes the Zyvor Device Agent read-only CAN SSE stream and
 // translates 29-bit J1939 identifiers into Nodra events. Device Agent remains

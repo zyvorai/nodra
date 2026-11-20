@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 VERSION ?= 0.2.2
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 # Logical backup of a Nodra PostgreSQL database. This is a pg_dump, not
 # continuous WAL archiving. Point-in-time recovery is a PostgreSQL operator
 # setting and is not performed by this script.

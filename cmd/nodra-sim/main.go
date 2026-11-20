@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Command nodra-sim seeds an A–Z user-demo fleet and continuously publishes
 // heartbeats, telemetry, twin sync, and detailed activity logs for the console.

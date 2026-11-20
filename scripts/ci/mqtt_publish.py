@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 """Publish one QoS 0 MQTT 3.1.1 message. Exits 0 when the broker accepts the TCP write."""
 import socket
 import sys

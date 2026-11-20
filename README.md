@@ -3,7 +3,7 @@
 # Nodra
 
 [![CI](https://github.com/zyvorai/nodra/actions/workflows/ci.yml/badge.svg)](https://github.com/zyvorai/nodra/actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![License: Zyvor Production 1.0](https://img.shields.io/badge/License-Zyvor_Production_1.0-1d1d1f.svg)](LICENSE)
 [![Version](https://img.shields.io/github/v/release/zyvorai/nodra?label=version&color=informational)](CHANGELOG.md)
 [![Go](https://img.shields.io/badge/Go-nodrad%20%C2%B7%20server%20%C2%B7%20nodractl-00ADD8?logo=go&logoColor=white)](go.mod)
 

@@ -1,5 +1,5 @@
 <!-- Copyright 2026 Zyvor AI Labs · https://zyvor.dev -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0 -->
 # Fleet policy packs
 
 "Fleet policy packs" had no prior definition anywhere in this project before
