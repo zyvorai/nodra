@@ -1,0 +1,585 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+openapi: 3.1.0
+info:
+  title: Nodra Edge API
+  version: 0.2.2
+  description: Offline-first edge runtime and control-plane API.
+servers:
+  - url: /api/v1
+components:
+  securitySchemes:
+    bearer: {type: http, scheme: bearer}
+  schemas:
+    EventInput:
+      type: object
+      required: [site_id, topic, payload]
+      properties:
+        event_id: {type: string}
+        site_id: {type: string}
+        topic: {type: string}
+        payload: {}
+        headers: {type: object, additionalProperties: {type: string}}
+        event_time: {type: string, format: date-time}
+    Route:
+      type: object
+      required: [name, topic, target_url]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        site_id: {type: string}
+        topic: {type: string}
+        target_url: {type: string, format: uri}
+        method: {type: string, enum: [POST, PUT, PATCH]}
+        enabled: {type: boolean}
+        retry_max: {type: integer, minimum: 1, maximum: 20}
+        timeout_seconds: {type: integer, minimum: 1, maximum: 60}
+    Twin:
+      type: object
+      properties:
+        device_id: {type: string}
+        site_id: {type: string}
+        desired: {type: object}
+        reported: {type: object}
+        desired_version: {type: integer}
+        reported_version: {type: integer}
+    ActivityEntry:
+      type: object
+      required: [message]
+      properties:
+        id: {type: string}
+        time: {type: string, format: date-time}
+        level: {type: string, enum: [info, warn, error, chapter, ok]}
+        source: {type: string}
+        chapter: {type: string}
+        site_id: {type: string}
+        site: {type: string}
+        action: {type: string}
+        message: {type: string}
+        detail: {type: object}
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: {type: string}
+        password: {type: string}
+    PolicyPack:
+      type: object
+      required: [name]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        version: {type: integer}
+        site_id: {type: string, description: Empty means fleet-wide}
+        enabled: {type: boolean}
+        allowed_images:
+          type: array
+          items: {type: string}
+          description: OCI image allowlist; * matches across /
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    AuditEntry:
+      type: object
+      required: [action, message]
+      properties:
+        id: {type: string}
+        time: {type: string, format: date-time}
+        actor: {type: string}
+        actor_type: {type: string, enum: [admin, viewer, agent, system]}
+        action: {type: string}
+        target: {type: string}
+        site_id: {type: string}
+        result: {type: string, enum: [ok, error, denied]}
+        message: {type: string}
+        detail: {type: object}
+paths:
+  /version:
+    get:
+      responses: {'200': {description: Build information}}
+  /auth/login:
+    post:
+      summary: Console login; returns admin bearer token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LoginRequest'}
+      responses:
+        '200': {description: Authenticated}
+        '401': {description: Invalid credentials}
+  /auth/me:
+    get:
+      security: [{bearer: []}]
+      summary: Current console user
+      responses:
+        '200': {description: User descriptor}
+        '401': {description: Unauthorized}
+  /auth/oidc/login:
+    get:
+      summary: Start OIDC console login (redirect to IdP)
+      responses:
+        '302': {description: Redirect to authorization endpoint}
+        '503': {description: OIDC not configured}
+  /auth/oidc/callback:
+    get:
+      summary: Complete OIDC login; redirects to console with bearer fragment
+      parameters:
+        - name: code
+          in: query
+          schema: {type: string}
+        - name: state
+          in: query
+          schema: {type: string}
+      responses:
+        '302': {description: Redirect with oidc_token fragment}
+        '403': {description: No configured group matched}
+        '503': {description: OIDC not configured}
+  /activity:
+    get:
+      security: [{bearer: []}]
+      summary: Recent console/simulation activity lines
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 1000, default: 250}
+      responses:
+        '200':
+          description: Activity entries (JSON array)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ActivityEntry'}
+    post:
+      security: [{bearer: []}]
+      summary: Append one or many activity entries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entries:
+                  type: array
+                  items: {$ref: '#/components/schemas/ActivityEntry'}
+              additionalProperties: true
+      responses:
+        '200': {description: Accepted entries}
+  /enroll:
+    post:
+      summary: Enroll a site with either the global enrollment token or an org's own enrollment token (from POST /orgs); the resulting site's org_id is set accordingly
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [name, enrollment_token], properties: {name: {type: string}, enrollment_token: {type: string}, csr_pem: {type: string}}}}}}
+      responses: {'201': {description: Site enrolled}, '401': {description: Bad bootstrap token}}
+  /events:
+    get:
+      security: [{bearer: []}]
+      summary: List recent ingested events (admin)
+      parameters:
+        - name: minutes
+          in: query
+          schema: {type: integer, minimum: 1}
+        - name: site_id
+          in: query
+          schema: {type: string}
+      responses: {"200": {description: Event list}}
+    post:
+      security: [{bearer: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EventInput'}}}}
+      responses: {"202": {description: Durably accepted}, "503": {description: Delivery queue unavailable}, "507": {description: Persistence failed}}
+  /overview:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Fleet overview}}
+  /sites:
+    get:
+      security: [{bearer: []}]
+      summary: List sites — a global admin/viewer token sees every site; an org-scoped token sees only its own org's sites
+      responses: {'200': {description: Sites}}
+  /routes:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Routes}}
+    post:
+      security: [{bearer: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Route'}}}}
+      responses: {'201': {description: Route created}}
+  /devices:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Devices}}
+  /twins:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Device twins}}
+  /twins/{id}/desired:
+    put:
+      security: [{bearer: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Desired twin updated}}
+  /devices/{id}/ota:
+    post:
+      security: [{bearer: []}]
+      summary: Set a device's desired OTA state (pkg/ota.Request)
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: Twin with the OTA request stored under desired.ota}
+        '400': {description: Invalid OTA request}
+        '404': {description: Device not found}
+    get:
+      security: [{bearer: []}]
+      summary: Read a device's current OTA request/status
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: Current OTA request/status extracted from the device's twin}
+        '404': {description: Device not found}
+  /ota/campaigns:
+    get:
+      security: [{bearer: []}]
+      summary: List staged multi-site OTA canary campaigns
+      responses: {'200': {description: Campaigns}}
+    post:
+      security: [{bearer: []}]
+      summary: Create a draft OTA canary campaign
+      responses:
+        '201': {description: Campaign created}
+        '400': {description: Invalid campaign}
+        '403': {description: Org-scoped token cannot target another org's sites}
+  /ota/campaigns/{id}:
+    get:
+      security: [{bearer: []}]
+      summary: Get an OTA campaign (refreshes per-device outcomes from twins)
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Campaign}, '404': {description: Not found}}
+  /ota/campaigns/{id}/start:
+    post:
+      security: [{bearer: []}]
+      summary: Start the first canary wave (writes Twin.Desired.ota for selected devices)
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Campaign running}, '409': {description: Invalid status}}
+  /ota/campaigns/{id}/promote:
+    post:
+      security: [{bearer: []}]
+      summary: Advance to the next canary wave
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Campaign promoted}, '409': {description: Invalid status or already final stage}}
+  /ota/campaigns/{id}/abort:
+    post:
+      security: [{bearer: []}]
+      summary: Abort a draft or running campaign (does not cancel in-flight device OTAs)
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Campaign aborted}, '409': {description: Already terminal}}
+  /deployments:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Deployments}}
+    post:
+      security: [{bearer: []}]
+      responses: {'201': {description: Deployment created}}
+  /deployments/{id}:
+    patch:
+      security: [{bearer: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version: {type: string}
+                image: {type: string}
+                desired_state: {type: string, enum: [running, stopped]}
+      responses: {'200': {description: Deployment updated}, '404': {description: Not found}}
+    delete:
+      security: [{bearer: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'204': {description: Deleted}, '404': {description: Not found}}
+  /alerts:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Alerts}}
+  /deadletters:
+    get:
+      security: [{bearer: []}]
+      responses: {'200': {description: Replayable dead letters}}
+  /heartbeat:
+    post:
+      security: [{bearer: []}]
+      summary: Site agent heartbeat
+      responses: {"200": {description: Accepted}, "401": {description: Unauthorized}}
+  /devices/register:
+    post:
+      security: [{bearer: []}]
+      summary: Register or refresh a device under the calling site
+      responses: {"200": {description: Device}, "201": {description: Created}}
+  /agent/deployments:
+    get:
+      security: [{bearer: []}]
+      summary: Deployments assigned to the calling site agent
+      parameters:
+        - name: site_id
+          in: query
+          schema: {type: string}
+      responses: {"200": {description: Deployment list}}
+  /agent/deployments/{id}/status:
+    post:
+      security: [{bearer: []}]
+      summary: Agent reports deployment reconcile status
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: Updated}, "404": {description: Not found}}
+  /agent/deployments/{id}/rollback:
+    post:
+      security: [{bearer: []}]
+      summary: Agent-triggered rollback to last known-good image/version
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id]
+              properties:
+                site_id: {type: string}
+                reason: {type: string}
+      responses:
+        '200': {description: rolled_back true/false}
+        '401': {description: Unauthorized agent}
+        '403': {description: Deployment belongs to another site}
+        '404': {description: Not found}
+  /agent/twins:
+    get:
+      security: [{bearer: []}]
+      summary: Desired twins for the calling site
+      responses: {"200": {description: Twin list}}
+  /agent/twins/{id}/reported:
+    post:
+      security: [{bearer: []}]
+      summary: Agent reports twin state
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: Updated}}
+  /agent/devices/{id}/ota/status:
+    post:
+      security: [{bearer: []}]
+      summary: Agent reports OTA status (pkg/ota.Status), validated against the lifecycle state machine
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [site_id, status]
+              properties:
+                site_id: {type: string}
+                status: {type: object}
+      responses:
+        '200': {description: Updated}
+        '400': {description: Invalid status}
+        '401': {description: Unauthorized agent}
+        '404': {description: Device not found}
+        '409': {description: Illegal state-machine transition}
+  /sites/{id}/revoke:
+    post:
+      security: [{bearer: []}]
+      summary: Revoke a site (admin) — an org-scoped admin token gets 404 (not 403) on a site outside its own org, so it can't confirm the site exists
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: Revoked}, "404": {description: Not found, or belongs to another org}}
+  /sites/{id}/rotate:
+    post:
+      security: [{bearer: []}]
+      summary: Agent certificate rotation (CSR re-sign)
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [csr_pem]
+              properties:
+                csr_pem: {type: string}
+      responses:
+        '200': {description: New certificate issued}
+        '401': {description: Unauthorized agent}
+        '403': {description: site_revoked}
+        '503': {description: PKI not enabled}
+  /ca/crl:
+    get:
+      summary: Current X.509 certificate revocation list (unauthenticated)
+      responses:
+        '200':
+          description: DER or PEM CRL
+          content:
+            application/pkix-crl: {schema: {type: string, format: binary}}
+        '503': {description: PKI not enabled}
+  /orgs:
+    get:
+      security: [{bearer: []}]
+      summary: List orgs (global admin token only — an org-scoped admin token gets 403)
+      responses:
+        '200': {description: Orgs, with token hashes always redacted}
+        '403': {description: Caller is not the global admin}
+    post:
+      security: [{bearer: []}]
+      summary: Create an org (global admin token only); returns its enrollment/admin/viewer tokens exactly once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [name], properties: {name: {type: string}}}
+      responses:
+        '201': {description: Created, includes enrollment_token/admin_token/viewer_token in plaintext once}
+        '400': {description: name is required}
+        '403': {description: Caller is not the global admin}
+  /orgs/{id}:
+    get:
+      security: [{bearer: []}]
+      summary: Get an org (global admin token only)
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: Org, with token hashes always redacted}
+        '403': {description: Caller is not the global admin}
+        '404': {description: Not found}
+    delete:
+      security: [{bearer: []}]
+      summary: Delete an org (global admin token only) — its already-enrolled sites keep their org_id but become invisible to any org-scoped token from then on
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        '204': {description: Deleted}
+        '403': {description: Caller is not the global admin}
+        '404': {description: Not found}
+  /policy-packs:
+    get:
+      security: [{bearer: []}]
+      summary: List fleet policy packs
+      responses:
+        '200':
+          description: Policy packs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/PolicyPack'}
+    post:
+      security: [{bearer: []}]
+      summary: Create a policy pack (allowed_images allowlist)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PolicyPack'}
+      responses:
+        '201': {description: Created}
+        '400': {description: Invalid}
+  /policy-packs/{id}:
+    patch:
+      security: [{bearer: []}]
+      summary: Update name, enabled, and/or allowed_images
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                enabled: {type: boolean}
+                allowed_images: {type: array, items: {type: string}}
+      responses:
+        '200': {description: Updated}
+        '404': {description: Not found}
+    delete:
+      security: [{bearer: []}]
+      summary: Delete a policy pack
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        '204': {description: Deleted}
+        '404': {description: Not found}
+  /audit:
+    get:
+      security: [{bearer: []}]
+      summary: Query durable audit log
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 1000}
+        - name: site_id
+          in: query
+          schema: {type: string}
+        - name: action
+          in: query
+          schema: {type: string}
+        - name: actor
+          in: query
+          schema: {type: string}
+        - name: cursor
+          in: query
+          schema: {type: string}
+      responses:
+        '200':
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AuditEntry'}
+  /audit/export:
+    get:
+      security: [{bearer: []}]
+      summary: Export audit log (downloadable)
+      parameters:
+        - name: site_id
+          in: query
+          schema: {type: string}
+        - name: action
+          in: query
+          schema: {type: string}
+      responses:
+        '200':
+          description: Exported audit records
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AuditEntry'}
+  /routes/{id}:
+    delete:
+      security: [{bearer: []}]
+      summary: Delete a cloud route
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"204": {description: Deleted}, "404": {description: Not found}}
+  /alerts/{id}/resolve:
+    post:
+      security: [{bearer: []}]
+      summary: Resolve an alert
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: Resolved}, "404": {description: Not found}}
+  /deadletters/{id}/replay:
+    post:
+      security: [{bearer: []}]
+      summary: Re-queue a dead letter for delivery
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: Replayed}, "404": {description: Not found}}
+  /deadletters/{id}:
+    delete:
+      security: [{bearer: []}]
+      summary: Drop a dead letter
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"204": {description: Deleted}, "404": {description: Not found}}
+  /healthz:
+    servers: [{url: /}]
+    get:
+      summary: Liveness probe
+      responses: {"200": {description: OK}}
+  /readyz:
+    servers: [{url: /}]
+    get:
+      summary: Readiness (store + delivery/DLQ)
+      responses: {"200": {description: Ready}, "503": {description: Not ready}}
+  /metrics:
+    servers: [{url: /}]
+    get:
+      summary: Prometheus text metrics
+      responses: {"200": {description: Metrics}}

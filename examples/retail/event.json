@@ -1,0 +1,4 @@
+{
+  "topic": "retail/store-042/inventory",
+  "payload": {"sku": "SKU-7741", "delta": -2, "shelf": "A7"}
+}

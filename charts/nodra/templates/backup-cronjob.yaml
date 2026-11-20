@@ -1,0 +1,46 @@
+{{- if .Values.backup.enabled }}
+{{- if not .Values.backup.existingClaim }}
+{{- fail "backup.enabled requires backup.existingClaim so the dump outlives the job" }}
+{{- end }}
+{{- if not .Values.backup.host }}
+{{- fail "backup.enabled requires backup.host" }}
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "nodra.fullname" . }}-pgdump
+  labels:
+    {{- include "nodra.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          automountServiceAccountToken: false
+          containers:
+            - name: pgdump
+              image: {{ .Values.backup.image | quote }}
+              command: ["pg_dump", "--format=custom", "--no-password", "--file=/backup/nodra.dump"]
+              env:
+                - name: PGDATABASE
+                  value: {{ .Values.backup.database | quote }}
+                - name: PGHOST
+                  value: {{ .Values.backup.host | quote }}
+                - name: PGUSER
+                  valueFrom: {secretKeyRef: {name: {{ .Values.backup.secretName | default (include "nodra.secretName" .) }}, key: {{ .Values.backup.userKey }}}}
+                - name: PGPASSWORD
+                  valueFrom: {secretKeyRef: {name: {{ .Values.backup.secretName | default (include "nodra.secretName" .) }}, key: {{ .Values.backup.passwordKey }}}}
+              volumeMounts:
+                - {name: backup, mountPath: /backup}
+          volumes:
+            - name: backup
+              {{- if .Values.backup.existingClaim }}
+              persistentVolumeClaim: {claimName: {{ .Values.backup.existingClaim }}}
+              {{- else }}
+              emptyDir: {}
+              {{- end }}
+{{- end }}

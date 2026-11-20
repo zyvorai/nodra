@@ -1,0 +1,11 @@
+stamp=2026-09-14T16:23:03Z
+base=https://127.0.0.1:18447
+{"status":"ready"}
+--- stop CP ---
+readyz_during=000down
+nodrad_running=yes (edge should spool)
+3790655 /usr/local/bin/nodrad --config /var/lib/nodrad/nodrad.json
+--- start CP ---
+readyz_after=2s ok
+{"status":"ready"}
+PASS nodra_wan_loss_abbreviated

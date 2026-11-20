@@ -1,0 +1,69 @@
+site_name: Nodra
+site_description: The edge runtime that keeps sites running when the cloud doesn't.
+site_url: https://zyvorai.github.io/nodra/
+repo_url: https://github.com/zyvorai/nodra
+repo_name: zyvorai/nodra
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: site
+theme:
+  name: material
+  logo: assets/readme/zyvor-logo.svg
+  favicon: assets/readme/zyvor-logo.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: blue
+      toggle: {icon: material/brightness-7, name: Switch to dark mode}
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: blue
+      toggle: {icon: material/brightness-4, name: Switch to light mode}
+  features: [navigation.tabs, navigation.sections, navigation.top, navigation.footer, content.code.copy, search.suggest, search.highlight, toc.follow]
+plugins: [search]
+hooks:
+  - docs/overrides/hooks.py
+extra_css:
+  - stylesheets/apple-glass.css
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - {name: mermaid, class: mermaid, format: !!python/name:pymdownx.superfences.fence_code_format }
+  - pymdownx.tabbed: {alternate_style: true}
+  - pymdownx.tasklist: {custom_checkbox: true}
+  - tables
+  - toc: {permalink: true}
+nav:
+  - Home: index.md
+  - FAQ: FAQ.md
+  - Troubleshooting: TROUBLESHOOTING.md
+  - Guides:
+      - Demo and user walkthrough: DEMO.md
+      - Architecture: ARCHITECTURE.md
+      - API guide: API.md
+      - Operations: OPERATIONS.md
+      - Production: PRODUCTION.md
+      - Upgrade: UPGRADE.md
+      - Qualification: QUALIFICATION.md
+      - Scale: SCALE.md
+      - Deployment: DEPLOYMENT.md
+      - Recovery: RECOVERY.md
+      - Integrations: INTEGRATIONS.md
+      - OTA integration: OTA_INTEGRATION.md
+      - Hardware permissions: HARDWARE_PERMISSIONS.md
+      - Relay bridge: RELAY.md
+      - Industrial protocols: INDUSTRIAL_PROTOCOLS.md
+      - NATS bridge: NATS_BRIDGE.md
+      - Policy packs: POLICY_PACKS.md
+  - Security & supply chain:
+      - Security model: SECURITY-MODEL.md
+      - Supply chain: SUPPLY_CHAIN.md
+extra:
+  social:
+    - {icon: fontawesome/brands/github, link: https://github.com/zyvorai/nodra}

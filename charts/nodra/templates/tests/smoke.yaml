@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "nodra.fullname" . }}-helm-test
+  labels:
+    {{- include "nodra.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  containers:
+    - name: smoke
+      image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      securityContext:
+        {{- toYaml .Values.containerSecurityContext | nindent 8 }}
+      env:
+        - name: NODRA_ADMIN_TOKEN
+          valueFrom: {secretKeyRef: {name: {{ include "nodra.secretName" . }}, key: admin-token}}
+        - name: NODRA_ENROLLMENT_TOKEN
+          valueFrom: {secretKeyRef: {name: {{ include "nodra.secretName" . }}, key: enrollment-token}}
+      command: ["sh", "-c"]
+      args:
+        - |
+          set -eu
+          base="http://{{ include "nodra.fullname" . }}:{{ .Values.service.port }}"
+          wget -qO- "$base/healthz" | grep -q '"status":"ok"'
+          wget -qO- "$base/readyz" | grep -qi ready
+          enrolled=$(wget -qO- --header='Content-Type: application/json' \
+            --post-data="{\"name\":\"helm-test\",\"enrollment_token\":\"${NODRA_ENROLLMENT_TOKEN}\"}" \
+            "$base/api/v1/enroll")
+          printf '%s' "$enrolled" | grep -q '"site_id"'
+          site=$(printf '%s' "$enrolled" | sed -n 's/.*"site_id":"\([^"]*\)".*/\1/p')
+          token=$(printf '%s' "$enrolled" | sed -n 's/.*"agent_token":"\([^"]*\)".*/\1/p')
+          test -n "$site" && test -n "$token"
+          wget -qO- --header='Content-Type: application/json' \
+            --header="Authorization: Bearer ${token}" \
+            --post-data="{\"site_id\":\"${site}\",\"topic\":\"helm/test\",\"payload\":{\"ok\":true}}" \
+            "$base/api/v1/events" | grep -q '"accepted":true'
+          wget -qO- --header="Authorization: Bearer ${NODRA_ADMIN_TOKEN}" \
+            "$base/api/v1/overview" | grep -q '"sites"'

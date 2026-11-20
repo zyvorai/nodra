@@ -1,0 +1,189 @@
+<!--
+Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#f5f5f7" />
+  <title>Nodra — Edge runtime</title>
+  <meta name="description" content="Nodra keeps sites moving when the cloud doesn't. Source-available edge runtime, local MQTT, offline queues, device twins and fleet control." />
+  <link rel="icon" type="image/svg+xml" href="/assets/zyvor-mark.svg" />
+  <link rel="stylesheet" href="/assets/app.css?v=3" />
+  <link rel="stylesheet" href="/assets/login.css?v=3" />
+</head>
+<body class="login-locked">
+  <!-- Kryton-style Apple Store chapter login -->
+  <div id="loginGate" class="auth-backdrop login-page login-store-page open" data-testid="login-page" aria-hidden="false">
+    <nav class="login-localnav" aria-label="Login chapters">
+      <a href="#login-product" data-login-chapter="login-product">Product</a>
+      <a href="#login-edge" data-login-chapter="login-edge">This edge</a>
+      <a href="#login-sign-in" data-login-chapter="login-sign-in">Sign in</a>
+      <span class="login-localnav-host" id="loginNavHost"></span>
+    </nav>
+    <main class="login-store-scroll" aria-label="Sign in to Nodra">
+      <section id="login-product" class="login-chapter login-chapter-hero" data-tone="zyvor" aria-label="Nodra">
+        <div class="login-chapter-inner">
+          <a class="login-mark-link" href="https://zyvor.dev" target="_blank" rel="noopener noreferrer" title="Zyvor">
+            <img class="login-mark brand-logo" src="/assets/zyvor-mark.svg" alt="Zyvor" width="56" height="56">
+          </a>
+          <p class="login-wordmark">Nodra</p>
+          <p class="login-byline">by Zyvor</p>
+          <h1 class="login-hero-title">Cloud optional.<br>Edge operational.</h1>
+          <p class="login-tagline">Nodra is Zyvor’s edge runtime — local MQTT, durable queues, device twins, and fleet control when the WAN disappears.</p>
+          <p class="login-tagline login-tagline-soft">Confirm this control plane, then sign in to open the console.</p>
+          <div class="login-pill-row">
+            <span class="login-pill" data-tone="sky"><span class="login-pill-dot" aria-hidden="true"></span>mqtt</span>
+            <span class="login-pill" data-tone="violet"><span class="login-pill-dot" aria-hidden="true"></span>twins</span>
+            <span class="login-pill" data-tone="emerald"><span class="login-pill-dot" aria-hidden="true"></span>offline</span>
+            <span class="login-pill" data-tone="amber"><span class="login-pill-dot" aria-hidden="true"></span>a–z sim</span>
+          </div>
+          <div class="login-cta">
+            <button type="button" class="login-cta-primary" data-login-chapter="login-edge">This edge</button>
+            <button type="button" class="login-cta-secondary" data-login-chapter="login-sign-in">Sign in</button>
+          </div>
+          <p class="login-chapter-note">Username + password · session storage for this tab</p>
+        </div>
+      </section>
+
+      <section id="login-edge" class="login-chapter login-chapter-destination" aria-label="This edge">
+        <div class="login-chapter-inner">
+          <p class="login-chapter-kicker">This edge</p>
+          <h2 class="login-dest-title" id="loginDestHost">localhost.</h2>
+          <p class="login-tagline">You are connecting to <strong style="color:#fff;font-weight:600">Nodra</strong> on this host — Zyvor’s edge control plane for this lab or cluster, not a public cloud console.</p>
+          <ul class="login-dest-facts">
+            <li class="login-dest-fact"><span class="login-dest-fact-label">Product</span><span class="login-dest-fact-value is-display">Nodra</span></li>
+            <li class="login-dest-fact"><span class="login-dest-fact-label">Host</span><span class="login-dest-fact-value" id="loginFactHost">—</span></li>
+            <li class="login-dest-fact"><span class="login-dest-fact-label">Port</span><span class="login-dest-fact-value" id="loginFactPort">—</span></li>
+            <li class="login-dest-fact"><span class="login-dest-fact-label">Origin</span><span class="login-dest-fact-value" id="loginFactOrigin">—</span></li>
+            <li class="login-dest-fact"><span class="login-dest-fact-label">Ready</span><span class="login-dest-fact-value" id="loginFactReady">—</span></li>
+            <li class="login-dest-fact"><span class="login-dest-fact-label">Version</span><span class="login-dest-fact-value" id="loginFactVersion">—</span></li>
+          </ul>
+          <div class="login-cta">
+            <button type="button" class="login-cta-primary" data-login-chapter="login-sign-in">Continue to sign in</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="login-sign-in" class="login-chapter login-chapter-sign-in" aria-label="Credentials">
+        <div class="login-chapter-inner login-sign-in-inner">
+          <img class="login-mark-sm" src="/assets/zyvor-mark.svg" alt="" width="36" height="36">
+          <p class="login-sign-in-context">Signing in to <strong>Nodra</strong> on <span class="login-apple-host" id="loginSignHost">localhost</span></p>
+          <p class="login-form-heading">Sign in to Nodra</p>
+          <p class="login-sign-in-blurb">Open the edge fleet console — sites, devices, streams, apps, dead letters, and live A–Z simulation logs.</p>
+          <div class="login-card" id="loginCard">
+            <form id="loginForm" class="login-apple-step" autocomplete="on">
+              <label for="loginUser" class="login-dest-fact-label" style="color:hsl(240 3% 46%);margin-bottom:.5rem;display:block">Username</label>
+              <input id="loginUser" class="login-input" name="username" type="text" autocomplete="username" required placeholder="admin" style="padding-left:1rem;margin-bottom:1rem">
+              <label for="loginPass" class="login-dest-fact-label" style="color:hsl(240 3% 46%);margin-bottom:.5rem;display:block">Password</label>
+              <input id="loginPass" class="login-input" name="password" type="password" autocomplete="current-password" required placeholder="••••••••" style="padding-left:1rem">
+              <p class="login-err" id="loginErr" hidden style="color:#d70015;font-size:13px;margin:10px 0 0;min-height:1.2em"></p>
+              <button class="login-btn-primary" type="submit" id="loginBtn">Sign in to Nodra</button>
+            </form>
+            <a id="oidcLoginLink" href="/api/v1/auth/oidc/login" class="login-security-note" style="display:block;text-align:center;margin-top:.75rem">Sign in with SSO</a>
+            <p class="login-security-note">Credentials stay in session storage for this browser tab only.</p>
+          </div>
+          <p class="login-hint">Lab default: <span class="login-apple-host">admin</span> / admin token from deploy (<span class="login-apple-host">nodra-lab-admin</span>).</p>
+        </div>
+      </section>
+    </main>
+    <p class="login-footer">Nodra by <a href="https://zyvor.dev" target="_blank" rel="noopener noreferrer">Zyvor</a> · Zyvor Production License · zyvor.dev</p>
+  </div>
+
+  <div id="appShell" class="app-shell" hidden>
+  <div class="ambient a1"></div><div class="ambient a2"></div>
+  <header class="nav shell">
+    <a class="brand" href="https://zyvor.dev" target="_blank" rel="noopener" aria-label="Zyvor home">
+      <svg class="brand-mark" width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 2h14L6.6 16H16" fill="none" stroke="#ff5a15" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/></svg>
+      <span><span class="brand-zyvor">zyvor</span> Nodra</span>
+    </a>
+    <nav id="navTabs">
+      <button data-tab="overview" class="active">Overview</button><button data-tab="sites">Sites</button><button data-tab="devices">Devices</button><button data-tab="streams">Streams</button><button data-tab="apps">Apps</button><button data-tab="dlq">Dead letters</button><button data-tab="logs">Logs</button>
+    </nav>
+    <button id="signOutBtn" class="ghost" type="button">Sign out</button>
+    <span id="roleChip" class="chip" title="Session role">Admin</span>
+  </header>
+
+  <main class="shell workspace">
+    <section class="hero" data-page="overview">
+      <div class="eyebrow"><span></span> EDGE RUNTIME · ZYVOR PRODUCTION LICENSE</div>
+      <h1>Cloud optional.<br><b>Edge operational.</b></h1>
+      <p>Run local MQTT, route data, reconcile applications, synchronize device twins, and preserve events through unreliable networks — without a SaaS dependency.</p>
+      <div class="hero-actions"><button id="refreshBtn" class="primary">Refresh fleet</button><a class="link" href="/api/v1/version">API status ↗</a></div>
+      <div class="signal" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+      <div class="stat-grid">
+        <article><small>Sites</small><strong id="sitesCount">—</strong><span id="siteHint">connect to load</span></article>
+        <article><small>Online now</small><strong id="onlineCount">—</strong><span>90-second heartbeat window</span></article>
+        <article><small>Cloud queue</small><strong id="queueCount">—</strong><span id="queueBytes">durable delivery WAL</span></article>
+        <article><small>Dead letters</small><strong id="dlqCount">—</strong><span>inspectable and replayable</span></article>
+      </div>
+
+      <div class="feature-grid">
+        <article class="feature-card dark terminal-card">
+          <div class="terminal-top"><div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div><span>Terminal — live simulation</span><span class="terminal-live" aria-hidden="true"></span></div>
+          <pre id="liveLogPreview" class="terminal-body terminal-scroll" aria-live="polite"><span class="muted">Waiting for A–Z simulation activity…</span></pre>
+        </article>
+        <article class="feature-card topology-card"><span class="feature-tag">ONE FABRIC</span><h2>Every edge path.<br>Visible.</h2><div class="topology"><div class="node source">Sensors<small>MQTT / HTTP</small></div><div class="beam"></div><div class="node core">Nodra<small>local runtime</small></div><div class="branches"><span></span><span></span><span></span></div><div class="targets"><div>MES</div><div>AI</div><div>Cloud</div></div></div></article>
+      </div>
+    </section>
+
+    <section class="page" data-page="sites" hidden><div class="page-head"><div><div class="eyebrow">FLEET</div><h2>Sites</h2><p>Heartbeat health, runtime version, queue pressure and certificate identity for every edge location.</p></div><span id="fleetState" class="chip">Disconnected</span></div><div id="sitesTable" class="table-card"></div></section>
+    <section class="page" data-page="devices" hidden><div class="page-head"><div><div class="eyebrow">DEVICE STATE</div><h2>Devices & twins</h2><p>Desired versus reported state, synchronized without coupling the device protocol to the cloud.</p></div></div><div class="split"><div><h3>Devices</h3><div id="devicesTable" class="table-card"></div></div><div><h3>Twins</h3><div id="twinsTable" class="table-card"></div></div></div></section>
+    <section class="page" data-page="streams" hidden>
+      <div class="page-head"><div><div class="eyebrow">DATA PLANE</div><h2>Streams</h2><p>MQTT-style topic filters to durable HTTP destinations, plus local agent routes that continue offline.</p></div>
+        <button id="seedRouteBtn" class="ghost" data-admin-only type="button">Create demo route</button>
+      </div>
+      <form id="routeForm" class="inline-form" data-admin-only>
+        <input id="routeName" required placeholder="Route name" />
+        <input id="routeTopic" required placeholder="Topic filter e.g. factory/+/telemetry" />
+        <input id="routeTarget" required placeholder="https://destination.example/events" />
+        <button class="primary" type="submit">Add route</button>
+      </form>
+      <div id="routesTable" class="table-card"></div>
+    </section>
+    <section class="page" data-page="apps" hidden>
+      <div class="page-head"><div><div class="eyebrow">EDGE APPS</div><h2>Applications</h2><p>Desired-state container reconciliation at remote sites, with health flowing back to the control plane.</p></div></div>
+      <form id="depForm" class="inline-form" data-admin-only>
+        <input id="depSite" required placeholder="Site ID" />
+        <input id="depName" required placeholder="App name" />
+        <input id="depVersion" required placeholder="Version" />
+        <input id="depImage" required placeholder="ghcr.io/org/app:tag" />
+        <select id="depDesired"><option value="running">running</option><option value="stopped">stopped</option></select>
+        <button class="primary" type="submit">Deploy</button>
+      </form>
+      <div id="deploymentsTable" class="table-card"></div>
+      <div class="section-gap"></div>
+      <div class="page-head compact"><div><div class="eyebrow">ATTENTION</div><h3>Open alerts</h3></div></div>
+      <div class="terminal-card"><div class="terminal-top"><div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div><span>Terminal — alerts</span><span></span></div><div id="alertsTable" class="table-card terminal"></div></div>
+    </section>
+    <section class="page" data-page="dlq" hidden><div class="page-head"><div><div class="eyebrow">RECOVERY</div><h2>Dead letters</h2><p>Failed deliveries are retained with their payload and retry history. Replay them when the destination is healthy.</p></div></div><div class="terminal-card"><div class="terminal-top"><div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div><span>Terminal — dead letters</span><span></span></div><div id="dlqTable" class="table-card terminal"></div></div></section>
+    <section class="page" data-page="logs" hidden>
+      <div class="page-head">
+        <div>
+          <div class="eyebrow">A–Z SIMULATION</div>
+          <h2>Logs</h2>
+          <p>Detailed live feed of what Nodra and the A–Z simulator are doing — enrollments, heartbeats, telemetry, twins, routes, and dead letters.</p>
+        </div>
+        <button id="refreshLogsBtn" class="ghost" type="button">Refresh logs</button>
+      </div>
+      <div class="terminal-card log-terminal">
+        <div class="terminal-top">
+          <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+          <span>Terminal — nodra activity · A→Z</span>
+          <span class="terminal-live" aria-hidden="true"></span>
+        </div>
+        <pre id="activityLog" class="terminal-body terminal-scroll tall" aria-live="polite"></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="shell footer"><span>Nodra v0.2 · Zyvor Production License · Built by Zyvor</span><span>Run apps. Move data. Control the edge.</span></footer>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="/assets/app.js?v=3"></script>
+</body>
+</html>

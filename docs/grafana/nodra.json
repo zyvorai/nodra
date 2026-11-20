@@ -1,0 +1,27 @@
+{
+  "title": "Nodra",
+  "uid": "nodra",
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Events accepted",
+      "targets": [{"expr": "nodra_events_total", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Duplicate events",
+      "targets": [{"expr": "nodra_events_duplicate_total", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Pending deliveries",
+      "targets": [{"expr": "nodra_pending_deliveries", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Dead letters",
+      "targets": [{"expr": "nodra_dead_letters", "refId": "A"}]
+    }
+  ]
+}

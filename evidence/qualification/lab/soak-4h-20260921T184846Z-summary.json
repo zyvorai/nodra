@@ -1,0 +1,39 @@
+{
+  "generated_at": "2026-09-21T22:49:56Z",
+  "duration_s": 14400,
+  "interrupted": false,
+  "lab_mode": true,
+  "wan_cycles_run": 0,
+  "disk_cycles_run": 0,
+  "ready_ceiling_s": 30,
+  "samples_path": "samples.jsonl",
+  "wan_cycles_path": "wan-cycles.jsonl",
+  "disk_cycles_path": "disk-cycles.jsonl",
+  "metrics": {
+    "events_start": 150,
+    "events_end": 838,
+    "deliveries_start": 0,
+    "deliveries_end": 1680,
+    "dead_letters_start": 0,
+    "dead_letters_end": 1,
+    "delivery_failures_start": 0,
+    "delivery_failures_end": 3,
+    "pending_deliveries_end": 5
+  },
+  "integrity": {
+    "http_accepted": 6196,
+    "mqtt_published": 6198,
+    "events_persisted": 45981,
+    "deliveries_forwarded": 18389,
+    "dead_letters": 7,
+    "duplicates": 1682,
+    "pending_end": 5,
+    "spool_end": 3280
+  },
+  "restarts": {
+    "control_plane_start": 0,
+    "control_plane_end": 0,
+    "edge_agent_start": 0,
+    "edge_agent_end": 0
+  }
+}

@@ -1,0 +1,13 @@
+name: Feature request
+description: Propose a concrete edge use case
+title: "[feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes: {label: Edge problem, description: What real site or operator problem should Nodra solve?}
+    validations: {required: true}
+  - type: textarea
+    id: proposal
+    attributes: {label: Proposed behavior}
+    validations: {required: true}

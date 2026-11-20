@@ -1,0 +1,100 @@
+# Production install. This is one control-plane replica on PostgreSQL.
+# It is not a qualified HA deployment: replicaCount stays 1 until soak and PITR pass.
+#
+#   kubectl -n nodra create secret generic nodra-production \
+#     --from-literal=admin-token=... \
+#     --from-literal=admin-user=admin \
+#     --from-literal=admin-password=... \
+#     --from-literal=enrollment-token=... \
+#     --from-literal=agent-local-token=... \
+#     --from-literal=database-url='postgres://nodra:pass@10.8.0.10:5432/nodra?sslmode=require'
+#   helm upgrade --install nodra charts/nodra -n nodra --create-namespace -f charts/nodra/values-production.yaml
+#   helm -n nodra test nodra
+#
+# Replace the egress database CIDR and the ingress namespace label before install.
+# Webhook destinations are blocked until you add their CIDRs under networkPolicy.egress.rules.
+# Point-in-time recovery is not configured by this file.
+
+replicaCount: 1
+
+image:
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: nodra.example.com
+      paths:
+        - {path: /, pathType: Prefix}
+  tls:
+    - secretName: nodra-tls
+      hosts: [nodra.example.com]
+
+certManager:
+  enabled: true
+  issuerName: nodra-ca
+  issuerKind: ClusterIssuer
+  secretName: nodra-tls
+
+secrets:
+  existingSecret: nodra-production
+
+server:
+  store: postgres
+  deliveryWorkers: 8
+  pkiEnabled: true
+
+probes:
+  startup:
+    enabled: true
+    periodSeconds: 5
+    failureThreshold: 36
+
+persistence:
+  enabled: true
+  size: 20Gi
+  annotations: {}
+
+resources:
+  requests: {cpu: 250m, memory: 256Mi}
+  limits: {cpu: "1", memory: 1Gi}
+
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+  egress:
+    enabled: true
+    rules:
+      - cidr: 10.8.0.10/32 # replace with the PostgreSQL address
+        port: 5432
+        protocol: TCP
+
+monitoring:
+  podMonitor:
+    enabled: true
+    namespace: monitoring
+  prometheusRule:
+    enabled: true
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: nodra
+        app.kubernetes.io/component: control-plane
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+agent:
+  enabled: false
+
+simulation:
+  enabled: false
