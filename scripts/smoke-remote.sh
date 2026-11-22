@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 # smoke-remote.sh — Verify a running Nodra control plane
 # ============================================================================
 # Usage:
@@ -66,7 +66,7 @@ grep -Fq 'Sign in to Nodra' "${TMP}/nodra-dash.html" || fail "login chapter miss
 grep -Fq 'login-store-page' "${TMP}/nodra-dash.html" || fail "Kryton-style login store missing"
 grep -Fq 'login-wordmark' "${TMP}/nodra-dash.html" || fail "login wordmark missing"
 grep -qi 'zyvor' "${TMP}/nodra-dash.html" || fail "missing Zyvor brand"
-grep -qi 'Zyvor Production License' "${TMP}/nodra-dash.html" || fail "footer missing Zyvor Production License"
+grep -qi 'Zyvor Production Licence' "${TMP}/nodra-dash.html" || fail "footer missing Zyvor Production Licence"
 grep -Fq 'data-tab="logs"' "${TMP}/nodra-dash.html" || fail "Logs tab missing"
 pass "login chapter + Kryton store + Logs tab"
 

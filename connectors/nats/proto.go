@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package nats implements a dependency-free, hand-rolled NATS core client
 // (INFO/CONNECT/SUB/MSG/PING/PONG/-ERR only — no clustering, no JetStream,

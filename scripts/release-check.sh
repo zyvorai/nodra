@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 set -euo pipefail
 cd "$(dirname "$0")/.."
 echo '[1/7] formatting'
@@ -22,5 +22,5 @@ PY
 echo '[6/7] local end-to-end smoke'
 ./scripts/smoke.sh
 echo '[7/7] license/readme checks'
-test -s LICENSE; test -s README.md; grep -q 'Zyvor Production License' LICENSE; grep -q 'Offline-first' README.md
+test -s LICENSE; test -s README.md; grep -q 'Zyvor Production Licence' LICENSE; grep -q 'Offline-first' README.md
 echo 'release-check: PASS'

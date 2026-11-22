@@ -1,5 +1,5 @@
 -- Copyright 2026 Zyvor AI Labs · https://zyvor.dev
--- SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+-- SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 -- Normalized columns and optimistic-concurrency revisions.
 -- JSON data remains the document. Columns are written on every upsert so

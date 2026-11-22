@@ -10,7 +10,7 @@ hero:
     - {label: "MQTT 3.1.1"}
     - {label: "HTTP ingress"}
     - {label: "Modbus TCP/RTU"}
-    - {label: "Zyvor Production License"}
+    - {label: "Zyvor Production Licence"}
   highlights:
     - {value: "v0.2.2", label: "Current release", footnote: "1"}
     - {value: "26", label: "Lettered fleet sites simulated end-to-end by nodra-sim", footnote: "2"}
