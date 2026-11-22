@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for improving Nodra. Nodra is source-available under the Zyvor Production License v1.0, not open source. Please email sales@zyvor.dev before sending a change so we can agree scope.
+Thanks for improving Nodra. Nodra is source-available under the Zyvor Production Licence v2.0, not open source. Please email sales@zyvor.dev before sending a change so we can agree scope.
 
 1. Create a focused branch in your own checkout.
 2. Run `make fmt`, `make vet`, and `make race`.
@@ -10,7 +10,7 @@ Thanks for improving Nodra. Nodra is source-available under the Zyvor Production
 6. Update docs when you change operator-facing behavior (`README.md`, `docs/API.md`, `docs/openapi.yaml`, `docs/DEMO.md` as relevant).
 7. Open a pull request describing the failure mode or use case, the change, and how it was tested.
 
-By submitting a contribution, you agree that it is licensed under the Zyvor Production License v1.0 (SPDX `LicenseRef-Zyvor-Production-1.0`).
+By submitting a contribution, you agree that it is licensed under the Zyvor Production Licence v2.0 (SPDX `LicenseRef-Zyvor-Production-2.0`).
 
 ## Design principles
 

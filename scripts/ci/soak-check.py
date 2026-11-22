@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 """Judge pass/fail for a scripts/ci/soak.sh run from its summary.json.
 
 Re-derives criteria independently of soak.sh's own exit code, per

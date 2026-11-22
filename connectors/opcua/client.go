@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package opcua implements a dependency-free OPC-UA (UA-TCP binary) client
 // suitable for Nodra adapters. Default scope is SecurityPolicy None with an
