@@ -14,6 +14,22 @@
 
 ## Unreleased
 
+- Dependency and toolchain upgrade sweep: Go directive 1.26 (CI matrix 1.26.x/1.27.x),
+  pgx v5.13.0, puddle v2.2.4, x/sync v0.25.0, x/text v0.44.0; GitHub Actions
+  moved to latest majors (checkout v7, setup-python v7, download-artifact v8,
+  attest-build-provenance v4, setup-helm v5, build-push v7, login v4,
+  metadata v6, setup-qemu v4, cosign-installer v4); CI Python 3.14; PyYAML 6.0.4,
+  mkdocs 1.6.1, mkdocs-material 9.8.2; soak compose python:3.14-alpine; chart
+  backup image postgres:18-alpine (pg_dump client is forward compatible with
+  older servers).
+- Held back: `anchore/sbom-action@v0` (project only publishes the floating v0
+  line; latest tag v0.24.3), `github/codeql-action@v4` (v4 is current),
+  Dockerfile `golang:1.27-alpine` and `alpine:3.24` (already latest published
+  tags), Chart `version`/`appVersion` and k8s manifest image tags (track the
+  app release, not upgraded independently), Python 3.15 (3.14 chosen for wheel
+  availability). Go 1.28 does not exist yet.
+- Fix `TestNewPollerRTUDefaults` failing on non-Linux hosts (now skipped).
+
 - Operator upgrade/rollback procedure for v0.2.0 and v0.2.1 → current
   (`docs/UPGRADE.md`), with contiguous migration load test and lab soak
   ingest enabled under `NODRA_SOAK_LAB=1` (HTTPS-aware curl, local sink).

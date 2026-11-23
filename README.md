@@ -106,7 +106,7 @@ Planned: Zenoh, Kafka bridge. See `pkg/connector` and [ROADMAP.md](ROADMAP.md).
 
 ## Quickstart
 
-Requires Go 1.25+ to build (`make build`); the Kubernetes demo uses kind + Helm.
+Requires Go 1.26+ to build (`make build`); the Kubernetes demo uses kind + Helm.
 
 ### Build
 

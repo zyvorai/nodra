@@ -10,7 +10,7 @@ services:
       - "127.0.0.1:6060:6060"
 
   sink:
-    image: python:3.13-alpine
+    image: python:3.14-alpine
     command:
       - python3
       - -c

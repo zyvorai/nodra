@@ -7,10 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"runtime"
 	"testing"
 )
 
 func TestNewPollerRTUDefaults(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("serial support requires Linux")
+	}
 	raw, _ := json.Marshal(PollerConfig{Transport: "rtu", Device: "/dev/ttyS1", UnitID: 1, Topic: "factory/plc", Quantity: 2})
 	c, err := NewPoller("plc", raw)
 	if err != nil {
