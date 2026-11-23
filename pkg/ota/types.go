@@ -72,6 +72,13 @@ type Manifest struct {
 	BundleFormat      string       `json:"bundle_format,omitempty"`
 	MinimumBootloader string       `json:"minimum_bootloader,omitempty"`
 	RollbackSupported bool         `json:"rollback_supported"`
+	// KeyID, Counter, IssuedAt and ExpiresAt are covered by Signature (see
+	// SigningBytes / Verifier). Counter is a per-lineage monotonic version
+	// used for anti-rollback; it is not parsed from Version.
+	KeyID     string    `json:"key_id,omitempty"`
+	Counter   uint64    `json:"counter,omitempty"`
+	IssuedAt  time.Time `json:"issued_at,omitzero"`
+	ExpiresAt time.Time `json:"expires_at,omitzero"`
 }
 
 // Policy contains per-device execution policy. Nodra OTA campaigns

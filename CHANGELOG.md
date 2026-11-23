@@ -43,6 +43,19 @@
   `GET /api/v1/twins/drift`, `nodra_twins_drifted` metric.
 - Add `docs/RESEARCH.md` (edge/IIoT survey and ranked ideas) and
   `docs/EDGE_INTELLIGENCE.md`.
+- Add an offline rule engine (`internal/rules`, `rules_file`): hysteresis
+  alarms with debounce, rate limits and site-local time windows, strict
+  line-numbered validation, state persisted across restarts (no re-fire),
+  `emit`/`alert` actions only, `GET /v1/rules` and the replay endpoint
+  `POST /v1/rules/evaluate`.
+- Add `POST /api/v1/twins/plan`: fleet-wide desired-config dry run with
+  per-device diff, schema validation and a stable `plan_hash`.
+- Fix `PUT /twins/{id}/desired` erasing an in-flight `desired.ota` request.
+- Add signed-manifest verification (Ed25519), artifact digest/size checks,
+  anti-rollback counters and a staged rollout controller with health-based halt
+  and rollback to `pkg/ota` (library and tests; not yet wired to campaigns).
+  `ota.Manifest` gained `key_id`, `counter`, `issued_at`, `expires_at`.
+- MQTT 5 not added: the broker is MQTT 3.1.1 only and would need a rewrite.
 
 - Operator upgrade/rollback procedure for v0.2.0 and v0.2.1 → current
   (`docs/UPGRADE.md`), with contiguous migration load test and lab soak

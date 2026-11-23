@@ -92,6 +92,7 @@ Org management itself (`GET|POST /orgs`, `GET|DELETE /orgs/{id}`) is restricted 
 - `PUT /twins/{deviceID}/desired` — set desired state; validated against the twin's schema when one is set (`422` with `violations` otherwise). `?dry_run=true` returns `{valid, violations, changes}` without storing anything or bumping the version
 - `PUT /twins/{deviceID}/schema` — register (or clear with `{"schema": null}`) a JSON-Schema-subset for the twin's desired state; unsupported keywords are rejected with `400`
 - `GET /twins/{deviceID}/drift` — desired-vs-reported drift and schema violations for one twin
+- `POST /twins/plan` — fleet-wide desired-config dry run: per-device diff, schema violations and a stable `plan_hash`; stores nothing (`400` on empty/oversized plans)
 - `GET /twins/drift` — every visible out-of-sync twin (`?all=true` includes in-sync ones)
 - `POST /devices/{id}/ota` — set desired OTA state (`pkg/ota.Request`, validated)
 - `GET /devices/{id}/ota` — read a device's current OTA request/status
@@ -161,6 +162,8 @@ See [`openapi.yaml`](openapi.yaml) for schemas. Coverage of mux routes is gated 
 ## Edge-local additions (nodrad, port 9091)
 
 - `GET /v1/sparkplug` — tracked Sparkplug B node/device state, primary-host state and decode counters (needs `sparkplug_enabled`)
+- `GET /v1/rules` — offline rule engine state, counters and firing alarms (needs `rules_file`)
+- `POST /v1/rules/evaluate` — dry-run replay of recorded messages against a rule set; nothing is persisted or executed
 - `GET /v1/spool/forecast` — store-and-forward capacity forecast (also embedded in `/healthz` as `spool_forecast`)
 
 See [Edge intelligence](EDGE_INTELLIGENCE.md).

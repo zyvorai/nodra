@@ -45,11 +45,11 @@ OTLP metrics, Postgres fleet store.
 | 1 | Sparkplug B decoding with birth/death/seq tracking | Highest practical value for brownfield plants (Ignition and similar already publish it); fits the existing MQTT ingress; pure parsing, testable with hostile input; no new dependency | **Built** |
 | 2 | Spool capacity forecast (time-to-full vs outage duration) | Directly serves the product's offline-first promise; none of the surveyed buffers (Greengrass streams, IoT Edge hub TTL) surface a projected fill time; small, deterministic, and cheap on constrained hardware | **Built** |
 | 3 | Twin schema validation, drift and desired-state dry-run | Closes the Ditto/WoT gap with a strict JSON-Schema subset; makes OTA/config rollouts safer; reuses the twin model and Postgres docs unchanged | **Built** |
-| 4 | Offline rule engine with time windows and hysteresis | eKuiper parity for the most common industrial need (alarm debouncing); needs per-rule state persisted across restarts to be honest | Deferred: state persistence design is larger than this change |
-| 5 | Uptane-style two-repository OTA metadata with rollback counters | Strongest OTA security upgrade; large scope (key hierarchy, metadata formats, device-side verifier) | Deferred |
-| 6 | MQTT 5 (topic alias, shared subscriptions, expiry) | Common broker feature; requires a new packet codec and property parsing in the broker | Deferred |
+| 4 | Offline rule engine with time windows and hysteresis | eKuiper parity for the most common industrial need (alarm debouncing); needs per-rule state persisted across restarts to be honest | **Built** (`internal/rules`; state persisted via the agent's atomic JSON store) |
+| 5 | Uptane-style two-repository OTA metadata with rollback counters | Strongest OTA security upgrade; large scope (key hierarchy, metadata formats, device-side verifier) | Partly built: signed Ed25519 manifests, anti-rollback counters and staged rollout safety logic in `pkg/ota` (no two-repository metadata, not wired to campaigns) |
+| 6 | MQTT 5 (topic alias, shared subscriptions, expiry) | Common broker feature; requires a new packet codec and property parsing in the broker | Deferred; re-checked: `internal/mqtt` is MQTT 3.1.1 only, so this still needs a broker rewrite |
 | 7 | Hardware-bound device identity (TPM DevID / SPIFFE) | Valuable for fleets, but depends on platform hardware and an attestation service | Deferred |
 | 8 | Edge ML inference gating | No usable research results; unclear fit with a ~800 KB runtime | Rejected for now |
-| - | Fleet-wide config diff | Partially delivered: per-twin `dry_run` diff; fleet-wide multi-device dry-run not built | Partial |
+| - | Fleet-wide config diff | `POST /api/v1/twins/plan` with stable plan hash; apply step not built | **Built** (dry-run) |
 
 See [Edge intelligence](EDGE_INTELLIGENCE.md) for the delivered features.

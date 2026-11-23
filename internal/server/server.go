@@ -409,6 +409,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET /api/v1/twins", s.admin(http.HandlerFunc(s.twins)))
 	mux.Handle("PUT /api/v1/twins/{id}/desired", s.admin(http.HandlerFunc(s.twinDesired)))
 	mux.Handle("PUT /api/v1/twins/{id}/schema", s.admin(http.HandlerFunc(s.twinSchemaSet)))
+	mux.Handle("POST /api/v1/twins/plan", s.admin(http.HandlerFunc(s.fleetPlanHandler)))
 	mux.Handle("GET /api/v1/twins/drift", s.admin(http.HandlerFunc(s.twinsDrift)))
 	mux.Handle("GET /api/v1/twins/{id}/drift", s.admin(http.HandlerFunc(s.twinDrift)))
 	mux.Handle("POST /api/v1/devices/{id}/ota", s.admin(http.HandlerFunc(s.otaDeviceRequest)))
@@ -1576,6 +1577,18 @@ func (s *Server) twinDesired(w http.ResponseWriter, r *http.Request) {
 	viol := twinschema.Validate(cur.Schema, in.Desired)
 	if cur.Schema == nil {
 		viol = nil
+	}
+	// desired.ota carries the in-flight OTA request and is owned by the OTA
+	// endpoints: a config write must not silently erase it.
+	if o, has := cur.Desired["ota"]; has {
+		if _, given := in.Desired["ota"]; !given {
+			merged := make(map[string]any, len(in.Desired)+1)
+			for k, v := range in.Desired {
+				merged[k] = v
+			}
+			merged["ota"] = o
+			in.Desired = merged
+		}
 	}
 	if r.URL.Query().Get("dry_run") == "true" {
 		// Preview only: nothing is stored, no version is bumped.
