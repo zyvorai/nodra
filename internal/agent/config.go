@@ -97,6 +97,10 @@ type Config struct {
 	// SparkplugEnabled decodes Sparkplug B (spBv1.0/...) MQTT traffic into
 	// JSON, tracks birth/death state and exposes GET /v1/sparkplug.
 	SparkplugEnabled bool `json:"sparkplug_enabled,omitempty"`
+	// RulesFile is a JSON offline rule set (internal/rules): hysteresis, debounce,
+	// rate limits and time windows evaluated locally; firing state persists in
+	// data_dir/rules-state.json. Invalid files fail startup with line numbers.
+	RulesFile string `json:"rules_file,omitempty"`
 }
 
 func DefaultConfig() Config {

@@ -36,6 +36,7 @@ import (
 	"github.com/zyvorai/nodra/internal/pki"
 	"github.com/zyvorai/nodra/internal/queue"
 	"github.com/zyvorai/nodra/internal/router"
+	"github.com/zyvorai/nodra/internal/rules"
 	"github.com/zyvorai/nodra/internal/sparkplug"
 	"github.com/zyvorai/nodra/internal/transform"
 	"github.com/zyvorai/nodra/internal/version"
@@ -66,6 +67,11 @@ type Agent struct {
 	sparkplug          *sparkplug.Tracker
 	sparkplugInvalid   atomic.Uint64
 	sparkplugAnomalies atomic.Uint64
+
+	rules       *rules.Engine
+	rulesSet    *rules.RuleSet
+	rulesNow    func() time.Time
+	rulesSaveMu sync.Mutex
 }
 
 // agentHealth tracks one deployment's current (image, version) and when it
@@ -102,6 +108,9 @@ func New(cfg Config, configPath string) (*Agent, error) {
 	}
 	if cfg.SparkplugEnabled {
 		a.sparkplug = sparkplug.NewTracker()
+	}
+	if err = a.loadRules(); err != nil {
+		return nil, err
 	}
 	a.loadTwins()
 	a.http = &http.Server{Addr: cfg.Listen, Handler: a.localRoutes(), ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second}
@@ -219,6 +228,10 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 	}
 	a.wg.Add(7)
+	if a.rules != nil {
+		a.wg.Add(1)
+		go a.rulesLoop(ctx)
+	}
 	go a.forecastLoop(ctx)
 	go a.heartbeatLoop(ctx)
 	go a.flushLoop(ctx)
@@ -307,6 +320,8 @@ func (a *Agent) localRoutes() http.Handler {
 	mux.HandleFunc("GET /v1/audit", a.localAuditList)
 	mux.HandleFunc("GET /v1/sparkplug", a.localSparkplug)
 	mux.HandleFunc("GET /v1/spool/forecast", a.localSpoolForecast)
+	mux.HandleFunc("GET /v1/rules", a.localRules)
+	mux.HandleFunc("POST /v1/rules/evaluate", a.localRulesEvaluate)
 	return mux
 }
 func (a *Agent) localAuth(r *http.Request) bool {
@@ -408,6 +423,12 @@ func (a *Agent) ingest(ctx context.Context, topic string, payload json.RawMessag
 	return a.ingestWithTime(ctx, topic, payload, headers, time.Time{})
 }
 func (a *Agent) ingestWithTime(ctx context.Context, topic string, payload json.RawMessage, headers map[string]string, eventTime time.Time) (string, error) {
+	return a.ingestCore(ctx, topic, payload, headers, eventTime, a.rules != nil)
+}
+
+// ingestCore spools and routes an event. evalRules is false for events the
+// rule engine itself emits, so rules can never trigger rules.
+func (a *Agent) ingestCore(ctx context.Context, topic string, payload json.RawMessage, headers map[string]string, eventTime time.Time, evalRules bool) (string, error) {
 	if topic == "" || len(payload) == 0 {
 		return "", errors.New("topic and payload are required")
 	}
@@ -417,6 +438,9 @@ func (a *Agent) ingestWithTime(ctx context.Context, topic string, payload json.R
 	ev := model.Event{ID: localID(), SiteID: a.cfg.SiteID, Topic: topic, Payload: append(json.RawMessage(nil), payload...), Headers: headers, EventTime: eventTime, CreatedAt: eventTime}
 	if err := a.spool.Put(ev.ID, ev); err != nil {
 		return "", err
+	}
+	if evalRules && a.rules != nil {
+		a.runRules(ctx, topic, ev.Payload)
 	}
 	for i, rt := range a.cfg.LocalRoutes {
 		if !router.Match(rt.Topic, topic) {
@@ -565,6 +589,7 @@ func (a *Agent) heartbeat(ctx context.Context) {
 	m["spool_fill_ratio"] = fc.FillRatio
 	m["spool_risk"] = fc.Risk
 	m["uplink_outage_seconds"] = fc.OutageSeconds
+	m["rules_firing"] = a.rulesFiring()
 	b, _ := json.Marshal(map[string]any{"site_id": a.cfg.SiteID, "version": version.Version, "metrics": m})
 	resp, err := a.do(ctx, "POST", "/api/v1/heartbeat", b)
 	if err != nil {
