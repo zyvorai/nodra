@@ -243,6 +243,23 @@ paths:
       responses:
         '200': {description: Drift report}
         '404': {description: Twin not found}
+  /twins/plan:
+    post:
+      security: [{bearer: []}]
+      summary: Dry-run a desired fleet config (per-device diff, validation, stable plan_hash); stores nothing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                defaults: {type: object}
+                site_ids: {type: array, items: {type: string}}
+                devices: {type: object, additionalProperties: {type: object}}
+      responses:
+        '200': {description: "Plan with per-device status (change, unchanged, invalid, unknown_device), summary, valid and plan_hash"}
+        '400': {description: Empty, malformed or oversized plan}
   /twins/drift:
     get:
       security: [{bearer: []}]
