@@ -94,6 +94,9 @@ type Config struct {
 	// QoS0/1 only).
 	MQTTSessionMaxItems int   `json:"mqtt_session_max_items,omitempty"`
 	MQTTSessionMaxBytes int64 `json:"mqtt_session_max_bytes,omitempty"`
+	// SparkplugEnabled decodes Sparkplug B (spBv1.0/...) MQTT traffic into
+	// JSON, tracks birth/death state and exposes GET /v1/sparkplug.
+	SparkplugEnabled bool `json:"sparkplug_enabled,omitempty"`
 }
 
 func DefaultConfig() Config {

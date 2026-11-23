@@ -72,7 +72,9 @@ type Twin struct {
 	Reported        map[string]any `json:"reported,omitempty"`
 	DesiredVersion  uint64         `json:"desired_version"`
 	ReportedVersion uint64         `json:"reported_version"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	// Schema optionally constrains Desired (see internal/twinschema).
+	Schema    map[string]any `json:"schema,omitempty"`
+	UpdatedAt time.Time      `json:"updated_at"`
 }
 
 type Route struct {

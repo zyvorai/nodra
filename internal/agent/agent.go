@@ -36,6 +36,7 @@ import (
 	"github.com/zyvorai/nodra/internal/pki"
 	"github.com/zyvorai/nodra/internal/queue"
 	"github.com/zyvorai/nodra/internal/router"
+	"github.com/zyvorai/nodra/internal/sparkplug"
 	"github.com/zyvorai/nodra/internal/transform"
 	"github.com/zyvorai/nodra/internal/version"
 	"github.com/zyvorai/nodra/pkg/connector"
@@ -58,6 +59,13 @@ type Agent struct {
 	revoked         atomic.Bool
 	healthMu        sync.Mutex
 	health          map[string]agentHealth
+
+	forecast           *queue.Forecaster
+	startedAt          time.Time
+	lastUplink         atomic.Int64 // unix nanos of the last successful control-plane response
+	sparkplug          *sparkplug.Tracker
+	sparkplugInvalid   atomic.Uint64
+	sparkplugAnomalies atomic.Uint64
 }
 
 // agentHealth tracks one deployment's current (image, version) and when it
@@ -87,20 +95,19 @@ func New(cfg Config, configPath string) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &Agent{cfg: cfg, configPath: configPath, spool: q, localDeliveries: lq, twins: map[string]model.Twin{}, auditLog: al, health: map[string]agentHealth{}}
+	a := &Agent{cfg: cfg, configPath: configPath, spool: q, localDeliveries: lq, twins: map[string]model.Twin{}, auditLog: al, health: map[string]agentHealth{}, forecast: queue.NewForecaster(0, 0), startedAt: time.Now()}
+	a.lastUplink.Store(a.startedAt.UnixNano())
 	if err = a.configureClient(); err != nil {
 		return nil, err
+	}
+	if cfg.SparkplugEnabled {
+		a.sparkplug = sparkplug.NewTracker()
 	}
 	a.loadTwins()
 	a.http = &http.Server{Addr: cfg.Listen, Handler: a.localRoutes(), ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second}
 	if cfg.MQTTListen != "" {
 		a.mqtt = mqtt.New(cfg.MQTTListen, func(ctx context.Context, m mqtt.Message) error {
-			p := m.Payload
-			if !json.Valid(p) {
-				p, _ = json.Marshal(string(p))
-			}
-			_, err := a.ingest(ctx, m.Topic, p, map[string]string{"x-nodra-ingress": "mqtt"})
-			return err
+			return a.handleMQTT(ctx, m.Topic, m.Payload)
 		}).EnableSessions(filepath.Join(cfg.DataDir, "mqtt-sessions"), queue.Options{MaxItems: cfg.MQTTSessionMaxItems, MaxBytes: cfg.MQTTSessionMaxBytes, Policy: "reject"})
 		if cfg.MQTTUsername != "" {
 			user, pass := cfg.MQTTUsername, cfg.MQTTPassword
@@ -211,7 +218,8 @@ func (a *Agent) Run(ctx context.Context) error {
 			return fmt.Errorf("enroll: %w", err)
 		}
 	}
-	a.wg.Add(6)
+	a.wg.Add(7)
+	go a.forecastLoop(ctx)
 	go a.heartbeatLoop(ctx)
 	go a.flushLoop(ctx)
 	go a.localDeliveryLoop(ctx)
@@ -289,7 +297,7 @@ func (a *Agent) SpoolStats() queue.Stats { return a.spool.Stats() }
 func (a *Agent) localRoutes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"status": "ok", "site_id": a.cfg.SiteID, "spool": a.spool.Stats(), "local_pending": a.localDeliveries.Len(), "revoked": a.Revoked()})
+		writeJSON(w, 200, map[string]any{"status": "ok", "site_id": a.cfg.SiteID, "spool": a.spool.Stats(), "spool_forecast": a.SpoolForecast(), "local_pending": a.localDeliveries.Len(), "revoked": a.Revoked()})
 	})
 	mux.HandleFunc("POST /v1/publish", a.publish)
 	mux.HandleFunc("POST /v1/devices", a.device)
@@ -297,6 +305,8 @@ func (a *Agent) localRoutes() http.Handler {
 	mux.HandleFunc("POST /v1/twins/{id}/reported", a.localTwinReported)
 	mux.HandleFunc("POST /v1/devices/{id}/ota/status", a.localOTAStatus)
 	mux.HandleFunc("GET /v1/audit", a.localAuditList)
+	mux.HandleFunc("GET /v1/sparkplug", a.localSparkplug)
+	mux.HandleFunc("GET /v1/spool/forecast", a.localSpoolForecast)
 	return mux
 }
 func (a *Agent) localAuth(r *http.Request) bool {
@@ -549,12 +559,19 @@ func (a *Agent) heartbeat(ctx context.Context) {
 	runtime.ReadMemStats(&ms)
 	qs := a.spool.Stats()
 	m := map[string]any{"hostname": host, "goos": runtime.GOOS, "goarch": runtime.GOARCH, "goroutines": runtime.NumGoroutine(), "heap_bytes": ms.HeapAlloc, "queue_depth": qs.Items, "queue_bytes": qs.Bytes, "queue_max_bytes": qs.MaxBytes, "local_delivery_depth": a.localDeliveries.Len()}
+	fc := a.SpoolForecast()
+	m["spool_time_to_full_seconds"] = fc.TimeToFullSeconds
+	m["spool_growth_bytes_per_sec"] = fc.GrowthBytesPerSec
+	m["spool_fill_ratio"] = fc.FillRatio
+	m["spool_risk"] = fc.Risk
+	m["uplink_outage_seconds"] = fc.OutageSeconds
 	b, _ := json.Marshal(map[string]any{"site_id": a.cfg.SiteID, "version": version.Version, "metrics": m})
 	resp, err := a.do(ctx, "POST", "/api/v1/heartbeat", b)
 	if err != nil {
 		slog.Warn("heartbeat failed", "error", err)
 		return
 	}
+	a.lastUplink.Store(time.Now().UnixNano())
 	a.checkRevoked(resp)
 	_ = resp.Body.Close()
 }

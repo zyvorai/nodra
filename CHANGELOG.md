@@ -29,6 +29,20 @@
   app release, not upgraded independently), Python 3.15 (3.14 chosen for wheel
   availability). Go 1.28 does not exist yet.
 - Fix `TestNewPollerRTUDefaults` failing on non-Linux hosts (now skipped).
+- Add Sparkplug B ingress (`sparkplug_enabled`): `internal/sparkplug` decodes
+  `spBv1.0` topics and protobuf payloads (stdlib only, bounded, fuzzed), tracks
+  NBIRTH/NDEATH/DBIRTH/DDEATH state, aliases, bdSeq-matched death and sequence
+  gaps, emits `nodra/sparkplug/state/...` events and serves `GET /v1/sparkplug`.
+- Add spool capacity forecasting (`internal/queue/forecast.go`): time-to-full at
+  the current growth rate, outage capacity and risk level via
+  `GET /v1/spool/forecast`, `/healthz`, heartbeat metrics and
+  `nodra_site_spool_time_to_full_seconds` / `nodra_site_spool_fill_ratio`.
+- Add twin schema validation and drift (`internal/twinschema`):
+  `PUT /api/v1/twins/{id}/schema`, `422` on violating desired state,
+  `PUT .../desired?dry_run=true` diff preview, `GET /api/v1/twins/{id}/drift`,
+  `GET /api/v1/twins/drift`, `nodra_twins_drifted` metric.
+- Add `docs/RESEARCH.md` (edge/IIoT survey and ranked ideas) and
+  `docs/EDGE_INTELLIGENCE.md`.
 
 - Operator upgrade/rollback procedure for v0.2.0 and v0.2.1 → current
   (`docs/UPGRADE.md`), with contiguous migration load test and lab soak

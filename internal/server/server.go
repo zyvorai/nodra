@@ -38,6 +38,7 @@ import (
 	"github.com/zyvorai/nodra/internal/router"
 	"github.com/zyvorai/nodra/internal/store"
 	"github.com/zyvorai/nodra/internal/telemetry"
+	"github.com/zyvorai/nodra/internal/twinschema"
 	"github.com/zyvorai/nodra/internal/version"
 	webassets "github.com/zyvorai/nodra/web"
 )
@@ -374,6 +375,7 @@ func (s *Server) routes() http.Handler {
 			leaderGauge = 1
 		}
 		_, _ = io.WriteString(w, s.metrics.Prometheus()+fmt.Sprintf("# TYPE nodra_pending_deliveries gauge\nnodra_pending_deliveries %d\n# TYPE nodra_delivery_queue_bytes gauge\nnodra_delivery_queue_bytes %d\n# TYPE nodra_dead_letters gauge\nnodra_dead_letters %d\n# TYPE nodra_delivery_leader gauge\nnodra_delivery_leader %d\n", ds.Items, ds.Bytes, qs.Items, leaderGauge))
+		_, _ = io.WriteString(w, s.siteSpoolMetrics()+s.twinDriftMetrics())
 	})
 	mux.HandleFunc("GET /api/v1/version", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"name": "nodra", "version": version.Version, "commit": version.Commit, "build_date": version.BuildDate})
@@ -406,6 +408,9 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET /api/v1/devices", s.admin(http.HandlerFunc(s.devices)))
 	mux.Handle("GET /api/v1/twins", s.admin(http.HandlerFunc(s.twins)))
 	mux.Handle("PUT /api/v1/twins/{id}/desired", s.admin(http.HandlerFunc(s.twinDesired)))
+	mux.Handle("PUT /api/v1/twins/{id}/schema", s.admin(http.HandlerFunc(s.twinSchemaSet)))
+	mux.Handle("GET /api/v1/twins/drift", s.admin(http.HandlerFunc(s.twinsDrift)))
+	mux.Handle("GET /api/v1/twins/{id}/drift", s.admin(http.HandlerFunc(s.twinDrift)))
 	mux.Handle("POST /api/v1/devices/{id}/ota", s.admin(http.HandlerFunc(s.otaDeviceRequest)))
 	mux.Handle("GET /api/v1/devices/{id}/ota", s.admin(http.HandlerFunc(s.otaDeviceGet)))
 	mux.Handle("GET /api/v1/ota/campaigns", s.admin(http.HandlerFunc(s.otaCampaigns)))
@@ -1567,6 +1572,21 @@ func (s *Server) twinDesired(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &in) {
 		return
 	}
+	cur, _ := s.store.Twin(dev.ID)
+	viol := twinschema.Validate(cur.Schema, in.Desired)
+	if cur.Schema == nil {
+		viol = nil
+	}
+	if r.URL.Query().Get("dry_run") == "true" {
+		// Preview only: nothing is stored, no version is bumped.
+		writeJSON(w, 200, map[string]any{"dry_run": true, "valid": len(viol) == 0, "violations": viol,
+			"changes": twinschema.Diff(cur.Desired, in.Desired), "desired_version": cur.DesiredVersion})
+		return
+	}
+	if len(viol) > 0 {
+		writeJSON(w, 422, map[string]any{"error": "desired state violates the twin schema", "violations": viol})
+		return
+	}
 	var tw model.Twin
 	if err := s.store.UpdateTwin(dev.ID, func(cur *model.Twin) {
 		cur.DeviceID = dev.ID
@@ -2370,3 +2390,27 @@ func errorJSON(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 func (s *Server) ProcessOnce(ctx context.Context) { s.processDeliveries(ctx) }
+
+// siteSpoolMetrics renders per-site spool capacity forecasts reported by
+// agents in their heartbeat: seconds until the edge spool fills at the current
+// growth rate (-1 when it is not growing) and the current fill ratio. Only
+// site IDs (server generated) are used as label values.
+func (s *Server) siteSpoolMetrics() string {
+	var ttf, fill strings.Builder
+	for _, site := range s.store.Sites() {
+		if v, ok := site.Metrics["spool_time_to_full_seconds"].(float64); ok {
+			fmt.Fprintf(&ttf, "nodra_site_spool_time_to_full_seconds{site_id=%q} %g\n", site.ID, v)
+		}
+		if v, ok := site.Metrics["spool_fill_ratio"].(float64); ok {
+			fmt.Fprintf(&fill, "nodra_site_spool_fill_ratio{site_id=%q} %g\n", site.ID, v)
+		}
+	}
+	out := ""
+	if ttf.Len() > 0 {
+		out += "# HELP nodra_site_spool_time_to_full_seconds Forecast seconds until the edge spool is full (-1 = not growing).\n# TYPE nodra_site_spool_time_to_full_seconds gauge\n" + ttf.String()
+	}
+	if fill.Len() > 0 {
+		out += "# TYPE nodra_site_spool_fill_ratio gauge\n" + fill.String()
+	}
+	return out
+}
