@@ -78,7 +78,7 @@ topologySpreadConstraints: []
 backup:
   enabled: false
   schedule: "15 2 * * *"
-  image: postgres:16-alpine
+  image: postgres:18-alpine
   host: ""
   database: nodra
   secretName: ""

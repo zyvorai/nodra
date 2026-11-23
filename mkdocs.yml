@@ -61,6 +61,8 @@ nav:
       - Industrial protocols: INDUSTRIAL_PROTOCOLS.md
       - NATS bridge: NATS_BRIDGE.md
       - Policy packs: POLICY_PACKS.md
+      - Edge intelligence: EDGE_INTELLIGENCE.md
+      - Research: RESEARCH.md
   - Security & supply chain:
       - Security model: SECURITY-MODEL.md
       - Supply chain: SUPPLY_CHAIN.md

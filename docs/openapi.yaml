@@ -215,8 +215,40 @@ paths:
   /twins/{id}/desired:
     put:
       security: [{bearer: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: dry_run, in: query, required: false, schema: {type: boolean}, description: Validate and diff only; store nothing}
+      responses:
+        '200': {description: Desired twin updated (or dry-run preview)}
+        '422': {description: Desired state violates the twin schema}
+  /twins/{id}/schema:
+    put:
+      security: [{bearer: []}]
+      summary: Register or clear the JSON-Schema-subset constraining a twin's desired state
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
-      responses: {'200': {description: Desired twin updated}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, properties: {schema: {type: object, nullable: true}}}
+      responses:
+        '200': {description: Twin plus violations of the current desired state}
+        '400': {description: Invalid or unsupported schema}
+        '404': {description: Device not found}
+  /twins/{id}/drift:
+    get:
+      security: [{bearer: []}]
+      summary: Desired-vs-reported drift and schema violations for one twin
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: Drift report}
+        '404': {description: Twin not found}
+  /twins/drift:
+    get:
+      security: [{bearer: []}]
+      summary: Out-of-sync twins (all=true includes in-sync ones)
+      parameters: [{name: all, in: query, required: false, schema: {type: boolean}}]
+      responses: {'200': {description: Drift reports}}
   /devices/{id}/ota:
     post:
       security: [{bearer: []}]
