@@ -120,3 +120,14 @@ simulation:
   resources:
     requests: {cpu: 25m, memory: 48Mi}
     limits: {cpu: 250m, memory: 128Mi}
+
+# Gateway API front door served by Setura, an alternative to `ingress` (enable one, not both).
+# Needs the Setura controller: setura gateway install --image ghcr.io/zyvorai/zyvor-setura-gateway:0.7.0
+gateway:
+  enabled: false
+  className: setura
+  httpPort: 80
+  httpsPort: 443
+  tls:
+    enabled: false
+    secretName: "" # defaults to certManager.secretName, else <fullname>-tls
